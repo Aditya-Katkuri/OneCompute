@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Response
+from fastapi.responses import HTMLResponse
 
 from contracts import (
     Capability,
@@ -24,9 +25,11 @@ from contracts import (
     WorkerView,
     sha256_hex,
 )
+from dashboard.paths import INDEX_HTML
 from orchestrator.db import init_db, write_lock
 from orchestrator.scheduler import class_weight_for, pick_job_for
 from orchestrator.submit import submit_job
+from trust import Signer, check_challenge
 
 
 def _now() -> str:
@@ -57,8 +60,26 @@ def _worker_or_404(conn: sqlite3.Connection, worker_id: str) -> sqlite3.Row:
     return worker
 
 
+def _emit(
+    conn: sqlite3.Connection,
+    event_type: str,
+    worker_id: str | None = None,
+    job_id: str | None = None,
+    detail: str | None = None,
+) -> None:
+    """Append a row to the activity feed the dashboard streams from GET /events."""
+    with write_lock:
+        conn.execute(
+            "INSERT INTO events (ts, type, worker_id, job_id, detail) VALUES (?, ?, ?, ?, ?)",
+            (_now(), event_type, worker_id, job_id, detail),
+        )
+        conn.commit()
+
+
 def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
     conn = init_db(db_path)
+    if signer is None:
+        signer = Signer()  # signing is ON by default; the worker verifies before running
     app = FastAPI(title="NightShift Orchestrator")
     app.state.conn = conn
 
@@ -85,14 +106,18 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
                 (cap.worker_id, token, cap.model_dump_json(), weight, now, now),
             )
             conn.commit()
+        _emit(conn, "registered", worker_id=cap.worker_id,
+              detail="gpu" if cap.has_gpu else "cpu")
         return RegisterResponse(worker_token=token)
 
     @app.post("/jobs", response_model=SubmitResponse)
     def submit(req: SubmitRequest) -> SubmitResponse:
         try:
-            return SubmitResponse(job_id=submit_job(conn, req))
+            job_id = submit_job(conn, req)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _emit(conn, "submitted", job_id=job_id, detail=req.kind)
+        return SubmitResponse(job_id=job_id)
 
     @app.get("/jobs/next", response_model=JobAssignment)
     def jobs_next(worker_id: str):
@@ -129,6 +154,7 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
             conn.commit()
         manifest = JobManifest(**json.loads(job["manifest_json"]))
         signed_manifest = signer.sign(manifest) if signer else SignedManifest(manifest=manifest)
+        _emit(conn, "assigned", worker_id=worker_id, job_id=job["job_id"], detail=manifest.kind)
         return JobAssignment(
             signed_manifest=signed_manifest,
             input=json.loads(job["input_json"] or "{}"),
@@ -219,7 +245,11 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
                 if manifest["kind"] == "challenge":
                     job_input = json.loads(job["input_json"] or "{}")
                     expected = {"y": job_input["x"] * job_input["x"] + 1}
-                    if output != expected:
+                    if not check_challenge(output, expected):
+                        conn.execute(
+                            "UPDATE workers SET blacklisted = 1 WHERE worker_id = ?",
+                            (req.worker_id,),
+                        )
                         conn.execute(
                             """
                             UPDATE jobs
@@ -230,7 +260,11 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
                             (now, job_id, req.worker_id),
                         )
                         conn.commit()
-                        return ResultResponse(accepted=False, credited=0.0, reason="invalid_result")
+                        _emit(conn, "blacklisted", worker_id=req.worker_id, job_id=job_id,
+                              detail="failed integrity challenge")
+                        return ResultResponse(
+                            accepted=False, credited=0.0, reason="cheater_blacklisted"
+                        )
                 credits = float(job["units"]) * float(worker["class_weight"])
                 result_json = json.dumps(output, separators=(",", ":"))
                 conn.execute(
@@ -249,6 +283,8 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
                     (req.worker_id, job_id, credits, now),
                 )
                 conn.commit()
+                _emit(conn, "completed", worker_id=req.worker_id, job_id=job_id,
+                      detail=f"+{credits:g} credits")
                 return ResultResponse(accepted=True, credited=credits)
             if req.status in {"failed", "yielded"}:
                 conn.execute(
@@ -260,6 +296,7 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
                     (now, job_id, req.worker_id),
                 )
                 conn.commit()
+                _emit(conn, req.status, worker_id=req.worker_id, job_id=job_id)
                 return ResultResponse(accepted=False, credited=0.0, reason=req.status)
         return ResultResponse(accepted=False, reason="unknown status")
 
@@ -307,6 +344,21 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
             "SELECT COALESCE(SUM(credits), 0) AS credits FROM ledger"
         ).fetchone()["credits"]
         return FleetState(workers=workers, jobs=jobs, total_credits=float(total_credits))
+
+    @app.get("/events")
+    def events(since: int = 0) -> dict:
+        rows = conn.execute(
+            "SELECT id, ts, type, worker_id, job_id, detail FROM events "
+            "WHERE id > ? ORDER BY id ASC LIMIT 200",
+            (since,),
+        ).fetchall()
+        items = [dict(row) for row in rows]
+        last_id = items[-1]["id"] if items else since
+        return {"events": items, "last_id": last_id}
+
+    @app.get("/", response_class=HTMLResponse)
+    def dashboard() -> HTMLResponse:
+        return HTMLResponse(INDEX_HTML.read_text(encoding="utf-8"))
 
     return app
 

@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NightShift Fleet Dashboard</title>
+  <script>
+    (() => {
+      const param = new URLSearchParams(window.location.search).get("scoutTheme");
+      const theme =
+        param || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      document.documentElement.setAttribute("data-theme", theme);
+    })();
+  </script>
+  <style>
+    :root {
+      color-scheme: light;
+      --cp-bg: #f7f4ef;
+      --cp-bg-elevated: #fcfbf8;
+      --cp-surface: #ffffff;
+      --cp-surface-soft: #f5f5f5;
+      --cp-border: #dedede;
+      --cp-border-strong: #919191;
+      --cp-text: #242424;
+      --cp-text-muted: #5c5c5c;
+      --cp-text-soft: #6f6f6f;
+      --cp-accent: #b11f4b;
+      --cp-accent-hover: #9a1a41;
+      --cp-accent-soft: rgba(177, 31, 75, 0.08);
+      --cp-accent-fg: #ffffff;
+      --cp-success: #16a34a;
+      --cp-danger: #dc2626;
+      --cp-warning: #f59e0b;
+      --cp-link: #0078d4;
+      --cp-shadow: 0 18px 48px rgba(0, 0, 0, 0.12);
+      --cp-overlay: rgba(255, 255, 255, 0.8);
+      --cp-panel: rgba(255, 255, 255, 0.86);
+      --cp-panel-strong: rgba(255, 255, 255, 0.96);
+      --cp-sheen: rgba(255, 255, 255, 0.55);
+      --cp-highlight: rgba(177, 31, 75, 0.12);
+    }
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --cp-bg: #3d3b3a;
+      --cp-bg-elevated: #343231;
+      --cp-surface: #292929;
+      --cp-surface-soft: #2e2e2e;
+      --cp-border: #474747;
+      --cp-border-strong: #5f5f5f;
+      --cp-text: #dedede;
+      --cp-text-muted: #919191;
+      --cp-text-soft: #b0b0b0;
+      --cp-accent: #fd8ea1;
+      --cp-accent-hover: #fb7b91;
+      --cp-accent-soft: rgba(253, 142, 161, 0.14);
+      --cp-accent-fg: #1a1a1a;
+      --cp-success: #4ade80;
+      --cp-danger: #f87171;
+      --cp-warning: #fbbf24;
+      --cp-link: #4da6ff;
+      --cp-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+      --cp-overlay: rgba(41, 41, 41, 0.88);
+      --cp-panel: rgba(41, 41, 41, 0.72);
+      --cp-panel-strong: rgba(41, 41, 41, 0.96);
+      --cp-sheen: rgba(255, 255, 255, 0.04);
+      --cp-highlight: rgba(253, 142, 161, 0.12);
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: var(--cp-bg);
+      color: var(--cp-text);
+      font-family: "Segoe UI", Aptos, Calibri, -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    header {
+      display: flex;
+      gap: 16px;
+      align-items: flex-end;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    h1, h2, p {
+      margin: 0;
+    }
+    h1 {
+      font-size: clamp(28px, 4vw, 44px);
+      letter-spacing: -0.04em;
+    }
+    h2 {
+      font-size: 18px;
+    }
+    .lede {
+      color: var(--cp-text-muted);
+      margin-top: 8px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid var(--cp-border);
+      border-radius: 0.625rem;
+      padding: 8px 12px;
+      background: var(--cp-surface);
+      color: var(--cp-text-muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 0.625rem;
+      background: var(--cp-warning);
+    }
+    .dot.ok {
+      background: var(--cp-success);
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .card, .tile {
+      background: var(--cp-surface);
+      border: 1px solid var(--cp-border);
+      border-radius: 16px;
+      box-shadow: 0 0 2px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.14);
+    }
+    .card {
+      padding: 18px;
+    }
+    .label {
+      color: var(--cp-text-muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .value {
+      margin-top: 8px;
+      font-size: 34px;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+    }
+    .subvalue {
+      margin-top: 4px;
+      color: var(--cp-text-muted);
+      font-size: 13px;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+      gap: 16px;
+    }
+    .tiles {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .tile {
+      position: relative;
+      overflow: hidden;
+      padding: 14px;
+      border-left: 6px solid var(--cp-success);
+    }
+    .tile.busy {
+      border-left-color: var(--cp-link);
+    }
+    .tile.yielding {
+      border-left-color: var(--cp-warning);
+    }
+    .tile.blacklisted {
+      border-left-color: var(--cp-danger);
+    }
+    .tile-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .worker-id {
+      font-family: Consolas, "Courier New", Courier, monospace;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+    .badge {
+      border-radius: 0.625rem;
+      border: 1px solid var(--cp-border);
+      color: var(--cp-text-muted);
+      padding: 4px 8px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .status {
+      display: inline-flex;
+      margin-bottom: 10px;
+      border-radius: 0.625rem;
+      padding: 4px 8px;
+      background: var(--cp-surface-soft);
+      color: var(--cp-text);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .metric {
+      border: 1px solid var(--cp-border);
+      border-radius: 0.625rem;
+      padding: 8px;
+      background: var(--cp-bg-elevated);
+    }
+    .metric strong {
+      display: block;
+      font-size: 20px;
+    }
+    .bars {
+      display: grid;
+      gap: 14px;
+      margin-top: 16px;
+    }
+    .bar-row {
+      display: grid;
+      gap: 6px;
+    }
+    .bar-label {
+      display: flex;
+      justify-content: space-between;
+      color: var(--cp-text-muted);
+      font-size: 13px;
+    }
+    .track {
+      height: 18px;
+      border-radius: 0.625rem;
+      overflow: hidden;
+      background: var(--cp-surface-soft);
+      border: 1px solid var(--cp-border);
+    }
+    .fill {
+      height: 100%;
+      width: 0%;
+      background: var(--cp-accent);
+      transition: width 220ms ease;
+    }
+    .fill.ghost {
+      background: var(--cp-border-strong);
+    }
+    .events {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+      max-height: 360px;
+      overflow: auto;
+    }
+    .event {
+      border: 1px solid var(--cp-border);
+      border-radius: 0.625rem;
+      padding: 10px;
+      background: var(--cp-bg-elevated);
+      font-size: 13px;
+    }
+    .event-type {
+      color: var(--cp-accent);
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .empty {
+      color: var(--cp-text-muted);
+      border: 1px dashed var(--cp-border-strong);
+      border-radius: 0.625rem;
+      padding: 18px;
+      text-align: center;
+    }
+    @media (max-width: 820px) {
+      header, .layout {
+        display: block;
+      }
+      .summary {
+        grid-template-columns: 1fr;
+      }
+      .pill {
+        margin-top: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>NightShift Fleet</h1>
+        <p class="lede">Live orchestrator truth: workers, credits, throughput, yield, and trust.</p>
+      </div>
+      <div class="pill"><span id="statusDot" class="dot"></span><span id="statusText">Connecting</span></div>
+    </header>
+
+    <section class="summary" aria-label="fleet summary">
+      <div class="card">
+        <div class="label">Total credits</div>
+        <div id="credits" class="value">0</div>
+        <div class="subvalue">Accepted useful work only</div>
+      </div>
+      <div class="card">
+        <div class="label">Throughput</div>
+        <div id="completed" class="value">0 jobs</div>
+        <div id="throughput" class="subvalue">Waiting for completions</div>
+      </div>
+      <div class="card">
+        <div class="label">Fleet</div>
+        <div id="workers" class="value">0 workers</div>
+        <div id="busy" class="subvalue">0 busy · 0 GPU-capable</div>
+      </div>
+    </section>
+
+    <section class="layout">
+      <div class="card">
+        <h2>Worker tiles</h2>
+        <div id="tiles" class="tiles">
+          <div class="empty">No workers registered yet.</div>
+        </div>
+      </div>
+
+      <aside>
+        <div class="card">
+          <h2>Ghost bar comparison</h2>
+          <p class="subvalue">Single-machine baseline is estimated from completed demo items; fleet is observed wall time in this browser session.</p>
+          <div class="bars">
+            <div class="bar-row">
+              <div class="bar-label"><span>1 machine baseline</span><span id="ghostText">0.0s</span></div>
+              <div class="track"><div id="ghostBar" class="fill ghost"></div></div>
+            </div>
+            <div class="bar-row">
+              <div class="bar-label"><span>Fleet observed</span><span id="fleetText">0.0s</span></div>
+              <div class="track"><div id="fleetBar" class="fill"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top: 16px;">
+          <h2>Activity feed</h2>
+          <div id="events" class="events">
+            <div class="empty">/events not available yet; dashboard continues on /state.</div>
+          </div>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    const POLL_MS = 700;
+    const ITEMS_PER_JOB = 200;
+    const PER_ITEM_SECONDS = 0.0005;
+    let firstSeenAt = null;
+    let lastEventId = 0;
+    let eventsAvailable = true;
+    let cachedEvents = [];
+    const yieldedUntil = new Map();
+
+    const elements = {
+      statusDot: document.getElementById("statusDot"),
+      statusText: document.getElementById("statusText"),
+      credits: document.getElementById("credits"),
+      completed: document.getElementById("completed"),
+      throughput: document.getElementById("throughput"),
+      workers: document.getElementById("workers"),
+      busy: document.getElementById("busy"),
+      tiles: document.getElementById("tiles"),
+      ghostText: document.getElementById("ghostText"),
+      fleetText: document.getElementById("fleetText"),
+      ghostBar: document.getElementById("ghostBar"),
+      fleetBar: document.getElementById("fleetBar"),
+      events: document.getElementById("events"),
+    };
+
+    function setStatus(ok, text) {
+      elements.statusDot.classList.toggle("ok", ok);
+      elements.statusText.textContent = text;
+    }
+
+    function fmtNumber(value) {
+      return new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value || 0);
+    }
+
+    function stateFor(worker) {
+      if (worker.blacklisted) return "blacklisted";
+      if (yieldedUntil.get(worker.worker_id) > Date.now()) return "yielding";
+      if (worker.busy) return "busy";
+      return "idle";
+    }
+
+    function renderTiles(workers) {
+      if (!workers.length) {
+        elements.tiles.innerHTML = '<div class="empty">No workers registered yet.</div>';
+        return;
+      }
+      elements.tiles.replaceChildren(...workers.map((worker) => {
+        const state = stateFor(worker);
+        const tile = document.createElement("article");
+        tile.className = `tile ${state}`;
+        const gpuText = worker.has_gpu ? "GPU" : "CPU";
+        tile.innerHTML = `
+          <div class="tile-head">
+            <div class="worker-id"></div>
+            <div class="badge">${gpuText}</div>
+          </div>
+          <div class="status">${state}</div>
+          <div class="metrics">
+            <div class="metric"><span class="label">Credits</span><strong>${fmtNumber(worker.credits)}</strong></div>
+            <div class="metric"><span class="label">CPU</span><strong>${fmtNumber(worker.cpu_pct)}%</strong></div>
+          </div>
+        `;
+        tile.querySelector(".worker-id").textContent = worker.worker_id;
+        return tile;
+      }));
+    }
+
+    function renderBars(completedJobs) {
+      const elapsed = firstSeenAt === null ? 0 : (performance.now() - firstSeenAt) / 1000;
+      const ghost = completedJobs * ITEMS_PER_JOB * PER_ITEM_SECONDS;
+      const max = Math.max(ghost, elapsed, 1);
+      elements.ghostText.textContent = `${ghost.toFixed(1)}s`;
+      elements.fleetText.textContent = `${elapsed.toFixed(1)}s`;
+      elements.ghostBar.style.width = `${Math.min(100, (ghost / max) * 100)}%`;
+      elements.fleetBar.style.width = `${Math.min(100, (elapsed / max) * 100)}%`;
+    }
+
+    function renderState(state) {
+      const workers = state.workers || [];
+      const jobs = state.jobs || [];
+      if (jobs.length > 0 && firstSeenAt === null) firstSeenAt = performance.now();
+      const completedJobs = jobs.filter((job) => job.state === "completed").length;
+      const busyWorkers = workers.filter((worker) => worker.busy).length;
+      const gpuWorkers = workers.filter((worker) => worker.has_gpu).length;
+      const elapsed = firstSeenAt === null ? 0 : Math.max((performance.now() - firstSeenAt) / 1000, 0.1);
+
+      elements.credits.textContent = fmtNumber(state.total_credits);
+      elements.completed.textContent = `${completedJobs} job${completedJobs === 1 ? "" : "s"}`;
+      elements.throughput.textContent = completedJobs
+        ? `${fmtNumber(completedJobs / elapsed)} completed jobs/sec observed`
+        : "Waiting for completions";
+      elements.workers.textContent = `${workers.length} worker${workers.length === 1 ? "" : "s"}`;
+      elements.busy.textContent = `${busyWorkers} busy · ${gpuWorkers} GPU-capable`;
+      renderTiles(workers);
+      renderBars(completedJobs);
+    }
+
+    function rememberEvents(events) {
+      for (const event of events) {
+        if (typeof event.id === "number") lastEventId = Math.max(lastEventId, event.id);
+        if (event.type === "yielded" && event.worker_id) {
+          yieldedUntil.set(event.worker_id, Date.now() + 5000);
+        }
+      }
+      cachedEvents = [...events, ...cachedEvents].slice(0, 20);
+    }
+
+    function renderEvents() {
+      if (!cachedEvents.length) {
+        elements.events.innerHTML = eventsAvailable
+          ? '<div class="empty">Waiting for orchestrator events.</div>'
+          : '<div class="empty">/events not available yet; dashboard continues on /state.</div>';
+        return;
+      }
+      elements.events.replaceChildren(...cachedEvents.map((event) => {
+        const row = document.createElement("div");
+        row.className = "event";
+        const title = document.createElement("div");
+        const type = document.createElement("span");
+        type.className = "event-type";
+        type.textContent = event.type || "event";
+        title.appendChild(type);
+        title.append(` ${event.detail ? `· ${event.detail}` : ""}`);
+        const meta = document.createElement("div");
+        meta.className = "subvalue";
+        meta.textContent = `${event.worker_id || "fleet"} · ${event.job_id || "no job id"}`;
+        row.append(title, meta);
+        return row;
+      }));
+    }
+
+    async function pollEvents() {
+      if (!eventsAvailable) return;
+      try {
+        const response = await fetch(`/events?since=${lastEventId}`, { cache: "no-store" });
+        if (response.status === 404) {
+          eventsAvailable = false;
+          renderEvents();
+          return;
+        }
+        if (!response.ok) return;
+        const payload = await response.json();
+        rememberEvents(payload.events || []);
+        if (typeof payload.last_id === "number") lastEventId = Math.max(lastEventId, payload.last_id);
+        renderEvents();
+      } catch {
+        eventsAvailable = false;
+        renderEvents();
+      }
+    }
+
+    async function poll() {
+      try {
+        const response = await fetch("/state", { cache: "no-store" });
+        if (!response.ok) throw new Error(`state ${response.status}`);
+        const state = await response.json();
+        setStatus(true, "Live");
+        renderState(state);
+        await pollEvents();
+      } catch (error) {
+        setStatus(false, `Waiting for /state (${error.message})`);
+      }
+    }
+
+    poll();
+    setInterval(poll, POLL_MS);
+  </script>
+</body>
+</html>

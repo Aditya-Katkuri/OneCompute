@@ -42,3 +42,13 @@ CREATE TABLE IF NOT EXISTS ledger (
 
 CREATE INDEX IF NOT EXISTS idx_jobs_state    ON jobs(state);
 CREATE INDEX IF NOT EXISTS idx_ledger_worker ON ledger(worker_id);
+
+-- Activity feed for the live dashboard (served via GET /events).
+CREATE TABLE IF NOT EXISTS events (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts        TEXT NOT NULL,
+    type      TEXT NOT NULL,   -- registered | submitted | assigned | completed | yielded | failed | blacklisted
+    worker_id TEXT,
+    job_id    TEXT,
+    detail    TEXT
+);
