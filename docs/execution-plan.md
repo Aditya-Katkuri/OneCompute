@@ -138,3 +138,13 @@ HTTPS within the hour; pre-stage model/binary + AV exclusions; **freeze the §3 
 > as each unit lands, the lead runs **G1** (code-review + rubber-duck); COS runs **G2** (full slice) and
 > reports up: **DONE** (worker registers→runs→returns→credited, demo: `uv run …`) · **DoD** (✅×6) ·
 > **RISKS** (LAN reachability untested on real switch) · **NEXT** (Phase 2 yield) · **ASKS** (confirm demo PCs).
+
+---
+
+## 9. Status log (live)
+
+**2026-06-23 — overnight COS run (ReeveOS):**
+- **Isolation is now real on the demo path (T3 + Phase D).** `WorkerAgent(isolated=True)` routes fan-out / AI / instant-yield through `run_in_isolation`: Docker-per-job with a unique `--name`, `should_yield` polling, and **sub-second container kill-on-yield** (`docker kill`/`rm -f`); Windows-safe payload staging into `%TEMP%` (no fragile OneDrive-space mount); daemon-real `docker_available()` + honest `active_boundary()` + WARNING-on-fallback. Clean fallback to subprocess + Windows Job Object when Docker is unavailable. The cheater stays in-process so the blacklist beat still fires.
+- **Dashboard rebranded to ReeveOS (T5).** Premium, self-contained, offline single-file console; verified via Playwright renders of all four demo states (idle / fan-out / yield / ledger); idle-state polish so registered non-busy workers read as Idle. Live heartbeat pulse in the demo for lively CPU/GPU tiles.
+- **Quality:** `uv run pytest` → 62 passed, 2 daemon-guarded skips; `uv run ruff check` clean. `uv run python scripts/demo.py` → all 7 beats green, instant yield ~20–30 ms.
+- **BLOCKED — Docker engine.** The Docker Desktop Linux engine is wedged on this ARM64 SKU (HTTP 500 → hung pipe); `wsl --shutdown` + relaunch and a forced full restart did not recover it. The live container path is therefore **unverified** and runs on the subprocess+Job Object fallback meanwhile (honestly reported). **Morning action:** heal Docker Desktop (Troubleshoot → Restart/Reset, or reboot), then `uv run pytest tests/isolation/test_docker_integration.py -q` (live container CPU + sub-second kill) and `uv run python scripts/demo.py` — the banner should then read `isolation: docker`.
