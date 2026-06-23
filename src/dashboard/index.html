@@ -121,11 +121,32 @@
     .dot.ok {
       background: var(--cp-success);
     }
+    .legend,
     .summary {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 16px;
       margin-bottom: 16px;
+    }
+    .legend {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .legend .pill {
+      justify-content: center;
+    }
+    .dot.idle {
+      background: var(--cp-success);
+    }
+    .dot.busy {
+      background: var(--cp-link);
+    }
+    .dot.yielding {
+      background: var(--cp-warning);
+    }
+    .dot.blacklisted {
+      background: var(--cp-danger);
+    }
+    .summary {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
     .card, .tile {
       background: var(--cp-surface);
@@ -174,11 +195,15 @@
     .tile.busy {
       border-left-color: var(--cp-link);
     }
-    .tile.yielding {
+    .tile.yielded {
       border-left-color: var(--cp-warning);
     }
     .tile.blacklisted {
       border-left-color: var(--cp-danger);
+    }
+    .tile.unavailable {
+      border-left-color: var(--cp-border-strong);
+      opacity: 0.82;
     }
     .tile-head {
       display: flex;
@@ -260,7 +285,7 @@
       display: grid;
       gap: 8px;
       margin-top: 12px;
-      max-height: 360px;
+      max-height: 430px;
       overflow: auto;
     }
     .event {
@@ -286,11 +311,18 @@
       header, .layout {
         display: block;
       }
+      .legend,
       .summary {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
       .pill {
         margin-top: 12px;
+      }
+    }
+    @media (max-width: 560px) {
+      .legend,
+      .summary {
+        grid-template-columns: 1fr;
       }
     }
   </style>
@@ -299,22 +331,34 @@
   <main>
     <header>
       <div>
-        <h1>NightShift Fleet</h1>
+        <h1>NightShift - let your compute work when you are not</h1>
         <p class="lede">Live orchestrator truth: workers, credits, throughput, yield, and trust.</p>
       </div>
       <div class="pill"><span id="statusDot" class="dot"></span><span id="statusText">Connecting</span></div>
     </header>
 
+    <section class="legend" aria-label="worker state legend">
+      <div class="pill"><span class="dot idle"></span>Idle</div>
+      <div class="pill"><span class="dot busy"></span>Busy</div>
+      <div class="pill"><span class="dot yielding"></span>Recently yielded</div>
+      <div class="pill"><span class="dot blacklisted"></span>Blacklisted</div>
+    </section>
+
     <section class="summary" aria-label="fleet summary">
+      <div class="card">
+        <div class="label">Completed jobs</div>
+        <div id="completed" class="value">0</div>
+        <div id="throughput" class="subvalue">Waiting for completions</div>
+      </div>
       <div class="card">
         <div class="label">Total credits</div>
         <div id="credits" class="value">0</div>
-        <div class="subvalue">Accepted useful work only</div>
+        <div class="subvalue">Accepted useful work ticker</div>
       </div>
       <div class="card">
-        <div class="label">Throughput</div>
-        <div id="completed" class="value">0 jobs</div>
-        <div id="throughput" class="subvalue">Waiting for completions</div>
+        <div class="label">Ghost-bar speedup</div>
+        <div id="speedup" class="value">--</div>
+        <div class="subvalue">single machine vs fleet</div>
       </div>
       <div class="card">
         <div class="label">Fleet</div>
@@ -358,14 +402,15 @@
   </main>
 
   <script>
-    const POLL_MS = 700;
-    const ITEMS_PER_JOB = 200;
-    const PER_ITEM_SECONDS = 0.0005;
+    const POLL_MS = 500;
+    const BASELINE_SECONDS_PER_JOB = 12;
     let firstSeenAt = null;
     let lastEventId = 0;
     let eventsAvailable = true;
     let cachedEvents = [];
     const yieldedUntil = new Map();
+    const completedJobIds = new Set();
+    let completedAtPageOpen = null;
 
     const elements = {
       statusDot: document.getElementById("statusDot"),
@@ -380,6 +425,7 @@
       fleetText: document.getElementById("fleetText"),
       ghostBar: document.getElementById("ghostBar"),
       fleetBar: document.getElementById("fleetBar"),
+      speedup: document.getElementById("speedup"),
       events: document.getElementById("events"),
     };
 
@@ -394,9 +440,10 @@
 
     function stateFor(worker) {
       if (worker.blacklisted) return "blacklisted";
-      if (yieldedUntil.get(worker.worker_id) > Date.now()) return "yielding";
+      if (yieldedUntil.get(worker.worker_id) > Date.now()) return "yielded";
       if (worker.busy) return "busy";
-      return "idle";
+      if (worker.idle) return "idle";
+      return "unavailable";
     }
 
     function renderTiles(workers) {
@@ -409,6 +456,8 @@
         const tile = document.createElement("article");
         tile.className = `tile ${state}`;
         const gpuText = worker.has_gpu ? "GPU" : "CPU";
+        const freeRam = worker.free_ram_gb == null ? "--" : `${fmtNumber(worker.free_ram_gb)} GB`;
+        const gpuPct = worker.gpu_pct == null ? "--" : `${fmtNumber(worker.gpu_pct)}%`;
         tile.innerHTML = `
           <div class="tile-head">
             <div class="worker-id"></div>
@@ -418,6 +467,8 @@
           <div class="metrics">
             <div class="metric"><span class="label">Credits</span><strong>${fmtNumber(worker.credits)}</strong></div>
             <div class="metric"><span class="label">CPU</span><strong>${fmtNumber(worker.cpu_pct)}%</strong></div>
+            <div class="metric"><span class="label">GPU</span><strong>${gpuPct}</strong></div>
+            <div class="metric"><span class="label">Free RAM</span><strong>${freeRam}</strong></div>
           </div>
         `;
         tile.querySelector(".worker-id").textContent = worker.worker_id;
@@ -426,28 +477,37 @@
     }
 
     function renderBars(completedJobs) {
+      const sessionCompleted = Math.max(0, completedJobs - (completedAtPageOpen || 0));
       const elapsed = firstSeenAt === null ? 0 : (performance.now() - firstSeenAt) / 1000;
-      const ghost = completedJobs * ITEMS_PER_JOB * PER_ITEM_SECONDS;
+      const ghost = sessionCompleted * BASELINE_SECONDS_PER_JOB;
       const max = Math.max(ghost, elapsed, 1);
       elements.ghostText.textContent = `${ghost.toFixed(1)}s`;
       elements.fleetText.textContent = `${elapsed.toFixed(1)}s`;
       elements.ghostBar.style.width = `${Math.min(100, (ghost / max) * 100)}%`;
       elements.fleetBar.style.width = `${Math.min(100, (elapsed / max) * 100)}%`;
+      elements.speedup.textContent = sessionCompleted
+        ? `${fmtNumber(ghost / Math.max(elapsed, 0.1))}x`
+        : "--";
     }
 
     function renderState(state) {
       const workers = state.workers || [];
       const jobs = state.jobs || [];
       if (jobs.length > 0 && firstSeenAt === null) firstSeenAt = performance.now();
-      const completedJobs = jobs.filter((job) => job.state === "completed").length;
+      for (const job of jobs) {
+        if (job.state === "completed" && job.job_id) completedJobIds.add(job.job_id);
+      }
+      const completedJobs = completedJobIds.size;
+      if (completedAtPageOpen === null) completedAtPageOpen = completedJobs;
+      const sessionCompleted = Math.max(0, completedJobs - completedAtPageOpen);
       const busyWorkers = workers.filter((worker) => worker.busy).length;
       const gpuWorkers = workers.filter((worker) => worker.has_gpu).length;
       const elapsed = firstSeenAt === null ? 0 : Math.max((performance.now() - firstSeenAt) / 1000, 0.1);
 
       elements.credits.textContent = fmtNumber(state.total_credits);
-      elements.completed.textContent = `${completedJobs} job${completedJobs === 1 ? "" : "s"}`;
+      elements.completed.textContent = `${completedJobs}`;
       elements.throughput.textContent = completedJobs
-        ? `${fmtNumber(completedJobs / elapsed)} completed jobs/sec observed`
+        ? `${fmtNumber(sessionCompleted / elapsed)} new completed jobs/sec observed`
         : "Waiting for completions";
       elements.workers.textContent = `${workers.length} worker${workers.length === 1 ? "" : "s"}`;
       elements.busy.textContent = `${busyWorkers} busy · ${gpuWorkers} GPU-capable`;
@@ -460,6 +520,9 @@
         if (typeof event.id === "number") lastEventId = Math.max(lastEventId, event.id);
         if (event.type === "yielded" && event.worker_id) {
           yieldedUntil.set(event.worker_id, Date.now() + 5000);
+        }
+        if (event.type === "completed" && event.job_id) {
+          completedJobIds.add(event.job_id);
         }
       }
       cachedEvents = [...events, ...cachedEvents].slice(0, 20);
@@ -483,7 +546,8 @@
         title.append(` ${event.detail ? `· ${event.detail}` : ""}`);
         const meta = document.createElement("div");
         meta.className = "subvalue";
-        meta.textContent = `${event.worker_id || "fleet"} · ${event.job_id || "no job id"}`;
+        const stamp = event.ts ? new Date(event.ts).toLocaleTimeString() : "now";
+        meta.textContent = `${stamp} · ${event.worker_id || "fleet"} · ${event.job_id || "no job id"}`;
         row.append(title, meta);
         return row;
       }));
@@ -504,7 +568,6 @@
         if (typeof payload.last_id === "number") lastEventId = Math.max(lastEventId, payload.last_id);
         renderEvents();
       } catch {
-        eventsAvailable = false;
         renderEvents();
       }
     }
