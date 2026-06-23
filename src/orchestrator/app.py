@@ -364,6 +364,11 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
         last_id = items[-1]["id"] if items else since
         return {"events": items, "last_id": last_id}
 
+    @app.get("/healthz")
+    def healthz() -> dict:
+        """Lightweight reachability probe (additive; not part of the frozen contract)."""
+        return {"ok": True}
+
     @app.get("/", response_class=HTMLResponse)
     def dashboard() -> HTMLResponse:
         return HTMLResponse(INDEX_HTML.read_text(encoding="utf-8"))
