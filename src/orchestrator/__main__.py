@@ -74,34 +74,34 @@ def _prepare_db_path(raw: str) -> str:
     return db_path
 
 
-def _banner_lines(host: str, port: int, db_path: str) -> list[str]:
+def _banner_lines(host: str, port: int, db_path: str, scheme: str = "http") -> list[str]:
     """Build the startup banner showing dashboard URL(s) + the worker command."""
     addrs = lan_ipv4_addresses()
     line = "=" * 60
     out = [
         line,
         "  NightShift Orchestrator",
-        f"  Bind:  {host}:{port}",
+        f"  Bind:  {host}:{port}  ({scheme.upper()})",
         f"  DB:    {db_path}  (persistent)",
         "",
     ]
     if addrs:
         for ip in addrs:
-            out.append(f"  Dashboard:  http://{ip}:{port}/")
-            out.append(f"  Worker:     python -m worker --url http://{ip}:{port}")
+            out.append(f"  Dashboard:  {scheme}://{ip}:{port}/")
+            out.append(f"  Worker:     python -m worker --url {scheme}://{ip}:{port}")
         # Prefer the routed/primary NIC for the reachability hint over the
         # (sorted) first address, which may be a virtual/VPN interface.
         primary = primary_lan_ipv4() or addrs[0]
         out += [
             "",
             "  Reachability: from a worker PC, first confirm",
-            f"                curl http://{primary}:{port}/state  returns JSON",
+            f"                curl {scheme}://{primary}:{port}/state  returns JSON",
         ]
     else:
         # No usable LAN IP detected — fall back to local-only guidance.
         out += [
-            "  Dashboard:  http://127.0.0.1:" + str(port) + "/",
-            "  Worker:     python -m worker --url http://127.0.0.1:" + str(port),
+            f"  Dashboard:  {scheme}://127.0.0.1:{port}/",
+            f"  Worker:     python -m worker --url {scheme}://127.0.0.1:{port}",
             "",
             "  No LAN IPv4 detected; showing loopback. If this host is multi-homed",
             f"  or on a VPN, point workers at the reachable interface IP on port {port}.",
@@ -115,10 +115,16 @@ def _banner_lines(host: str, port: int, db_path: str) -> list[str]:
     return out
 
 
-def _serve(host: str, port: int, db_path: str, log_level: str) -> None:
-    """Start uvicorn against a persistent file-backed app. Blocks until shutdown."""
+def _serve(host: str, port: int, db_path: str, log_level: str,
+           tls_cert: str | None = None, tls_key: str | None = None) -> None:
+    """Start uvicorn against a persistent file-backed app. Serves HTTPS when a TLS cert+key are
+    given (the doctrine's 'plain HTTPS' transport for a cloud/multi-site pilot). Blocks until
+    shutdown."""
     app = create_app(db_path)
-    config = uvicorn.Config(app, host=host, port=port, log_level=log_level)
+    config = uvicorn.Config(
+        app, host=host, port=port, log_level=log_level,
+        ssl_certfile=tls_cert, ssl_keyfile=tls_key,
+    )
     server = uvicorn.Server(config)
     server.run()  # installs its own SIGINT handler for clean Ctrl-C shutdown
 
@@ -134,6 +140,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int, default=None, help=f"Bind port (default {env_port})")
     parser.add_argument("--db", default=None, help=f"SQLite file path (default {env_db})")
     parser.add_argument("--log-level", default="info", help="uvicorn log level (default info)")
+    parser.add_argument("--tls-cert", default=None, help="TLS cert file (serve HTTPS; pair with --tls-key)")
+    parser.add_argument("--tls-key", default=None, help="TLS key file (serve HTTPS; pair with --tls-cert)")
     args = parser.parse_args(argv)
 
     host = args.host if args.host is not None else env_host
@@ -148,13 +156,20 @@ def main(argv: list[str] | None = None) -> int:
         if port_warning:
             print(f"warning: {port_warning}", file=sys.stderr)
     db_path = _prepare_db_path(args.db if args.db is not None else env_db)
+    tls = bool(args.tls_cert and args.tls_key)
+    if bool(args.tls_cert) != bool(args.tls_key):
+        print("warning: --tls-cert and --tls-key must be given together; serving HTTP", file=sys.stderr)
+    scheme = "https" if tls else "http"
 
-    for banner_line in _banner_lines(host, port, db_path):
+    for banner_line in _banner_lines(host, port, db_path, scheme):
         print(banner_line)
     sys.stdout.flush()
 
     try:
-        _serve(host, port, db_path, args.log_level)
+        _serve(
+            host, port, db_path, args.log_level,
+            args.tls_cert if tls else None, args.tls_key if tls else None,
+        )
     except KeyboardInterrupt:
         print("\nshutting down (Ctrl-C)")
     except (OSError, sqlite3.Error) as exc:
