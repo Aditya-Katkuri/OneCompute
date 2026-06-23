@@ -1,4 +1,4 @@
-"""NightShift — full integrated live demo (the unified product).
+"""ReeveOS — full integrated live demo (the unified product).
 
 Starts a REAL signed orchestrator, serves the live dashboard, and drives every demo
 beat across a heterogeneous fleet of real HTTP workers:
@@ -29,7 +29,7 @@ import uvicorn
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from contracts import Capability, SubmitRequest  # noqa: E402
-from isolation import docker_available, isolation_proof  # noqa: E402
+from isolation import active_boundary, isolation_proof  # noqa: E402
 from orchestrator.app import create_app  # noqa: E402
 from trust import make_challenge  # noqa: E402
 from worker.agent import WorkerAgent  # noqa: E402
@@ -92,17 +92,20 @@ def main() -> None:
     port = _free_port()
     base = f"http://127.0.0.1:{port}"
     server, thread = _start_server(base, port)
-    print("\n==================  NightShift live  ==================")
+    print("\n==================  ReeveOS live  ==================")
     print(f"  Dashboard:  {base}/")
-    print(f"  Signing ON (Ed25519) | isolation: {'docker' if docker_available() else 'subprocess+JobObject'}")
-    print("======================================================\n")
+    print(f"  Signing ON (Ed25519) | isolation: {active_boundary()}")
+    print("====================================================\n")
 
     # 1. Idle fleet -----------------------------------------------------------
     honest = [
         WorkerAgent(base, Capability(worker_id="gpu-1", cpus=8, ram_gb=16.0,
-                                     has_gpu=True, accel=["cuda"], gpu_vram_gb=8)),
-        WorkerAgent(base, Capability(worker_id="cpu-1", cpus=4, ram_gb=8.0)),
-        WorkerAgent(base, Capability(worker_id="cpu-2", cpus=2, ram_gb=4.0)),
+                                     has_gpu=True, accel=["cuda"], gpu_vram_gb=8),
+                    isolated=True),
+        WorkerAgent(base, Capability(worker_id="cpu-1", cpus=4, ram_gb=8.0),
+                    isolated=True),
+        WorkerAgent(base, Capability(worker_id="cpu-2", cpus=2, ram_gb=4.0),
+                    isolated=True),
     ]
     cheater = WorkerAgent(base, Capability(worker_id="cheat-1", cpus=2, ram_gb=4.0),
                           runner=_cheat_runner)
