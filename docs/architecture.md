@@ -80,20 +80,29 @@ On startup and registration the agent reports a **resource dict** (the abstracti
 
 > **Benchmark, don't trust TOPS.** On first idle window the agent runs a short calibration job; the scheduler uses *measured* throughput for sizing and for fair reward metering.
 
-### 3.2 Idle detection (the make-or-break UX)
+### 3.2 Demand-adaptive admission (the make-or-break UX)
 
-The gate to run a job is **`idle AND on-AC AND unlocked AND CPU/GPU below cap`**. All callable from Python via `ctypes`/`pynvml`:
+NightShift doesn't just wait for a fully-idle machine — it harvests the **learned spare headroom** even during light foreground use, and backs off the instant the employee needs the machine (idea.md §5). The worker runs a **demand-adaptive governor** (`src/worker/governor.py`) over the same Win32/NVML signals, all callable from Python via `ctypes`/`pynvml`:
 
 | Signal | Win32 API | Why |
 |---|---|---|
-| Input idle (ms since last keyboard/mouse) | [`GetLastInputInfo`](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getlastinputinfo) | The primary "human away" signal. |
+| Input idle (ms since last keyboard/mouse) | [`GetLastInputInfo`](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getlastinputinfo) | The hard **"human is back"** floor → instant yield. |
+| System CPU utilization | [`GetSystemTimes`](https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-getsystemtimes) (idle/kernel/user deltas) | The live demand signal for admission + saturation yield. |
 | Lock / unlock / session change | [`WTSRegisterSessionNotification`](https://learn.microsoft.com/en-us/windows/win32/termserv/wm-wtssession-change) | **Event-driven**, sub-second "human is back" trigger. |
 | AC vs battery | [`GetSystemPowerStatus`](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getsystempowerstatus) + `RegisterPowerSettingNotification` | Enforce "never on battery". |
 | GPU utilization | [NVML / `pynvml`](https://github.com/gpuopenanalytics/pynvml) (ships with NVIDIA driver) | **Keyboard-idle ≠ GPU-idle** — a user can be away while a render/game runs. |
 
+**Two thresholds, two phases:**
+- **Admission** (between jobs, when no NightShift job runs, so live CPU ≈ the employee's own demand): admit only when on-AC, unlocked, GPU below cap, the **hour-of-week bucket has headroom**, and live CPU is below a **time-aware threshold** (`profiled_mean + margin`). This is what lets it run during *light* use, not only at full idle.
+- **Yield** (during a job, polled ~10×/s): yield once the **employee's own attributed demand** (`system − our job tree`, via `psutil`) exceeds the **time-aware yield threshold** for several samples → close the Job Object → the process tree dies sub-second → requeue, **resuming** when demand falls back into the headroom. It tolerates mere input (typing while we use spare headroom is fine); the hard *mouse-touch → instant-yield* reflex remains the binary `IdleGate`'s behavior (`--governor idle`) and the demo's explicit beat.
+
+**Usage profile (`src/worker/profiler.py`):** a rolling, **on-device** store of per-(hour-of-week) min / avg / peak CPU·GPU·RAM, learned **only from job-free samples** so the envelope reflects the *employee's* usage and not the agent's. Persisted locally (e.g. `%LOCALAPPDATA%\OneCompute`); only the derived spare-capacity number is ever advertised (idea.md §8).
+
 > ⚠️ **Session-0 bug (easy, demo-killing).** `GetLastInputInfo` is **session-specific**. If the agent runs as a SYSTEM service in session 0 it reports *always idle*. The detector **must run in the interactive user session.**
 
-**Yield path:** on any gate violation → **checkpoint-then-yield** (resumable), not hard-kill. Closing the sandbox's Job Object handle (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`) tears down the whole process tree cleanly for instant preemption.
+**Yield path:** on the mouse-touch floor or sustained saturation → **hard-kill + requeue** (the PoC's resumable story; closing the sandbox's Job Object handle, `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, tears down the whole process tree cleanly for sub-second preemption).
+
+> **PoC scope:** conservative defaults (**25%** margin, **80%** admission ceiling, **+10%** yield hysteresis, **15%** min headroom, 3 sustained samples). The employee's own demand is **attributed via `psutil`** (`user_cpu = system − our job tree`), so the governor never yields on its own load and tolerates input while harvesting headroom. A Docker job's container runs in the WSL VM (not a child process), so its CPU isn't subtracted yet — `docker stats` accounting or a Job Object **`CpuRate`** self-cap is the next refinement. Disclosed honestly.
 
 ### 3.3 Job execution & sandbox
 
