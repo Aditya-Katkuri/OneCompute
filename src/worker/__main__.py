@@ -6,10 +6,12 @@ import argparse
 import logging
 import time
 
+from isolation import active_boundary
 from worker.agent import WorkerAgent
 from worker.capability import detect_capability
 from worker.governor import AdaptiveGovernor
 from worker.idle import IdleGate
+from worker.telemetry import PilotTelemetry
 
 
 def main() -> None:
@@ -29,6 +31,12 @@ def main() -> None:
         default=True,
         help="Use the idle gate in the continuous loop",
     )
+    parser.add_argument(
+        "--telemetry",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Write local pilot telemetry (governor decisions + job results) to a JSONL file",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
@@ -44,20 +52,33 @@ def main() -> None:
         adaptive = args.governor == "adaptive"
         # The adaptive governor is a drop-in for IdleGate: same should_run()/active_now(), but
         # it admits work into the machine's learned spare headroom (runs during light use) and
-        # yields on the mouse-touch floor OR system saturation. See worker/governor.py.
+        # yields on the employee's own attributed compute demand. See worker/governor.py.
         gate = AdaptiveGovernor(idle_gate=idle_gate) if adaptive else idle_gate
+        telem = PilotTelemetry(agent.capability.worker_id, enabled=args.telemetry)
+        if args.telemetry:
+            print(f"pilot telemetry -> {telem.path}")
         while True:
-            if args.gate and not gate.should_run():
+            admitted = (not args.gate) or gate.should_run()
+            if args.telemetry:
+                snap = dict(gate.last_decision) if isinstance(gate, AdaptiveGovernor) else {}
+                snap.setdefault("admitted", bool(admitted))
+                telem.log("tick", boundary=active_boundary(), **snap)
+            if not admitted:
                 print("skip: outside headroom" if adaptive else "skip: not idle")
                 time.sleep(agent.poll_interval_s or 1.5)
                 continue
             rr = agent.run_guarded(gate) if args.gate else agent.run_once()
             if rr is None:
                 print("idle: no work")
-            elif rr.status == "yielded":
-                print(f"yielded job={rr.job_id} units={rr.units}")
             else:
-                print(f"{rr.status} job={rr.job_id} units={rr.units}")
+                if args.telemetry:
+                    telem.log("result", status=rr.status, units=rr.units,
+                              duration_s=round(rr.duration_s or 0.0, 3), job_id=rr.job_id)
+                print(
+                    f"yielded job={rr.job_id} units={rr.units}"
+                    if rr.status == "yielded"
+                    else f"{rr.status} job={rr.job_id} units={rr.units}"
+                )
             time.sleep(agent.poll_interval_s or 1.5)
     except KeyboardInterrupt:
         print("stopped")
