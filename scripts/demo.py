@@ -1,4 +1,4 @@
-"""ReeveOS — full integrated live demo (the unified product).
+"""OneCompute — full integrated live demo (the unified product).
 
 Starts a REAL signed orchestrator, serves the live dashboard, and drives every demo
 beat across a heterogeneous fleet of real HTTP workers:
@@ -131,7 +131,7 @@ def main() -> None:
     port = _free_port()
     base = f"http://127.0.0.1:{port}"
     server, thread = _start_server(base, port)
-    print("\n==================  ReeveOS live  ==================")
+    print("\n==================  OneCompute live  ==================")
     print(f"  Dashboard:  {base}/")
     print(f"  Signing ON (Ed25519) | isolation: {active_boundary()}")
     print("====================================================\n")
