@@ -103,3 +103,35 @@ can reach the port can register as a worker and submit/pull jobs. That is accept
 trusted, isolated switch for this proof-of-concept. Token/IP allow-listing and TLS are
 roadmap items, not in scope for the demo. To restrict exposure on a shared network, bind a
 specific interface instead (e.g. `--host 192.168.1.50`).
+
+## 6. Cloud (Azure VM) for a multi-site pilot
+
+When the workers are on **different networks** (e.g. 5 employees in different offices/home), host
+the orchestrator on a cloud VM with a TLS endpoint they can all reach outbound. See
+[`pilot-plan.md`](./pilot-plan.md).
+
+1. **Provision** a small VM (2 vCPU / 4 GB is plenty for ≤ a few dozen workers). In the **NSG**,
+   open the chosen inbound port **only to the pilot source IP ranges** (not the whole internet) —
+   the control plane should be reachable by the pilot machines and no one else.
+2. **TLS (required — the doctrine's "plain HTTPS" transport).** Put a cert + key on the VM (corporate
+   CA, or Let's Encrypt for an FQDN) and serve HTTPS **directly**:
+   ```bash
+   $env:PYTHONPATH = "src"   # (Linux: export PYTHONPATH=src)
+   uv run python -m orchestrator --host 0.0.0.0 --port 8443 \
+       --tls-cert /etc/onecompute/fullchain.pem --tls-key /etc/onecompute/privkey.pem \
+       --db /var/onecompute/fleet.db
+   ```
+   The banner then prints `https://…` URLs and the exact worker command. (Alternatively, front it
+   with a reverse proxy that does auto-HTTPS — e.g. Caddy reverse-proxying to a local `--port 8080`.)
+3. **Run it as a service** so it survives logout/reboot: a `systemd` unit (Linux) or NSSM (Windows),
+   pointing at the command above. State persists in the `--db` file (WAL).
+4. **Connect workers** (from each machine, see [`pilot-consent.md`](./pilot-consent.md)):
+   ```powershell
+   .\onecompute-worker.exe --url https://<vm-fqdn>:8443        # signed exe, or:
+   $env:PYTHONPATH = "src"; uv run python -m worker --url https://<vm-fqdn>:8443
+   ```
+5. **Hour-1 check** from each worker PC: `curl https://<vm-fqdn>:8443/healthz` → `{"ok":true}`.
+
+> **Security:** a cloud-hosted control plane is internet-adjacent. Lock the NSG to pilot source IPs,
+> use a real (non-self-signed) cert so workers validate it, and treat token/identity auth as the
+> immediate hardening step beyond this pilot (idea.md §8 — pass, not bypass).
