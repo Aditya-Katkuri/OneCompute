@@ -700,8 +700,12 @@
       if (w.blacklisted) return "blacklisted";
       if ((yieldedUntil.get(w.worker_id) || 0) > Date.now()) return "yielded";
       if (w.busy) return "busy";
-      if (w.idle) return "idle";
-      return "unavailable";
+      // Every worker present in /state is alive in this PoC (the orchestrator exposes no
+      // heartbeat-staleness signal), and the legend defines only idle/busy/yielded/
+      // blacklisted. A registered, non-busy worker therefore reads as idle rather than a
+      // misleading "offline" — which previously flashed between job cycles before the
+      // worker's next idle heartbeat landed.
+      return "idle";
     }
     const STATE_LABEL = {
       idle: "Idle", busy: "Working", yielded: "Yielded",
