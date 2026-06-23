@@ -110,21 +110,6 @@ def _stage_payload(work_dir: Path) -> None:
         shutil.copy2(SRC_DIR / "jobkit" / name, jobkit_dir / name)
 
 
-def _docker_kill_once(name: str) -> bool:
-    """Best-effort single ``docker kill``. Returns True only if it reports success."""
-    try:
-        proc = subprocess.run(
-            ["docker", "kill", name],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except Exception:
-        return False
-    return proc.returncode == 0
-
-
 def _docker_force_remove(name: str) -> None:
     """Last-resort ``docker rm -f`` so a named container can never linger."""
     try:
@@ -166,16 +151,17 @@ def _ensure_image() -> None:
 def _stop_container(name: str, proc: subprocess.Popen) -> None:
     """Stop the named container sub-second, tolerating the run/kill race.
 
-    ``docker run`` may not have registered the container the instant we want to kill it
-    (or it may register slightly late), so we keep issuing ``docker kill``/``docker rm -f``
-    while the run process is still alive, then guarantee a final force-removal. ``rm -f``
-    stops *and* removes a running container, so the container can never survive to run to
-    completion once we've decided to preempt.
+    ``docker run`` may not have registered the container the instant we want to kill it (or
+    it may register slightly late), so we keep issuing ``docker rm -f`` while the run process
+    is still alive, then guarantee a final force-removal. A single ``docker rm -f`` both
+    SIGKILLs *and* removes a running container in one CLI invocation, so we pay only one
+    ``docker`` process spawn per attempt (not a ``kill`` *and* a ``rm``) — meaningfully faster
+    on Windows, where each docker CLI invocation has notable startup cost. The container can
+    never survive to run to completion once we've decided to preempt.
     """
     deadline = time.monotonic() + _CONTAINER_STOP_DEADLINE_S
     while proc.poll() is None:
-        _docker_kill_once(name)
-        _docker_force_remove(name)
+        _docker_force_remove(name)  # SIGKILL + remove in a single docker invocation
         try:
             proc.wait(timeout=0.2)
         except Exception:
