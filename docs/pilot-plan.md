@@ -39,7 +39,10 @@ their spare headroom and yields the instant *their* compute demand rises.
 
 - **Preferred:** a **code-signed worker `.exe`** (PyInstaller) → enables AV allow-listing by
   publisher/hash and matches §8 "code-signed." Distribute the exe + its SHA-256 to IT.
-- **Fallback:** user-space Python (winget/uv, no admin) → `python -m worker --url https://… --governor adaptive`.
+- **Fallback (verified to run on a managed machine):** user-space Python (winget/uv, no admin) →
+  `python -m worker --url https://… --governor adaptive`. *(In testing the **unsigned exe was
+  blocked by Application Control** while the from-source path under the allowed uv Python ran — so
+  until the exe is corp-signed, use this path. Build/sign instructions: `scripts/build_worker_exe.ps1`.)*
 - **Isolation reality on managed machines:** Docker/Windows-Sandbox are usually unavailable / need
   admin → the agent **gracefully falls back to subprocess + Windows Job Object** (no admin), honestly
   reported by `active_boundary()`. Record each machine's boundary.
