@@ -9,7 +9,7 @@
 
 Every large company already owns a second supercomputer. It's just scattered across tens of thousands of employee laptops and desktops that sit idle overnight, on weekends, and through the long stretches of the day when they're only running a browser and a chat app.
 
-**NightShift** harvests that idle capacity. Employees opt in; NightShift runs sandboxed workloads on their machines *only when the machine is otherwise idle*; employees earn rewards (points, gift cards, subscriptions) for the compute they contribute. The company gets a low-marginal-cost pool of compute that can absorb work it would otherwise pay a cloud provider to run.
+**NightShift** harvests that spare capacity. Employees opt in; NightShift runs sandboxed workloads in the machine's **spare compute headroom** — not only when it is fully idle, but *continuously*, sized to a learned per-machine usage profile so it rides the gap between what the employee actually uses and what the hardware can do, and **instantly steps aside** the moment their own work needs the capacity. Employees earn rewards (points, gift cards, subscriptions) for the compute they contribute. The company gets a low-marginal-cost pool of compute that can absorb work it would otherwise pay a cloud provider to run.
 
 It is, in spirit, **BOINC / Folding@home for the internal AI-PC era** — but internal, incentivized, governed, and built for both AI and non-AI jobs. The closest commercial blueprint is **[Salad](https://salad.com/security)** (idle consumer GPUs → a paid compute cloud); NightShift's delta is *internal-only*, which buys a higher trust baseline and a cleaner privacy story.
 
@@ -88,10 +88,21 @@ A three-sided system:
 3. **Submitters & rewards** — internal teams submit jobs; contributing employees accrue reward points redeemable for gift cards, subscriptions, or perks.
 
 ### Design pillars
-- **Opt-in and idle-only.** NightShift never competes with the employee's own work. It yields the *instant* the human comes back — this unobtrusiveness, not raw throughput, is what made or broke every prior enterprise grid (see [HTCondor](https://en.wikipedia.org/wiki/HTCondor), [MSR Cyclotron](https://www.microsoft.com/en-us/research/publication/cyclotron-a-secure-isolated-virtual-cycle-scavenging-grid-in-the-enterprise-2/)).
+- **Opt-in and demand-adaptive — never competes with the user.** NightShift doesn't just wait for a fully-idle machine; it continuously harvests the **spare headroom** that exists even while someone works, sized to a learned per-machine usage profile, and **steps aside sub-second** the moment their own work needs the capacity. This unobtrusiveness — *always backing off under real load* — not raw throughput, is what made or broke every prior enterprise grid (see [HTCondor](https://en.wikipedia.org/wiki/HTCondor), [MSR Cyclotron](https://www.microsoft.com/en-us/research/publication/cyclotron-a-secure-isolated-virtual-cycle-scavenging-grid-in-the-enterprise-2/)).
 - **Win-win incentives.** The company offloads cost; employees get tangible rewards for compute they weren't using.
 - **Privacy-preserving on both sides.** The worker's data is never exposed to jobs; the job's data is never exposed to the worker (see §8).
 - **Heterogeneous by design.** CPU *and* GPU (NPU later); AI *and* non-AI workloads.
+
+### Demand-adaptive headroom harvesting (beyond idle-only)
+
+First-generation cycle-scavengers (HTCondor, SETI@home) were **binary**: run flat-out when the machine is idle, freeze the instant a key is pressed. NightShift goes further — it treats each machine's spare capacity as a **continuously-managed budget**, so useful work keeps flowing even during light foreground use (a browser, a chat app, a doc) instead of the machine sitting dark until 2 a.m.
+
+- **Profile, don't guess.** The agent observes the machine over a **rolling window (≈30 days)** and learns its real usage envelope — the **min / average / peak** CPU, GPU, NPU, and RAM the employee actually consumes, bucketed by time-of-day and day-of-week (local-only telemetry; see §8).
+- **Size the always-on allocation to the headroom.** From that profile NightShift computes a **right-sized background allocation** that lives in the gap between the employee's typical demand *right now* and the hardware ceiling — so a machine can contribute *through the working day*, not only when fully idle, while leaving comfortable margin for the person.
+- **Throttle / yield on live demand, resume after.** A fast control loop watches real-time utilization; when the employee's own usage rises past a **time-aware threshold** (derived from their profile), NightShift **throttles down or kills** the job sub-second and **requeues it elsewhere**, then **resumes** once demand falls back into the headroom. The hard *"human touched the mouse → instant yield"* reflex is the **floor** of this behavior, not the whole of it.
+- **Conservative by construction.** Employee caps, schedules, *never-on-battery*, and instant opt-out still bound everything; the adaptive budget only ever **shrinks** the footprint when the person is active and only **grows** into capacity that would otherwise be wasted — it never trades the employee's experience for throughput.
+
+> **Why it matters:** a laptop running a browser is ~90% idle, not 0% — idle-only harvesting leaves most of the day on the table. Headroom harvesting reclaims that continuously, multiplying harvested compute-hours per machine, *without* degrading the employee's experience, because it is governed by their own learned demand. (**Implementation status:** the PoC ships the binary instant-yield *floor* today; the rolling-window profiler + adaptive governor are the next build — see `architecture.md` §3.2.)
 
 ---
 
@@ -140,6 +151,7 @@ Two trust boundaries; both must hold.
 - Every job runs in a **per-job sandbox** (Hyper-V-isolated, constrained filesystem & network, resource caps).
 - Jobs ship as **signed manifests** ([Sigstore cosign](https://github.com/sigstore/cosign)); the worker verifies *code hash + data hash + resource limits + sandbox policy* before executing, so a compromised orchestrator or MITM can't inject runnable code (the [BOINC code-signing pattern](https://github.com/BOINC/boinc/wiki/SecurityIssues)).
 - **No persistence:** job inputs/outputs are wiped when the job ends.
+- **On-device profiling only.** The rolling-window usage profile that sizes the headroom budget (see §5) is computed and stored **locally on the employee's machine**; only the derived spare-capacity advertisement ever leaves it — never raw keystroke/activity telemetry.
 
 **Protecting the job (and its data) from the worker:**
 - **Data minimization** — send only what a shard needs.
@@ -172,7 +184,7 @@ A small but *real* end-to-end slice that proves the concept:
 
 1. **Cryptojacking false-positive / endpoint-stack collision** *(highest — demo-blocking on managed machines).* Must be signed, Intune-deployed, AV allow-listed before any demo. See §8.
 2. **Verification cost eating the value prop.** Lean on internal-trust baseline: adaptive replication + challenge tasks, not blanket replication.
-3. **Unobtrusiveness / instant yield.** Idle gate must check **CPU+GPU** util, not just keyboard idle (a user can be away while a render runs). Beware the **session-0 idle-detection bug** (see architecture).
+3. **Unobtrusiveness / the demand-adaptive governor.** The control loop must watch **CPU+GPU(+NPU)+RAM** utilization against the machine's **learned, time-aware usage profile** — throttling or yielding sub-second when the employee's demand rises and resuming after — not just keyboard idle (a user can be *away* while a render runs, or *present* with plenty of headroom). Beware the **session-0 idle-detection bug** (see architecture); the adoption-killer is mis-sizing the budget too greedily, so default conservative and back off fast.
 4. **Churn as the default.** Laptops sleep, users return — checkpoint + requeue, don't assume the happy path.
 5. **Privacy leakage through intermediate state**, not just inputs (Petals shows activations leak to hosts). Scope which job classes are safe to schedule.
 6. **Transport silently failing on demo day** (gRPC/WebSocket blocked by proxies). Validate plain-HTTPS long-poll on the real LAN early.
