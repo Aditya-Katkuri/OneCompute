@@ -1,0 +1,61 @@
+[project]
+name = "nightshift"
+version = "0.1.0"
+description = "Let your compute work when you are not — distributed workloads across an idle PC/GPU fleet."
+requires-python = ">=3.11"
+# Dependency set borrowed from the CoworkBench repo so NightShift starts with
+# the same working toolbox (HTTP/LLM clients, data + document handling, web API).
+dependencies = [
+    "anthropic>=0.30.0",
+    "azure-identity>=1.25.3",
+    "fastapi>=0.136.3",
+    "matplotlib>=3.8.0",
+    "openai>=1.0.0",
+    "openpyxl>=3.1.0",
+    "pandas>=2.2.0",
+    "Pillow>=10.0.0",
+    "playwright>=1.40.0",
+    "pyarrow>=17.0.0",
+    "pydantic>=2.0.0",
+    "pymupdf>=1.24.0",
+    "pypdf>=6.12.2",
+    "python-docx>=1.1.0",
+    "python-dotenv>=1.0.0",
+    "python-pptx>=1.0.0",
+    "pyyaml>=6.0",
+    "reportlab>=4.0.0",
+    "tenacity>=8.0.0",
+    "uvicorn>=0.48.0",
+]
+
+[project.optional-dependencies]
+# Install with: `uv sync --extra dev`
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.5",
+]
+
+[tool.uv]
+# NightShift has no installable package yet (no src/ layout); treat it as an
+# application project so `uv sync` only installs dependencies.
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+filterwarnings = [
+    "ignore::DeprecationWarning:pydantic.*",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP"]
+ignore = [
+    "E501",  # line-length handled by formatter when needed
+    "B008",  # FastAPI-style Depends(...) defaults
+]
