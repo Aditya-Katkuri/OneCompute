@@ -6,7 +6,7 @@ import asyncio
 import logging
 import threading
 from time import perf_counter
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -20,7 +20,12 @@ from contracts import (
     ResultResponse,
     sha256_hex,
 )
+from isolation import run_in_isolation
+from trust import verify_manifest
 from worker.runner import default_runner
+
+if TYPE_CHECKING:
+    from worker.idle import IdleGate
 
 logger = logging.getLogger(__name__)
 
@@ -32,13 +37,20 @@ class WorkerAgent:
         capability: Capability,
         runner=default_runner,
         client: httpx.Client | None = None,
+        verify: bool = True,
+        isolated: bool = False,
     ) -> None:
         self.base_url = base_url
         self.capability = capability
         self.runner = runner or default_runner
         self.client = client or httpx.Client(base_url=base_url, timeout=10.0)
         self._owns_client = client is None
+        self.verify = verify
+        self.isolated = isolated
         self._yield = threading.Event()
+        self._job_running = threading.Event()
+        self._yield_watcher_stop = threading.Event()
+        self._yield_watcher_thread: threading.Thread | None = None
         self.should_yield = self._yield.is_set
         self.worker_token: str | None = None
         self.poll_interval_s: float | None = None
@@ -105,11 +117,44 @@ class WorkerAgent:
             logger.warning("worker poll failed: %s", exc)
             return None
 
+    def _verify_assignment(self, assignment: JobAssignment) -> tuple[bool, str]:
+        """Refuse tampered work before executing: signature + input-hash checks."""
+        sm = assignment.signed_manifest
+        manifest = sm.manifest
+        if sm.signature and not verify_manifest(sm):
+            return False, "bad_signature"
+        if manifest.input_sha256 and sha256_hex(assignment.input) != manifest.input_sha256:
+            return False, "input_hash_mismatch"
+        return True, ""
+
     def run_job(self, assignment: JobAssignment) -> ResultRequest:
         manifest = assignment.signed_manifest.manifest
         t0 = perf_counter()
+        if self.verify:
+            ok, reason = self._verify_assignment(assignment)
+            if not ok:
+                refused = {"error": f"verification failed: {reason}"}
+                logger.warning("worker refused job %s: %s", manifest.job_id, reason)
+                return ResultRequest(
+                    worker_id=self.capability.worker_id,
+                    job_id=manifest.job_id,
+                    status="failed",
+                    output=refused,
+                    proof_sha256=sha256_hex(refused),
+                    duration_s=perf_counter() - t0,
+                    units=1,
+                )
+        self._job_running.set()
         try:
-            out = self.runner(manifest, assignment.input, should_yield=self.should_yield)
+            if self.isolated:
+                out = run_in_isolation(
+                    manifest.kind,
+                    assignment.input,
+                    manifest.limits,
+                    should_yield=self.should_yield,
+                )
+            else:
+                out = self.runner(manifest, assignment.input, should_yield=self.should_yield)
             yielded = bool(out.get("yielded"))
             status = "yielded" if yielded else "completed"
         except Exception as exc:
@@ -117,6 +162,7 @@ class WorkerAgent:
             out = {"error": str(exc)}
             status = "failed"
         finally:
+            self._job_running.clear()
             self._yield.clear()
         units = len(assignment.input.get("items", [])) or 1
         return ResultRequest(
@@ -171,7 +217,47 @@ class WorkerAgent:
         self.report_result(rr)
         return rr
 
+    def start_yield_watcher(self, gate: IdleGate, poll_s: float = 0.1) -> None:
+        """Set the yield flag quickly when fresh human input is observed during a job."""
+        self.stop_yield_watcher()
+        self._yield_watcher_stop.clear()
+
+        def watch() -> None:
+            while not self._yield_watcher_stop.wait(max(0.01, poll_s)):
+                try:
+                    if self._job_running.is_set() and gate.active_now():
+                        self._yield.set()
+                except Exception:
+                    continue
+
+        self._yield_watcher_thread = threading.Thread(
+            target=watch,
+            name="nightshift-yield-watcher",
+            daemon=True,
+        )
+        self._yield_watcher_thread.start()
+
+    def stop_yield_watcher(self) -> None:
+        self._yield_watcher_stop.set()
+        thread = self._yield_watcher_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=1.0)
+        self._yield_watcher_thread = None
+
+    def trigger_yield(self) -> None:
+        self._yield.set()
+
+    def run_guarded(self, gate: IdleGate) -> ResultRequest | None:
+        if not gate.should_run():
+            return None
+        self.start_yield_watcher(gate)
+        try:
+            return self.run_once()
+        finally:
+            self.stop_yield_watcher()
+
     def close(self) -> None:
+        self.stop_yield_watcher()
         try:
             self.client.close()
         except AttributeError:

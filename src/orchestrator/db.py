@@ -4,7 +4,8 @@ import sqlite3
 import threading
 from pathlib import Path
 
-write_lock = threading.Lock()
+# Re-entrant so event emits can nest inside an already-held write section on the same thread.
+write_lock = threading.RLock()
 
 
 def init_db(db_path: str = ":memory:") -> sqlite3.Connection:
