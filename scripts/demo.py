@@ -17,6 +17,7 @@ Run:
 from __future__ import annotations
 
 import argparse
+import random
 import socket
 import sys
 import threading
@@ -28,7 +29,7 @@ import uvicorn
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from contracts import Capability, SubmitRequest  # noqa: E402
+from contracts import Capability, HeartbeatRequest, SubmitRequest  # noqa: E402
 from isolation import active_boundary, isolation_proof  # noqa: E402
 from orchestrator.app import create_app  # noqa: E402
 from trust import make_challenge  # noqa: E402
@@ -84,6 +85,43 @@ def _credits(base: str) -> dict:
     return {w["worker_id"]: w for w in httpx.get(f"{base}/state", timeout=5).json()["workers"]}
 
 
+def _start_heartbeat_pulse(base, workers, stop_event):
+    """Keep the dashboard lively: mirror each honest worker's real busy/idle state (from
+    /state) into plausible cpu/gpu heartbeats. Decoupled from job execution and never sends
+    current_job_id or free_ram, so it cannot perturb leasing, scheduling, or RAM gating."""
+    gpu_ids = {w.capability.worker_id for w in workers if w.capability.has_gpu}
+    ids = [w.capability.worker_id for w in workers]
+
+    def pulse():
+        while not stop_event.is_set():
+            try:
+                rows = httpx.get(f"{base}/state", timeout=2).json().get("workers", [])
+                busy = {w["worker_id"]: w["busy"] for w in rows}
+                for wid in ids:
+                    is_busy = busy.get(wid, False)
+                    cpu = random.uniform(55, 92) if is_busy else random.uniform(1, 8)
+                    gpu = None
+                    if wid in gpu_ids:
+                        gpu = random.uniform(72, 96) if is_busy else random.uniform(0, 5)
+                    httpx.post(
+                        f"{base}/heartbeat",
+                        json=HeartbeatRequest(
+                            worker_id=wid,
+                            idle=not is_busy,
+                            cpu_pct=round(cpu, 1),
+                            gpu_pct=round(gpu, 1) if gpu is not None else None,
+                        ).model_dump(),
+                        timeout=2,
+                    )
+            except Exception:
+                pass
+            stop_event.wait(0.45)
+
+    thread = threading.Thread(target=pulse, name="reeveos-heartbeat-pulse", daemon=True)
+    thread.start()
+    return thread
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-hold", action="store_true", help="exit after the beats instead of holding")
@@ -111,6 +149,8 @@ def main() -> None:
                           runner=_cheat_runner)
     for w in (*honest, cheater):
         w.register()
+    pulse_stop = threading.Event()
+    _start_heartbeat_pulse(base, honest, pulse_stop)
     print("1. Idle fleet registered: gpu-1, cpu-1, cpu-2 (+ a lurking cheat-1)\n")
 
     # 2. CPU fan-out vs the ghost bar ----------------------------------------
@@ -170,6 +210,7 @@ def main() -> None:
           f" | events={events}")
     print("\n   Theoretical ceiling (full Copilot+ fleet, NPU INT8): 1.8 ExaOPS - see docs/idea.md sec 4.")
 
+    pulse_stop.set()
     for w in (*honest, cheater):
         w.close()
     if args.no_hold:
