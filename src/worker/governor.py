@@ -116,6 +116,7 @@ class AdaptiveGovernor:
         self.sustained_samples = sustained_samples
         self.require_ac = require_ac
         self._over = 0  # consecutive samples with user demand over the yield threshold
+        self.last_decision: dict = {}  # readings from the last should_run(), for telemetry
         self._cpu = SystemCpuSampler()  # ctypes fallback when psutil is unavailable
         self._cpu.sample()
         self._proc = None
@@ -194,19 +195,26 @@ class AdaptiveGovernor:
         """Admit work into the spare headroom -- runs during LIGHT foreground use, not only at
         full idle. Called between jobs (no job running) so user demand ~= system CPU. Decides
         against the CURRENT profile, THEN folds the sample in, so a cold/just-reset bucket can't
-        authorize itself. Never raises."""
+        authorize itself. Records the readings in ``last_decision`` for telemetry. Never raises."""
         try:
             if self.require_ac and not self.gate.on_ac():
+                self.last_decision = {"admitted": False, "reason": "on_battery"}
                 return False
             if self.gate.locked() or self.gate.gpu_busy():
+                self.last_decision = {"admitted": False, "reason": "locked_or_gpu"}
                 return False
             headroom = self.headroom_now(when)          # pre-update profile
             threshold = self.admission_threshold(when)  # pre-update profile
             demand = self.user_cpu()
             self.profiler.record(demand, system_gpu_load_pct(), system_ram_load_pct(), when=when)
-            if headroom < self.min_headroom_pct:
-                return False
-            return demand < threshold
+            admitted = headroom >= self.min_headroom_pct and demand < threshold
+            self.last_decision = {
+                "admitted": admitted,
+                "user_cpu": round(demand, 1),
+                "headroom": round(headroom, 1),
+                "admission_threshold": round(threshold, 1),
+            }
+            return admitted
         except Exception:
             return False
 
