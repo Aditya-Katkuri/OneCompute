@@ -8,6 +8,8 @@
 
 3. **“And it also does AI” (1:40–2:25)** — Submit the `ai.batch_infer` prompt slices. Explain that each worker gets a small independent prompt batch through the SDK when keys are present, with a disclosed fallback if no provider key is configured. Keep this secondary: the CPU fan-out is the reliable throughput beat.
 
+3b. **GPU host-side — real CUDA, pure upside (~20s)** — Submit `render` jobs (`needs_gpu`). The scheduler routes them **only** to the GPU worker, which runs them **host-side under a Job Object** — never in a Linux container, which has no CUDA device (GPU-in-container/Sandbox is broken, architecture.md §3.3). On a GPU demo machine the worker reports `accelerator=cuda` + the device name + live `pynvml` utilization; on a CPU-only box it **honestly discloses** `accelerator=cpu-fallback` (it never claims GPU work that didn't happen). The GPU worker earns at the 5× class weight, so its credits climb fastest.
+
 4. **Instant yield (2:25–3:05)** — Trigger foreground activity / yield. Call out the tile changing to amber and the work being requeued instead of fighting the user. The money shot: the employee stays in control.
 
 5. **Caught a cheater (3:05–3:35)** — Run the challenge/ringer beat. A wrong result is rejected, the worker is blacklisted, and points are forfeited. Emphasize that rewards are based on verified results, not self-reported performance.
