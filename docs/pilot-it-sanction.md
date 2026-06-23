@@ -13,6 +13,13 @@ headroom**, paying employees points for verified work. Internal-only; no externa
   provided below for allow-listing.
 - **Footprint:** outbound HTTPS only; one local profile file under `%LOCALAPPDATA%\OneCompute`.
 
+> **Empirical note (verified on a managed machine, 2026-06-23):** the *unsigned*
+> `onecompute-worker.exe` was **blocked by Application Control** at launch —
+> `LoadLibrary: An Application Control policy has blocked this file` (its bundled Python DLL).
+> This **confirms the allow-listing request below is required**: the binary must be
+> **corp-code-signed and/or publisher-allow-listed** to run. As an interim, running the agent
+> **from source under an already-allowed Python** (uv/winget) executed normally.
+
 ## 2. Why it can look like cryptojacking (and why this pilot is safe)
 Sustained CPU/GPU is the cryptojacking signature, so Defender may flag it. Mitigations:
 - **Opt-in only**, on **5 named machines**, **time-boxed**, supervised, with a kill switch.
@@ -61,7 +68,7 @@ validates unobtrusiveness + safety at small scale before any of that.
 
 ### Allow-list details (filled at build time)
 - **Binary:** `onecompute-worker.exe`
-- **SHA-256:** `<inserted from the build — see scripts/build_worker_exe.* output / dist hash>`
+- **SHA-256 (current unsigned build):** `CABE875918D7BCEAAD86EC4A8169627B2BF0D1FE2D69EA900AE1425AC1B68D21` *(re-hash after corp signing)*
 - **Authenticode publisher:** `<corp code-signing cert subject>` *(the pilot lead will sign with the
   corporate cert; an unsigned build + hash is available for hash-based allow-listing in the interim)*
 - **Version / build date:** `<filled at build>`
