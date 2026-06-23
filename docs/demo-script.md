@@ -1,8 +1,8 @@
-# NightShift demo script
+# ReeveOS demo script
 
 ## 4–5 minute run-of-show
 
-1. **Idle fleet (0:00–0:35)** — Open the dashboard at `/`. Show worker tiles, CPU/GPU badges, zero or current credits, and the live `/state` status. Set the frame: NightShift harvests opt-in idle machines and credits only accepted useful work.
+1. **Idle fleet (0:00–0:35)** — Open the dashboard at `/`. Show worker tiles, CPU/GPU badges, zero or current credits, and the live `/state` status. Set the frame: ReeveOS harvests opt-in idle machines and credits only accepted useful work.
 
 2. **Fan-out vs ghost bar (0:35–1:40)** — Submit the CPU fan-out `data.transform` workload. Narrate the tiles flipping idle → busy, completed jobs rising, and total credits ticking. Point to the grey **1 machine baseline** ghost bar and the live **fleet observed** bar: the claim is measured wall-clock throughput for this run, not theoretical TOPS.
 
@@ -12,7 +12,7 @@
 
 5. **Caught a cheater (3:05–3:35)** — Run the challenge/ringer beat. A wrong result is rejected, the worker is blacklisted, and points are forfeited. Emphasize that rewards are based on verified results, not self-reported performance.
 
-6. **Isolation proof (3:35–4:15)** — Show the sandbox or Docker proof: no host profile access / no network / wiped state. Be precise: CPU isolation is real in the demo path; GPU PoC control uses host-side Job Objects and stronger confidential GPU isolation is roadmap.
+6. **Isolation proof (3:35–4:15)** — Every honest worker now executes its jobs through the real isolation boundary: a Docker-per-job Linux container (`--network none`, read-only staged payload, `--rm`) when the engine is healthy, otherwise a restricted subprocess under a Windows Job Object. The demo banner and dashboard report the live boundary via `active_boundary()`. Show the proof: no host-profile access / no network / wiped state — and note the instant-yield kill (beat 4) is a real container/process-tree kill, not a pause. Be precise: CPU isolation is real on the demo path; GPU PoC control uses host-side Job Objects, and stronger confidential-GPU isolation is roadmap.
 
-7. **Close: measured vs ceiling (4:15–5:00)** — End on two separate numbers: the theoretical Copilot+ NPU ceiling (for example, 40,000 devices × ~45 TOPS ≈ 1.8 ExaOPS peak INT8) and today’s measured harvested throughput from the live demo. The pitch: NightShift is delay-tolerant internal batch capacity, not magic free ExaOPS.
+7. **Close: measured vs ceiling (4:15–5:00)** — End on two separate numbers: the theoretical Copilot+ NPU ceiling (for example, 40,000 devices × ~45 TOPS ≈ 1.8 ExaOPS peak INT8) and today’s measured harvested throughput from the live demo. The pitch: ReeveOS is delay-tolerant internal batch capacity, not magic free ExaOPS.
 
