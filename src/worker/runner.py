@@ -1,21 +1,12 @@
-"""Default Phase-1 chunked job runner."""
+"""Worker job runner — a thin wrapper over the shared `jobkit` so that in-process
+execution (here) and isolated execution (T3, via `python -m jobkit`) are identical."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
 
-from contracts import JobManifest, sha256_hex
-
-
-def _transform_item(item: Any, op: str) -> Any:
-    if op == "sha256":
-        return sha256_hex(item)
-    if op == "upper":
-        return str(item).upper()
-    if op == "square":
-        return item * item
-    raise ValueError(f"unknown data.transform op: {op}")
+from contracts import JobManifest
+from jobkit.execute import execute
 
 
 def default_runner(
@@ -23,21 +14,6 @@ def default_runner(
     input: dict,
     should_yield: Callable[[], bool] = lambda: False,
 ) -> dict:
-    """Run a built-in job in small chunks, honoring yield requests between chunks."""
-    if manifest.kind == "data.transform":
-        items = list(input.get("items", []))
-        op = input.get("op")
-        results = []
-        chunk_size = 1
-        for start in range(0, len(items), chunk_size):
-            chunk = items[start : start + chunk_size]
-            results.extend(_transform_item(item, op) for item in chunk)
-            if should_yield():
-                return {"results": results, "yielded": True}
-        return {"results": results, "yielded": False}
+    """Run a built-in job via the shared kit, honoring yield requests between chunks."""
+    return execute(manifest.kind, input, should_yield)
 
-    if manifest.kind == "challenge":
-        x = int(input["x"])
-        return {"y": x * x + 1}
-
-    raise ValueError(f"unknown job kind: {manifest.kind}")

@@ -74,3 +74,47 @@ uv = C:\Users\t-cfinney\AppData\Local\Programs\Python\Python312-arm64\Scripts\uv
 & $uv run uvicorn orchestrator.app:create_app --factory --port 8080   # run orchestrator (PYTHONPATH=src)
 & $uv run python -m worker --url http://127.0.0.1:8080                 # run a worker
 ```
+
+---
+
+## 5. Phase-2 seams (FROZEN)
+
+### 5.1 Shared execution — `jobkit` (COS-owned, DONE)
+- `from jobkit.execute import execute` → `execute(kind: str, input: dict, should_yield=lambda: False) -> dict`.
+  The single source of truth for executing a job kind. Used in-process by the worker **and** inside the
+  sandbox by isolation, so a job's result is identical either way.
+- Sandbox entrypoint: `python -m jobkit <in.json> <out.json>` (in.json = `{"kind","input"}`). Requires
+  `src` on `PYTHONPATH` (the caller — T3 — sets it when spawning).
+- Output shapes: `data.transform`→`{"results":[...], "yielded": bool}`; `challenge`→`{"y": int}`;
+  `ai.batch_infer`→`{"results":[{"prompt","completion","tokens"}], "backend":"openai|anthropic|fallback", "yielded": bool}`.
+
+### 5.2 `ai.batch_infer` input (T5 generates → jobkit executes)
+`input = {"prompts": [str, ...], "model": str?, "max_tokens": int=64}`. Each worker scores a *slice* of the
+prompt set; real SDK call if `OPENAI_API_KEY`/`ANTHROPIC_API_KEY` is set, else a disclosed token-proportional fallback.
+
+### 5.3 Trust — `src/trust/` (T4 owns)
+```python
+from trust import Signer, verify_manifest, make_challenge, check_challenge
+# Signer(private_key_hex: str | None = None): .public_key_hex; .sign(m: JobManifest) -> SignedManifest
+#   (Ed25519 over contracts.canonical_bytes(m.model_dump()))
+# verify_manifest(sm: SignedManifest) -> bool   (empty signature is INVALID once signing is on)
+# make_challenge() -> tuple[dict, dict]          (job_input, expected_output) for a `challenge` job
+# check_challenge(output: dict, expected: dict) -> bool   (exact, integer — no FP)
+```
+Integration (Wave B, COS): `create_app(signer=Signer())` signs on assignment; the worker calls
+`verify_manifest(sm)` **and** checks `sha256_hex(input) == manifest.input_sha256` before running (tamper-refusal).
+
+### 5.4 Isolation — `src/isolation/` (T3 owns)
+```python
+from isolation import run_in_isolation, isolation_proof, JobHandle
+# run_in_isolation(kind: str, input: dict, limits: Limits, should_yield=lambda: False) -> dict
+#   executes the job via jobkit inside a boundary: Docker (--network none, ro mounts, --rm) if available,
+#   else a restricted subprocess under a Windows Job Object (CPU/mem cap + KILL_ON_JOB_CLOSE).
+# isolation_proof() -> dict   evidence the sandbox cannot read the host user profile (demo beat)
+# JobHandle.kill()            closes the Job Object handle -> process tree dies sub-second (powers T2 yield)
+```
+
+### 5.5 Dashboard read models (T1 serves → T5 reads)
+- `GET /state` → `FleetState` (exists).
+- `GET /events?since=<id>` → `{"events":[{"id","ts","type":"submitted|assigned|completed|yielded|blacklisted",
+  "worker_id","job_id","detail"}], "last_id": int}` — COS adds this in integration for the live activity feed.
