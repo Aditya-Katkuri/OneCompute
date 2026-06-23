@@ -29,9 +29,9 @@ from orchestrator.submit import submit_job        # submit_job(conn, req: Submit
 - `create_app` wires routes over a single SQLite connection/path. A background (or on-demand) **reaper**
   requeues jobs whose `lease_expires` has passed (state `leased` → `queued`, `assigned_worker=NULL`).
 - Scheduler: capability bin-fit (`Requires` vs `Capability`); never hand a `needs_gpu` job to a CPU-only worker.
-  Matched dimensions: `needs_gpu`, `min_vram_gb`, `min_ram_gb`, `min_cpus`, `accel`. **PoC note:** `min_ram_gb`
-  is matched against the worker's *total* advertised `ram_gb`; real-time *free*-RAM gating (worker reports free
-  RAM in `/heartbeat`) is a Phase-2 refinement.
+  Matched dimensions: `needs_gpu`, `min_vram_gb`, `min_ram_gb`, `min_cpus`, `accel`. `min_ram_gb` is gated on the
+  worker's **live free RAM** — reported at registration (`Capability.free_ram_gb`) and refreshed every
+  `/heartbeat` (`HeartbeatRequest.free_ram_gb`) — falling back to total `ram_gb` until the first heartbeat.
 - On accepted result: `credits = units * class_weight`, written to `ledger`; job → `completed`.
 
 **T2 — worker** (`src/worker/`)

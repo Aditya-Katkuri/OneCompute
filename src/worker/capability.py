@@ -36,6 +36,23 @@ def _ram_gb() -> float:
     return 8.0
 
 
+def _free_ram_gb() -> float | None:
+    try:
+        if os.name == "nt":
+            status = _MemoryStatusEx()
+            status.dwLength = ctypes.sizeof(_MemoryStatusEx)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):  # type: ignore[attr-defined]
+                return round(float(status.ullAvailPhys) / (1024**3), 2)
+    except Exception:
+        pass
+    return None
+
+
+def free_ram_gb() -> float | None:
+    """Currently-available physical RAM in GB (None if undetectable). Re-read each heartbeat."""
+    return _free_ram_gb()
+
+
 def _gpu_info() -> tuple[bool, str | None, float | None, list[str]]:
     try:
         import pynvml  # type: ignore[import-not-found]
@@ -68,6 +85,7 @@ def detect_capability(worker_id: str | None = None) -> Capability:
             worker_id=resolved_worker_id,
             cpus=os.cpu_count() or 1,
             ram_gb=_ram_gb(),
+            free_ram_gb=_free_ram_gb(),
             has_gpu=has_gpu,
             gpu_model=gpu_model,
             gpu_vram_gb=gpu_vram_gb,
