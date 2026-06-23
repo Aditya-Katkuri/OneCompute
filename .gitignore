@@ -34,3 +34,6 @@ Thumbs.db
 
 # pytest cache
 .pytest_cache/
+
+# PyInstaller generated spec
+onecompute-worker.spec

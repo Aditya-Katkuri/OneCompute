@@ -37,10 +37,17 @@ def main() -> None:
         default=True,
         help="Write local pilot telemetry (governor decisions + job results) to a JSONL file",
     )
+    parser.add_argument(
+        "--isolated",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Run jobs sandboxed (Docker/Job-Object). Also lets the governor attribute the job's "
+             "own CPU (a child process) so it never yields on its own load. Default on.",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
-    agent = WorkerAgent(args.url, detect_capability())
+    agent = WorkerAgent(args.url, detect_capability(), isolated=args.isolated)
     gate: IdleGate | AdaptiveGovernor | None = None
     try:
         if args.once:
