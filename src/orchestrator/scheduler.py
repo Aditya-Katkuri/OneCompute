@@ -11,6 +11,8 @@ def capability_match(requires: Requires, cap: Capability) -> bool:
         return False
     if requires.min_vram_gb is not None and (cap.gpu_vram_gb or 0.0) < requires.min_vram_gb:
         return False
+    if requires.min_ram_gb is not None and cap.ram_gb < requires.min_ram_gb:
+        return False
     if cap.cpus < requires.min_cpus:
         return False
     if not set(requires.accel).issubset(set(cap.accel)):

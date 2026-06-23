@@ -47,6 +47,7 @@ class Capability(BaseModel):
 class Requires(BaseModel):
     needs_gpu: bool = False
     min_vram_gb: float | None = None
+    min_ram_gb: float | None = None
     accel: list[str] = Field(default_factory=list)
     min_cpus: int = 1
 
