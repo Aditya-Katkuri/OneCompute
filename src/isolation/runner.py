@@ -235,9 +235,16 @@ class JobHandle:
 
 def _subprocess_env() -> dict[str, str]:
     env: dict[str, str] = {"PYTHONPATH": str(SRC_DIR)}
-    for key in ("SystemRoot", "PATH", "COMSPEC", "PATHEXT", "WINDIR"):
+    for key in ("SystemRoot", "PATH", "COMSPEC", "PATHEXT", "WINDIR", "TEMP", "TMP", "USERPROFILE"):
         value = os.environ.get(key)
         if value:
+            env[key] = value
+    # Forward CUDA/cupy env so a host-side GPU job engages REAL CUDA regardless of how cupy was
+    # installed: system-toolkit builds resolve their DLLs via CUDA_PATH, and cupy caches JIT
+    # kernels under TEMP. On a non-GPU box none of these exist, so this is a harmless no-op
+    # (the job then honestly reports accelerator="cpu-fallback").
+    for key, value in os.environ.items():
+        if value and (key.startswith("CUDA") or key.startswith("CUPY") or key == "NVTOOLSEXT_PATH"):
             env[key] = value
     return env
 
@@ -411,6 +418,7 @@ def run_in_isolation(
     input: dict,
     limits: Limits = Limits(),
     should_yield: YieldFn = lambda: False,
+    host_side: bool = False,
 ) -> dict:
     """Execute a job via jobkit inside the best available local boundary.
 
@@ -419,6 +427,12 @@ def run_in_isolation(
     governed by a Windows Job Object. Both paths preempt sub-second on ``should_yield()``.
     A real job timeout or job failure on the Docker path propagates (no silent re-run on a
     weaker boundary). Falling back is logged at WARNING -- no silent degradation.
+
+    ``host_side=True`` forces the on-host subprocess+Job-Object path even when the Docker
+    daemon is up. GPU jobs use this: a Linux container has no access to the host's CUDA
+    device (GPU-in-container/Sandbox is broken -- see architecture.md §3.3), so GPU work runs
+    host-side where CUDA sees the real device, and the Job Object's kill-on-close still
+    delivers the sub-second instant-yield.
     """
     with tempfile.TemporaryDirectory(prefix="nightshift-isolation-") as temp_name:
         work_dir = Path(temp_name)
@@ -427,7 +441,7 @@ def run_in_isolation(
         with in_path.open("w", encoding="utf-8") as fh:
             json.dump({"kind": kind, "input": input}, fh)
 
-        if docker_available():
+        if docker_available() and not host_side:
             try:
                 _stage_payload(work_dir)
                 return _run_docker(in_path, out_path, work_dir, limits, should_yield)

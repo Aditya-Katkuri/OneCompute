@@ -148,11 +148,17 @@ class WorkerAgent:
         self._job_running.set()
         try:
             if self.isolated:
+                # GPU jobs must run host-side (real CUDA device); a Linux container can't see
+                # the GPU. Route them to the on-host Job-Object path even when Docker is up.
+                host_side = (
+                    manifest.requires.needs_gpu or manifest.sandbox.type == "job_object"
+                )
                 out = run_in_isolation(
                     manifest.kind,
                     assignment.input,
                     manifest.limits,
                     should_yield=self.should_yield,
+                    host_side=host_side,
                 )
             else:
                 out = self.runner(manifest, assignment.input, should_yield=self.should_yield)

@@ -98,8 +98,93 @@ def _ai_batch_infer(input: dict, should_yield: YieldFn) -> dict:
     return {"results": results, "backend": backend or "fallback", "yielded": False}
 
 
+def _gpu_backend() -> tuple[object, str, str]:
+    """Return ``(array_module, accelerator, device)``. Lazy + guarded: tries ``cupy`` (real
+    CUDA) and falls back to ``numpy`` on the CPU when no CUDA stack/device is present. All
+    imports happen here, never at module import, so the sandbox payload that copies this file
+    stays stdlib-clean and the Docker/CPU kinds never pull in a GPU stack.
+    """
+    try:
+        import cupy as xp  # type: ignore[import-not-found]
+
+        if int(xp.cuda.runtime.getDeviceCount()) < 1:
+            raise RuntimeError("no CUDA device")
+        try:
+            name = xp.cuda.runtime.getDeviceProperties(0)["name"]
+            device = name.decode("utf-8", "replace") if isinstance(name, bytes) else str(name)
+        except Exception:
+            device = "cuda-device"
+        return xp, "cuda", device
+    except Exception:
+        import numpy as xp  # CPU fallback; always available
+
+        return xp, "cpu-fallback", "cpu"
+
+
+def _sample_gpu_util() -> float | None:
+    """Current GPU utilization percent via ``pynvml``, or ``None`` when unavailable. Never raises."""
+    try:
+        import pynvml  # type: ignore[import-not-found]
+
+        pynvml.nvmlInit()
+        try:
+            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+            return float(pynvml.nvmlDeviceGetUtilizationRates(handle).gpu)
+        finally:
+            try:
+                pynvml.nvmlShutdown()
+            except Exception:
+                pass
+    except Exception:
+        return None
+
+
+def _render(input: dict, should_yield: YieldFn) -> dict:
+    """GPU-capable compute (a sized matmul -- the classic embarrassingly-parallel GPU job).
+
+    Runs on CUDA via ``cupy`` when a device is present, else an HONEST CPU/``numpy`` fallback;
+    the result discloses ``accelerator`` (``"cuda"`` | ``"cpu-fallback"``) and ``gpu_available``
+    so we never claim GPU work that didn't happen. Chunked across ``iters`` so a mouse-touch
+    yield preempts in-process; on the isolated host-side path the Job Object kills the process
+    tree (kill-on-close), so a GPU job is just as preemptible as a CPU one.
+    """
+    size = max(1, int(input.get("size", 256)))
+    iters = max(1, int(input.get("iters", 8)))
+    seed = int(input.get("seed", 0))
+    xp, accelerator, device = _gpu_backend()
+
+    base = xp.full((size, size), 1.0 + (seed % 7) * 0.01, dtype=xp.float32)
+    factor = xp.full((size, size), 1.0001, dtype=xp.float32)
+    checksum = 0.0
+    util_peak: float | None = None
+    done = 0
+    for i in range(iters):
+        if should_yield():
+            break
+        product = (base * (1.0 + i * 1e-3)) @ factor
+        if accelerator == "cuda":
+            try:
+                xp.cuda.Device(0).synchronize()
+            except Exception:
+                pass
+            sample = _sample_gpu_util()
+            if sample is not None:
+                util_peak = sample if util_peak is None else max(util_peak, sample)
+        checksum += float(product.sum())
+        done += 1
+    return {
+        "results": {"checksum": float(checksum), "iters_done": done},
+        "accelerator": accelerator,
+        "device": device,
+        "gpu_available": accelerator == "cuda",
+        "gpu_util_peak": util_peak,
+        "yielded": done < iters,
+    }
+
+
 EXECUTORS: dict[str, Callable[[dict, YieldFn], dict]] = {
     "data.transform": _data_transform,
+    "render": _render,
     "challenge": _challenge,
     "ai.batch_infer": _ai_batch_infer,
     "eval": _data_transform,   # eval reuses the deterministic transform path in the PoC
