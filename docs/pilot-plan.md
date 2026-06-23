@@ -19,7 +19,10 @@ Issued machines run the corporate endpoint stack, and our agent collides with it
 idea.md §13 is explicit: *"demo on machines you control, not Intune-managed laptops."* So the
 pilot is **gated on written sign-off**: AV **allow-list** the agent (publisher + SHA-256), confirm
 it may run, and agree the data scope. This is **"pass, not bypass"** (§8). **Until sanctioned,
-run only on unmanaged / loaner machines.** Use [`pilot-it-sanction.md`](./pilot-it-sanction.md).
+run only on unmanaged / loaner machines.** **Follow the step-by-step in
+[`pilot-security-approval.md`](./pilot-security-approval.md)** (code-sign → Defender allow-list →
+WDAC → Purview → written risk acceptance), and hand reviewers
+[`pilot-it-sanction.md`](./pilot-it-sanction.md).
 
 ## 1. Consent & guardrails (employee-facing)
 
@@ -95,3 +98,63 @@ the orchestrator (all workers go idle), employees Ctrl-C / uninstall; profiles a
 - **5 employees** — opt-in, run the worker, report subjective impact.
 
 Indicative: Day 0 sanction + signed exe → Day 1 Phase 0–1 → Day 2 Phase 2 → Day 3 Phase 3 + readout.
+
+---
+
+## 10. Pre-flight checklist (all ✅ before Phase 0)
+
+**Security** (see [`pilot-security-approval.md`](./pilot-security-approval.md)): ☐ binary code-signed +
+SHA-256/publisher recorded · ☐ Defender allow-list active on all 5 · ☐ WDAC/AppLocker trusts it ·
+☐ Purview/network confirmed · ☐ **written risk acceptance** (5 devices + expiry) in hand ·
+☐ 5 consents signed · ☐ monitoring contact on call.
+**Infra:** ☐ orchestrator up on its HTTPS endpoint · ☐ each device `curl https://<orchestrator>/healthz` → `{"ok":true}`.
+**Software:** ☐ each machine runs the worker (signed exe, or from-source under allowed Python) · ☐ `active_boundary()` recorded per machine.
+**Workload:** ☐ first job set staged (small deterministic CPU fan-out + a challenge ringer).
+**Rollback rehearsed:** ☐ stopping the orchestrator idles workers · ☐ Ctrl-C stops a worker.
+
+## 11. Per-phase runbook (entry → do → exit/record)
+
+- **Phase 0 — machine you control.** *Entry:* pre-flight green. *Do:* run orchestrator + 1 worker (yours),
+  submit fan-out + challenge, force a CPU spike to test yield, **watch Defender**. *Exit/record:* zero
+  alerts; governor admits in headroom **and** yields sub-second on the spike; results verified; `pilot_report`
+  clean.
+- **Phase 1 — 1 employee, supervised ~1 hr, low intensity.** *Entry:* Phase 0 green + consent. *Do:* they
+  work normally; you watch CPU/yield telemetry + Defender. *Exit/record:* **"no perceptible slowdown"** (their
+  words), zero alerts, yield correct, clean opt-out test.
+- **Phase 2 — all 5, real batch, hours/overnight.** *Entry:* Go (see §13). *Do:* dashboard live, kill switch
+  ready. *Exit/record:* batch completes; **zero incidents**; per-machine `pilot_report`; churn handled.
+- **Phase 3 — ~1 day.** *Entry:* Phase 2 green. *Do:* let governors learn each envelope; sustained harvest.
+  *Exit/record:* measured sustained throughput; learned profiles; readout.
+
+## 12. Metrics & data collection
+
+| Metric | How measured | Target |
+|---|---|---|
+| Unobtrusiveness (subjective) | employee survey ("notice a slowdown?" 1–5) | "no / barely" |
+| Yield latency on demand spike | telemetry + forced-spike test | **< 1 s** |
+| % time harvesting | `pilot_report` (admitted/ticks) | report (no hard target) |
+| Harvested throughput | dashboard + ledger | measured, **honest vs the 1.8-ExaOPS ceiling** |
+| **Security incidents** | Defender/Purview monitoring | **0** |
+| Integrity | challenge/ringer results | cheats caught; honest workers pass |
+| Reliability | requeue on sleep/return | no lost or duplicated work |
+
+## 13. Go / No-Go gate (after Phase 1)
+
+Proceed to Phase 2 **only if all true:** zero security incidents · no perceptible slowdown · yield verified
+sub-second · clean opt-out · telemetry sane. Otherwise **stop + remediate**. **Deciders:** CEO + the security
+risk owner (jointly).
+
+## 14. Incident & rollback playbook
+
+- **Defender/Purview alert →** stop the affected worker immediately (Ctrl-C / remote), notify the security
+  contact, **pause the pilot**, investigate the indicator/allow-list; do not resume until cleared.
+- **Employee reports slowdown →** stop their worker; check telemetry (governor admitting too aggressively?);
+  raise the **margin** / **min-headroom** or lower the admission ceiling; re-test on your machine first.
+- **Orchestrator down →** workers idle automatically; restart it (state persists in the `--db` file).
+- **Full stop →** stop the orchestrator + all workers; **remove the Defender allow-list entry** at pilot end.
+
+## 15. Comms plan
+
+- **Employees:** the consent sheet + a "what to expect / how to stop / who to tell" note; a check-in after Phase 1.
+- **IT/Security:** the sanction doc up front; a **monitoring contact during the run**; a short readout after.
+- **Sponsor:** a daily one-line status + the go/no-go decision.
