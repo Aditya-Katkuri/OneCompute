@@ -9,7 +9,7 @@ from pathlib import Path
 
 from contracts import Limits
 from isolation.docker import build_docker_command, docker_available
-from isolation.runner import SRC_DIR
+from isolation.runner import _new_container_name, _stage_payload
 
 
 def isolation_proof() -> dict:
@@ -25,7 +25,10 @@ def isolation_proof() -> dict:
         }
 
     denied_path = str(Path.home())
-    probe = "import pathlib,sys; p=pathlib.Path(sys.argv[1]); " "print(p.exists()); print(list(p.iterdir())[:1])"
+    probe = (
+        "import pathlib,sys; p=pathlib.Path(sys.argv[1]); "
+        "print(p.exists()); print(list(p.iterdir())[:1])"
+    )
     try:
         with tempfile.TemporaryDirectory(prefix="nightshift-isolation-proof-") as temp_name:
             work_dir = Path(temp_name)
@@ -33,8 +36,10 @@ def isolation_proof() -> dict:
             out_path = work_dir / "out.json"
             with in_path.open("w", encoding="utf-8") as fh:
                 json.dump({"kind": "challenge", "input": {"x": 1}}, fh)
+            _stage_payload(work_dir)
+            name = _new_container_name()
             job_proc = subprocess.run(
-                build_docker_command(SRC_DIR, work_dir, in_path.name, out_path.name, Limits()),
+                build_docker_command(work_dir, in_path.name, out_path.name, Limits(), name),
                 cwd=str(work_dir),
                 capture_output=True,
                 text=True,
@@ -48,7 +53,10 @@ def isolation_proof() -> dict:
                     "method": "docker-unusable",
                     "denied_path": denied_path,
                     "evidence": evidence,
-                    "note": "Docker exists, but the jobkit Docker path did not run; jobs fall back to subprocess+jobobject.",
+                    "note": (
+                        "Docker exists, but the jobkit Docker path did not run; jobs fall "
+                        "back to subprocess+jobobject."
+                    ),
                 }
             proc = subprocess.run(
                 [
