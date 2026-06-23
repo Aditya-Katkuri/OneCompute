@@ -29,11 +29,13 @@ def _utcnow() -> datetime:
 
 class Capability(BaseModel):
     """What a worker advertises at registration. benchmarked_tops is a DISPLAY value;
-    credit is metered on the server-assigned class_weight, never on this number."""
+    credit is metered on the server-assigned class_weight, never on this number.
+    free_ram_gb is an optional snapshot of currently-available RAM at registration."""
 
     worker_id: str
     cpus: int = 1
     ram_gb: float = 1.0
+    free_ram_gb: float | None = None
     has_gpu: bool = False
     gpu_model: str | None = None
     gpu_vram_gb: float | None = None
@@ -108,6 +110,7 @@ class HeartbeatRequest(BaseModel):
     cpu_pct: float = 0.0
     gpu_pct: float | None = None
     on_ac: bool = True
+    free_ram_gb: float | None = None   # live available RAM, drives free-RAM gating
     current_job_id: str | None = None
 
 
@@ -155,6 +158,7 @@ class WorkerView(BaseModel):
     has_gpu: bool
     cpu_pct: float = 0.0
     gpu_pct: float | None = None
+    free_ram_gb: float | None = None
     blacklisted: bool = False
     credits: float = 0.0
 

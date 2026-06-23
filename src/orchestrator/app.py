@@ -92,18 +92,23 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
             conn.execute(
                 """
                 INSERT INTO workers (
-                    worker_id, token, capability_json, class_weight, idle, registered_at,
-                    last_heartbeat
-                ) VALUES (?, ?, ?, ?, 1, ?, ?)
+                    worker_id, token, capability_json, class_weight, free_ram_gb, idle,
+                    registered_at, last_heartbeat
+                ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)
                 ON CONFLICT(worker_id) DO UPDATE SET
                     token = excluded.token,
                     capability_json = excluded.capability_json,
                     class_weight = excluded.class_weight,
+                    free_ram_gb = excluded.free_ram_gb,
                     idle = 1,
                     registered_at = excluded.registered_at,
                     last_heartbeat = excluded.last_heartbeat
                 """,
-                (cap.worker_id, token, cap.model_dump_json(), weight, now, now),
+                (
+                    cap.worker_id, token, cap.model_dump_json(), weight,
+                    cap.free_ram_gb if cap.free_ram_gb is not None else cap.ram_gb,
+                    now, now,
+                ),
             )
             conn.commit()
         _emit(conn, "registered", worker_id=cap.worker_id,
@@ -133,7 +138,7 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
             ).fetchone()
             if busy is not None:
                 return Response(status_code=204)
-            job = pick_job_for(conn, cap)
+            job = pick_job_for(conn, cap, free_ram_gb=worker["free_ram_gb"])
             if job is None:
                 return Response(status_code=204)
             deadline = _lease_deadline()
@@ -168,7 +173,8 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
             conn.execute(
                 """
                 UPDATE workers
-                SET idle = ?, cpu_pct = ?, gpu_pct = ?, on_ac = ?, last_heartbeat = ?
+                SET idle = ?, cpu_pct = ?, gpu_pct = ?, on_ac = ?,
+                    free_ram_gb = COALESCE(?, free_ram_gb), last_heartbeat = ?
                 WHERE worker_id = ?
                 """,
                 (
@@ -176,6 +182,7 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
                     req.cpu_pct,
                     req.gpu_pct,
                     int(req.on_ac),
+                    req.free_ram_gb,
                     now,
                     req.worker_id,
                 ),
@@ -326,6 +333,7 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
                     has_gpu=cap.has_gpu,
                     cpu_pct=worker["cpu_pct"] or 0.0,
                     gpu_pct=worker["gpu_pct"],
+                    free_ram_gb=worker["free_ram_gb"],
                     blacklisted=bool(worker["blacklisted"]),
                     credits=float(credits),
                 )

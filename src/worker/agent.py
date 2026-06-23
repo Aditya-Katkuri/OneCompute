@@ -22,6 +22,7 @@ from contracts import (
 )
 from isolation import run_in_isolation
 from trust import verify_manifest
+from worker.capability import free_ram_gb as _current_free_ram_gb
 from worker.runner import default_runner
 
 if TYPE_CHECKING:
@@ -179,6 +180,7 @@ class WorkerAgent:
         request = HeartbeatRequest(
             worker_id=self.capability.worker_id,
             idle=not bool(current_job_id),
+            free_ram_gb=_current_free_ram_gb(),
             current_job_id=current_job_id,
         )
         try:

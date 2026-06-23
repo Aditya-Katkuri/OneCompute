@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS workers (
     token          TEXT NOT NULL,
     capability_json TEXT NOT NULL,
     class_weight   REAL NOT NULL DEFAULT 1,   -- server-assigned (GPU=5, CPU=1); never the agent's claim
+    free_ram_gb    REAL,                       -- live available RAM (updated on heartbeat); drives free-RAM gating
     idle           INTEGER NOT NULL DEFAULT 1,
     cpu_pct        REAL,
     gpu_pct        REAL,
