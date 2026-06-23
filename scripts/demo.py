@@ -37,6 +37,7 @@ from worker.agent import WorkerAgent  # noqa: E402
 from worker.runner import default_runner  # noqa: E402
 from workloads.ai_batch import build_prompt_jobs  # noqa: E402
 from workloads.cpu_fanout import generate_jobs, ghost_bar_seconds  # noqa: E402
+from workloads.gpu import generate_gpu_jobs  # noqa: E402
 from workloads.submit import submit_all  # noqa: E402
 
 
@@ -170,6 +171,23 @@ def main() -> None:
     print(f"3. AI: submitted {len(ai_jobs)} ai.batch_infer jobs (SDK if keyed, else disclosed fallback)")
     _drain(honest)
     print()
+
+    # 3b. GPU host-side render (real CUDA on a GPU worker; honest CPU fallback otherwise) --
+    gpu_jobs = generate_gpu_jobs(n_jobs=2, size=384, iters=10)
+    submit_all(base, gpu_jobs)
+    print(f"3b. GPU: submitted {len(gpu_jobs)} render jobs "
+          "(needs_gpu -> only the GPU worker, host-side under a Job Object, never a container)")
+    gpu_worker = honest[0]  # gpu-1 is the only has_gpu worker, so it picks up every render job
+    rendered = 0
+    for _ in range(len(gpu_jobs) + 3):
+        rr = gpu_worker.run_once()
+        out = rr.output if rr else None
+        if out and "accelerator" in out:
+            rendered += 1
+            print(f"   gpu-1 render {rr.job_id[:8]} -> accelerator={out.get('accelerator')} "
+                  f"device={out.get('device')} gpu_util={out.get('gpu_util_peak')}")
+    print(f"   {rendered} render job(s) ran host-side (real CUDA + pynvml util on an NVIDIA "
+          "worker; CPU-fallback honestly disclosed on this box)\n")
 
     # 4. Instant yield --------------------------------------------------------
     submit_all(base, [SubmitRequest(kind="data.transform",
