@@ -112,3 +112,38 @@ def test_launch_workload_rejects_bad_kind():
 def test_workload_unknown_is_404():
     client = TestClient(create_app(":memory:"))
     assert client.get("/workloads/nope").status_code == 404
+
+
+def test_workloads_catalog_lists_launchable_examples():
+    from contracts import LAUNCHABLE_KINDS
+
+    client = TestClient(create_app(":memory:"))
+    resp = client.get("/workloads/catalog")
+    assert resp.status_code == 200  # not shadowed by /workloads/{workload_id}
+    catalog = resp.json()["workloads"]
+    assert len(catalog) >= 4
+    kinds = {entry["kind"] for entry in catalog}
+    assert {"fractal", "optimize", "ai.batch_infer", "ai.synth"}.issubset(kinds)
+    for entry in catalog:
+        assert entry["kind"] in LAUNCHABLE_KINDS
+        assert {"label", "category", "default_params", "split"} <= set(entry)
+    # every catalog entry is actually launchable end to end
+    for entry in catalog:
+        launched = client.post(
+            "/workloads", json={"kind": entry["kind"], "n_tiles": 2, "params": entry["default_params"]}
+        )
+        assert launched.status_code == 200
+
+
+def test_heartbeat_usage_is_exposed_in_state():
+    # The dashboard's per-device usage graph reads cpu_pct/gpu_pct/free_ram_gb from /state;
+    # confirm a heartbeat carrying live usage is reflected there.
+    client = TestClient(create_app(":memory:"))
+    client.post("/register", json={"worker_id": "gpu-1", "cpus": 8, "has_gpu": True})
+    hb = client.post(
+        "/heartbeat",
+        json={"worker_id": "gpu-1", "idle": True, "cpu_pct": 57.5, "gpu_pct": 81.0, "free_ram_gb": 12.3},
+    )
+    assert hb.status_code == 200
+    worker = next(w for w in client.get("/state").json()["workers"] if w["worker_id"] == "gpu-1")
+    assert worker["cpu_pct"] == 57.5 and worker["gpu_pct"] == 81.0 and worker["free_ram_gb"] == 12.3
