@@ -433,9 +433,10 @@
       background: rgba(15, 23, 42, 0.06); border: 1px solid var(--border);
     }
     .workload-row .wk-fill {
-      height: 100%; width: 0%; border-radius: 999px;
+      height: 100%; width: 100%; border-radius: 999px;
       background: var(--brand-grad);
-      transition: width 480ms var(--ease);
+      transform: scaleX(0); transform-origin: left center;
+      transition: transform 480ms var(--ease);
     }
     .workload-row .wk-count {
       flex: none; min-width: 28px; text-align: right;
@@ -638,7 +639,7 @@
     .res-prog-num .rc { color: var(--accent); }
     .res-card.done .res-prog-num .rc { color: var(--idle); }
     .res-prog { height: 8px; border-radius: 999px; overflow: hidden; background: rgba(33,33,33,0.07); border: 1px solid var(--border); margin-bottom: 13px; }
-    .res-prog-fill { height: 100%; width: 0%; border-radius: 999px; background: var(--brand-grad); transition: width 420ms var(--ease); }
+    .res-prog-fill { height: 100%; width: 100%; border-radius: 999px; background: var(--brand-grad); transform: scaleX(0); transform-origin: left center; transition: transform 420ms var(--ease); }
     .res-card.done .res-prog-fill { background: var(--idle); }
     .res-canvas { width: 100%; border-radius: 10px; border: 1px solid var(--border); background: #160f06; display: block; image-rendering: pixelated; }
     .res-cards { display: grid; gap: 8px; }
@@ -656,7 +657,7 @@
     .opt-bar-row { display: flex; align-items: center; gap: 8px; font-size: 11.5px; font-variant-numeric: tabular-nums; }
     .opt-bar-row .obw { font-family: Consolas, "Cascadia Mono", monospace; color: var(--text-soft); min-width: 94px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .opt-bar-track { flex: 1; height: 8px; border-radius: 999px; background: rgba(33,33,33,0.07); overflow: hidden; }
-    .opt-bar-fill { height: 100%; background: var(--accent-2); border-radius: 999px; }
+    .opt-bar-fill { display: block; height: 100%; background: var(--accent-2); border-radius: 999px; }
     .res-backend { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-soft); border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; }
     .res-running { color: var(--text-soft); font-size: 12.5px; padding: 8px 2px; }
 
@@ -1164,6 +1165,7 @@
       for (const [wid, tile] of tileEls) {
         if (!seen.has(wid)) {
           tweens.delete(tile._refs.credits); // release the tile's count-up node
+          usageHistory.delete(wid); // release the worker's rolling usage history
           tile.remove();
           tileEls.delete(wid);
         }
@@ -1206,7 +1208,7 @@
         track.className = "wk-track";
         const fill = document.createElement("div");
         fill.className = "wk-fill";
-        fill.style.width = `${(count / max) * 100}%`;
+        fill.style.transform = `scaleX(${max ? count / max : 0})`;
         track.appendChild(fill);
         const num = document.createElement("div");
         num.className = "wk-count";
@@ -1280,7 +1282,7 @@
 
       const perMin = elapsed > 0 ? (state.total_credits || 0) / (elapsed / 60) : 0;
       E.measuredFigure.textContent = `${fmt1(perMin)} credits/min`;
-      renderSpark(perMin);
+      if (elapsed > 2.5) renderSpark(perMin); // skip the t→0 warm-up so the trend isn't a spike
 
       const hasRate = completedJobs > 0 && elapsed > 0;
       const rate = hasRate ? sessionCompleted / elapsed : 0;
@@ -1498,9 +1500,16 @@
       return card;
     }
     async function launchWorkload(entry, btn) {
-      const n = entry.split === "per_machine" ? Math.max(1, approvedCount) : undefined;
-      btn.disabled = true;
+      const perMachine = entry.split === "per_machine";
       const prev = btn.textContent;
+      if (perMachine && approvedCount <= 0) {
+        // Per-machine workloads need an approved device, else the tile sits unleased forever.
+        btn.disabled = true; btn.textContent = "Approve a device first";
+        setTimeout(() => { btn.disabled = false; btn.textContent = prev; }, 1600);
+        return;
+      }
+      const n = perMachine ? approvedCount : undefined;
+      btn.disabled = true;
       btn.textContent = "Launching…";
       try {
         const res = await fetch("/workloads", {
@@ -1551,10 +1560,15 @@
         tries += 1;
         try {
           const res = await fetch(`/workloads/${encodeURIComponent(wid)}`, { cache: "no-store" });
+          if (res.status === 404) {
+            const panel = resultPanels.get(wid);
+            if (panel) panel.body.innerHTML = '<div class="res-running">Workload not found on the orchestrator.</div>';
+            return;
+          }
           if (res.ok) {
             const wl = await res.json();
             renderResult(wid, wl);
-            done = wl.total > 0 && wl.completed >= wl.total;
+            done = Number.isFinite(wl.total) && wl.completed >= wl.total;
           }
         } catch { /* transient — keep polling */ }
         if (!done && tries < 160) setTimeout(tick, 700);
@@ -1566,15 +1580,18 @@
       if (!panel) return;
       panel.rc.textContent = wl.completed;
       panel.rt.textContent = wl.total;
-      panel.fill.style.width = `${wl.total ? (wl.completed / wl.total) * 100 : 0}%`;
+      panel.fill.style.transform = `scaleX(${wl.total ? wl.completed / wl.total : 0})`;
       panel.el.classList.toggle("done", wl.total > 0 && wl.completed >= wl.total);
+      if (!wl.total) { panel.body.innerHTML = '<div class="res-running">No tiles were queued for this workload.</div>'; return; }
       (RESULT_RENDER[panel.kind] || RESULT_RENDER.generic)(panel, wl);
     }
 
     function renderFractal(panel, wl) {
-      const W = (panel.entry.default_params && panel.entry.default_params.width) || 160;
-      const H = (panel.entry.default_params && panel.entry.default_params.height) || 100;
-      const maxIter = (panel.entry.default_params && panel.entry.default_params.max_iter) || 60;
+      const dp = panel.entry.default_params || {};
+      const firstOut = (wl.jobs.find((j) => j.state === "completed" && j.output) || {}).output;
+      const W = (firstOut && firstOut.width) || dp.width || 160;
+      const H = dp.height || 100;
+      const maxIter = (firstOut && firstOut.max_iter) || dp.max_iter || 60;
       let canvas = panel.body.querySelector("canvas");
       if (!canvas) {
         canvas = document.createElement("canvas");
@@ -1587,11 +1604,12 @@
       const ctx = panel.ctx;
       for (const job of wl.jobs) {
         if (job.state !== "completed" || !job.output || panel.drawn.has(job.job_id)) continue;
-        const rows = job.output.rows || [];
+        const rows = Array.isArray(job.output.rows) ? job.output.rows : [];
+        if (!rows.length) { panel.drawn.add(job.job_id); continue; }
         const rs = job.output.row_start || 0;
         const img = ctx.createImageData(W, rows.length);
         for (let i = 0; i < rows.length; i++) {
-          const row = rows[i];
+          const row = Array.isArray(rows[i]) ? rows[i] : [];
           for (let x = 0; x < W; x++) {
             const it = row[x] || 0;
             let r, g, b;
