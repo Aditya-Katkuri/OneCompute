@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from orchestrator.app import create_app
+from orchestrator.app import MAX_RESULT_OUTPUT_BYTES, create_app
 
 
 def _register(client: TestClient, worker_id: str = "worker") -> tuple[str, dict[str, str]]:
@@ -96,7 +96,7 @@ def test_oversized_result_payload_is_rejected_without_credit_or_completion() -> 
             "worker_id": "worker",
             "job_id": job_id,
             "status": "completed",
-            "output": {"blob": "x" * (256 * 1024)},
+            "output": {"blob": "x" * (MAX_RESULT_OUTPUT_BYTES + 1024)},
         },
         headers=auth,
     )

@@ -32,12 +32,16 @@ from contracts import (
     sha256_hex,
 )
 from dashboard.paths import INDEX_HTML
-from orchestrator.db import init_db, write_lock
+from orchestrator.db import open_serialized_db, write_lock
 from orchestrator.scheduler import class_weight_for, pick_job_for
 from orchestrator.submit import submit_job
 from trust import Signer, check_challenge
 
-MAX_RESULT_OUTPUT_BYTES = 256 * 1024
+# Cap on a single job's result payload. Must comfortably fit a Mandelbrot image tile: the
+# fractal result carries the pixel rows the dashboard reassembles into one image, so a default
+# 720x480 single-worker tile is ~0.8 MB and higher-res split tiles run to a few MB. 8 MiB keeps
+# the flagship fractal workload working with any fleet size while still bounding abuse.
+MAX_RESULT_OUTPUT_BYTES = 8 * 1024 * 1024
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
@@ -200,7 +204,7 @@ def _emit(
 
 
 def create_app(db_path: str = ":memory:", signer=None, require_approval: bool = False) -> FastAPI:
-    conn = init_db(db_path)
+    conn = open_serialized_db(db_path)
     if signer is None:
         signer = Signer()  # signing is ON by default; the worker verifies before running
     app = FastAPI(title="NightShift Orchestrator")
