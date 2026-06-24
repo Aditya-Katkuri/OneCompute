@@ -220,10 +220,23 @@ class WorkerAgent:
             units=units,
         )
 
-    def heartbeat(self, current_job_id: str | None = None) -> HeartbeatResponse:
+    def heartbeat(
+        self,
+        current_job_id: str | None = None,
+        cpu_pct: float = 0.0,
+        gpu_pct: float | None = None,
+        idle: bool | None = None,
+    ) -> HeartbeatResponse:
+        """Report liveness + live usage. cpu_pct/gpu_pct feed the dashboard's per-device usage
+        graphs; idle defaults to 'no job running' so a usage-only heartbeat (no current_job_id)
+        still reflects busy state without touching the lease."""
+        if idle is None:
+            idle = not (bool(current_job_id) or self._job_running.is_set())
         request = HeartbeatRequest(
             worker_id=self.capability.worker_id,
-            idle=not bool(current_job_id),
+            idle=idle,
+            cpu_pct=cpu_pct,
+            gpu_pct=gpu_pct,
             free_ram_gb=_current_free_ram_gb(),
             current_job_id=current_job_id,
         )

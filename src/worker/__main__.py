@@ -4,14 +4,55 @@ from __future__ import annotations
 
 import argparse
 import logging
+import threading
 import time
 
 from isolation import active_boundary
 from worker.agent import WorkerAgent
 from worker.capability import detect_capability
-from worker.governor import AdaptiveGovernor
+from worker.governor import AdaptiveGovernor, system_gpu_load_pct
 from worker.idle import IdleGate
 from worker.telemetry import PilotTelemetry
+
+try:  # psutil is a declared dependency; guard so the worker still runs without it
+    import psutil
+except Exception:  # pragma: no cover
+    psutil = None
+
+
+def _start_usage_heartbeat(agent: WorkerAgent, period_s: float = 2.0) -> threading.Event:
+    """Stream this machine's live CPU/GPU/free-RAM to the orchestrator on a fixed cadence so the
+    dashboard fleet view + per-device usage graphs stay current even between jobs.
+
+    Pure telemetry: it never sends current_job_id, so it cannot perturb leasing/scheduling. Runs
+    as a daemon thread; returns a stop Event the caller sets on shutdown.
+    """
+    stop = threading.Event()
+
+    def loop() -> None:
+        if psutil is not None:
+            try:
+                psutil.cpu_percent(interval=None)  # prime the rolling delta
+            except Exception:
+                pass
+        while not stop.wait(period_s):
+            cpu = 0.0
+            if psutil is not None:
+                try:
+                    cpu = float(psutil.cpu_percent(interval=None))
+                except Exception:
+                    cpu = 0.0
+            gpu = system_gpu_load_pct() if agent.capability.has_gpu else None
+            try:
+                agent.heartbeat(
+                    cpu_pct=round(cpu, 1),
+                    gpu_pct=(round(gpu, 1) if gpu is not None else None),
+                )
+            except Exception:
+                pass
+
+    threading.Thread(target=loop, name="onecompute-usage-heartbeat", daemon=True).start()
+    return stop
 
 
 def main() -> None:
@@ -49,6 +90,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
     agent = WorkerAgent(args.url, detect_capability(), isolated=args.isolated)
     gate: IdleGate | AdaptiveGovernor | None = None
+    usage_stop: threading.Event | None = None
     try:
         if args.once:
             rr = agent.run_once()
@@ -61,6 +103,9 @@ def main() -> None:
             agent.register()
         if agent.registered and not agent.approved:
             agent.wait_for_approval()
+
+        # Once we've joined, stream live usage so the dashboard can show this device + its graph.
+        usage_stop = _start_usage_heartbeat(agent)
 
         idle_gate = IdleGate(input_idle_threshold_s=args.idle_threshold)
         adaptive = args.governor == "adaptive"
@@ -97,6 +142,8 @@ def main() -> None:
     except KeyboardInterrupt:
         print("stopped")
     finally:
+        if usage_stop is not None:
+            usage_stop.set()  # stop streaming usage on the way out
         if isinstance(gate, AdaptiveGovernor):
             gate.profiler.save()  # persist the learned envelope on the way out
         agent.close()

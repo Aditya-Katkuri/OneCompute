@@ -93,6 +93,34 @@ def _build_workload_jobs(kind: str, n_tiles: int, params: dict) -> list[dict]:
     raise ValueError(f"unknown or non-launchable workload kind: {kind!r}")
 
 
+# The example workloads a dashboard offers as launch buttons. A UI renders these without
+# hardcoding kinds/params; add an entry here (and the kind must be in LAUNCHABLE_KINDS) to
+# expose a new example. `split`: "per_machine" => pass n_tiles = number of approved workers;
+# "slice_size" => the builder splits internally, n_tiles is ignored.
+WORKLOAD_CATALOG: list[dict] = [
+    {
+        "kind": "fractal", "label": "Fractal render", "category": "non-AI", "ai": False,
+        "blurb": "Mandelbrot image rendered in bands across the fleet, reassembled into one picture.",
+        "default_params": {"width": 720, "height": 480, "max_iter": 120}, "split": "per_machine",
+    },
+    {
+        "kind": "optimize", "label": "Param-sweep optimize", "category": "non-AI", "ai": False,
+        "blurb": "Distributed search over thousands of candidate configs; the global best wins.",
+        "default_params": {"n_candidates": 30000, "dims": 8}, "split": "per_machine",
+    },
+    {
+        "kind": "ai.batch_infer", "label": "AI inference", "category": "AI", "ai": True,
+        "blurb": "Model inference over a prompt set, each machine scoring a slice.",
+        "default_params": {"slice_size": 3}, "split": "slice_size",
+    },
+    {
+        "kind": "ai.synth", "label": "AI synthetic data", "category": "AI", "ai": True,
+        "blurb": "Each machine generates synthetic records via an LLM; merged into one dataset.",
+        "default_params": {"total_rows": 30}, "split": "per_machine",
+    },
+]
+
+
 def _lease_deadline() -> str:
     return (datetime.now(UTC) + timedelta(seconds=20)).isoformat()
 
@@ -477,6 +505,13 @@ def create_app(db_path: str = ":memory:", signer=None, require_approval: bool = 
             job_ids.append(jid)
             _emit(conn, "submitted", job_id=jid, detail=req.kind)
         return WorkloadLaunchResponse(workload_id=workload_id, kind=req.kind, job_ids=job_ids)
+
+    @app.get("/workloads/catalog")
+    def workloads_catalog() -> dict:
+        """The launchable example workloads (kind, label, category, default params) so a UI can
+        render launch buttons without hardcoding. Registered before /workloads/{workload_id} so
+        'catalog' is not parsed as a workload id."""
+        return {"workloads": WORKLOAD_CATALOG}
 
     @app.get("/workloads/{workload_id}", response_model=WorkloadView)
     def workload_detail(workload_id: str) -> WorkloadView:
