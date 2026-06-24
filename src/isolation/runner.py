@@ -246,6 +246,15 @@ def _subprocess_env() -> dict[str, str]:
     for key, value in os.environ.items():
         if value and (key.startswith("CUDA") or key.startswith("CUPY") or key == "NVTOOLSEXT_PATH"):
             env[key] = value
+    # Forward AI provider keys so HOST-SIDE ai.* jobs reach the real SDK (the whole reason AI
+    # kinds route host-side; see worker/agent.py and architecture.md §13). This is host-side ONLY:
+    # the Docker container path uses build_docker_command (which forwards NO key into the slim,
+    # stdlib-only payload), so the isolation contract -- no API key in the container -- is intact.
+    # Without a key set these are absent, so the AI executors take their disclosed fallback.
+    for key in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
+        value = os.environ.get(key)
+        if value:
+            env[key] = value
     return env
 
 

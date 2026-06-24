@@ -10,11 +10,13 @@ from fastapi import FastAPI, Header, HTTPException, Response
 from fastapi.responses import HTMLResponse
 
 from contracts import (
+    LAUNCHABLE_KINDS,
     Capability,
     FleetState,
     HeartbeatRequest,
     HeartbeatResponse,
     JobAssignment,
+    JobDetail,
     JobManifest,
     JobView,
     RegisterResponse,
@@ -24,6 +26,9 @@ from contracts import (
     SubmitRequest,
     SubmitResponse,
     WorkerView,
+    WorkloadLaunchRequest,
+    WorkloadLaunchResponse,
+    WorkloadView,
     sha256_hex,
 )
 from dashboard.paths import INDEX_HTML
@@ -48,6 +53,86 @@ SECURITY_HEADERS = {
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+# Crockford-ish alphabet: no 0/1/O/I so a code read aloud / typed from a screen is unambiguous.
+_DEVICE_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def _make_device_code() -> str:
+    """A short human code like 'WX7Q-12' derived from uuid4 entropy (6 chars, dash after 4)."""
+    raw = uuid4().hex
+    chars = [_DEVICE_CODE_ALPHABET[int(raw[i : i + 2], 16) % len(_DEVICE_CODE_ALPHABET)]
+             for i in range(0, 12, 2)]
+    return f"{''.join(chars[:4])}-{''.join(chars[4:6])}"
+
+
+def _job_detail(row: sqlite3.Row) -> JobDetail:
+    """Build a dashboard JobDetail (incl. parsed output) from a jobs-table row."""
+    output = json.loads(row["result_json"]) if row["result_json"] else None
+    return JobDetail(
+        job_id=row["job_id"],
+        kind=row["kind"],
+        state=row["state"],
+        assigned_worker=row["assigned_worker"],
+        units=row["units"],
+        workload_id=row["workload_id"],
+        output=output,
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _build_workload_jobs(kind: str, n_tiles: int, params: dict) -> list[dict]:
+    """Build the split SubmitRequest dicts for a launchable workload kind.
+
+    Lazy imports keep the orchestrator import-light and avoid pulling the workload builders
+    (and their optional PIL/numpy deps) unless POST /workloads is actually used. The hardcoded
+    fleet split lives in the builders (one tile per machine via workloads.partition)."""
+    if kind == "fractal":
+        from workloads.fractal import build_fractal_jobs
+        return build_fractal_jobs(n_tiles=n_tiles, **params)
+    if kind == "optimize":
+        from workloads.optimize import build_optimize_jobs
+        return build_optimize_jobs(n_tiles=n_tiles, **params)
+    if kind == "ai.synth":
+        from workloads.synth import build_synth_jobs
+        return build_synth_jobs(n_tiles=n_tiles, **params)
+    if kind == "ai.batch_infer":
+        from workloads.ai_batch import build_prompt_jobs
+        return build_prompt_jobs(**params)  # slices by slice_size, not n_tiles
+    if kind == "data.transform":
+        from workloads.cpu_fanout import generate_jobs
+        return generate_jobs(n_jobs=n_tiles, **params)
+    raise ValueError(f"unknown or non-launchable workload kind: {kind!r}")
+
+
+# The example workloads a dashboard offers as launch buttons. A UI renders these without
+# hardcoding kinds/params; add an entry here (and the kind must be in LAUNCHABLE_KINDS) to
+# expose a new example. `split`: "per_machine" => pass n_tiles = number of approved workers;
+# "slice_size" => the builder splits internally, n_tiles is ignored.
+WORKLOAD_CATALOG: list[dict] = [
+    {
+        "kind": "fractal", "label": "Fractal render", "category": "non-AI", "ai": False,
+        "blurb": "Mandelbrot image rendered in bands across the fleet, reassembled into one picture.",
+        "default_params": {"width": 720, "height": 480, "max_iter": 120}, "split": "per_machine",
+    },
+    {
+        "kind": "optimize", "label": "Param-sweep optimize", "category": "non-AI", "ai": False,
+        "blurb": "Distributed search over thousands of candidate configs; the global best wins.",
+        "default_params": {"n_candidates": 30000, "dims": 8}, "split": "per_machine",
+    },
+    {
+        "kind": "ai.batch_infer", "label": "AI inference", "category": "AI", "ai": True,
+        "blurb": "Model inference over a prompt set, each machine scoring a slice.",
+        "default_params": {"slice_size": 3}, "split": "slice_size",
+    },
+    {
+        "kind": "ai.synth", "label": "AI synthetic data", "category": "AI", "ai": True,
+        "blurb": "Each machine generates synthetic records via an LLM; merged into one dataset.",
+        "default_params": {"total_rows": 30}, "split": "per_machine",
+    },
+]
 
 
 def _lease_deadline() -> str:
@@ -114,7 +199,7 @@ def _emit(
         conn.commit()
 
 
-def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
+def create_app(db_path: str = ":memory:", signer=None, require_approval: bool = False) -> FastAPI:
     conn = init_db(db_path)
     if signer is None:
         signer = Signer()  # signing is ON by default; the worker verifies before running
@@ -132,32 +217,50 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
         token = uuid4().hex
         now = _now()
         weight = class_weight_for(cap)
+        approved = 0 if require_approval else 1
+        # Only pending workers carry a device code; an auto-approved (non-gated) worker has none.
+        device_code = None if approved else _make_device_code()
         with write_lock:
             conn.execute(
                 """
                 INSERT INTO workers (
                     worker_id, token, capability_json, class_weight, free_ram_gb, idle,
-                    registered_at, last_heartbeat
-                ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+                    approved, device_code, registered_at, last_heartbeat
+                ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
                 ON CONFLICT(worker_id) DO UPDATE SET
                     token = excluded.token,
                     capability_json = excluded.capability_json,
                     class_weight = excluded.class_weight,
                     free_ram_gb = excluded.free_ram_gb,
                     idle = 1,
+                    -- never demote an already-approved worker on re-register; only a
+                    -- pending worker keeps its (refreshed) device code while gated.
+                    approved = MAX(workers.approved, excluded.approved),
+                    device_code = CASE WHEN workers.approved = 1 THEN NULL
+                                       ELSE excluded.device_code END,
                     registered_at = excluded.registered_at,
                     last_heartbeat = excluded.last_heartbeat
                 """,
                 (
                     cap.worker_id, token, cap.model_dump_json(), weight,
                     cap.free_ram_gb if cap.free_ram_gb is not None else cap.ram_gb,
+                    approved, device_code,
                     now, now,
                 ),
             )
             conn.commit()
+            row = conn.execute(
+                "SELECT approved, device_code FROM workers WHERE worker_id = ?",
+                (cap.worker_id,),
+            ).fetchone()
+        is_approved = bool(row["approved"])
         _emit(conn, "registered", worker_id=cap.worker_id,
               detail="gpu" if cap.has_gpu else "cpu")
-        return RegisterResponse(worker_token=token)
+        return RegisterResponse(
+            worker_token=token,
+            device_code=None if is_approved else row["device_code"],
+            approved=is_approved,
+        )
 
     @app.post("/jobs", response_model=SubmitResponse)
     def submit(req: SubmitRequest) -> SubmitResponse:
@@ -173,6 +276,8 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
     def jobs_next(worker_id: str, authorization: str | None = Header(default=None)):
         worker = _require_worker_token(conn, worker_id, authorization)
         if worker["blacklisted"]:
+            return Response(status_code=204)
+        if not worker["approved"]:
             return Response(status_code=204)
         reap_expired(conn)
         cap = Capability(**json.loads(worker["capability_json"]))
@@ -216,6 +321,8 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
         authorization: str | None = Header(default=None),
     ) -> HeartbeatResponse:
         _require_worker_token(conn, req.worker_id, authorization)
+        worker = _worker_or_404(conn, req.worker_id)
+        approved = bool(worker["approved"])
         now = _now()
         with write_lock:
             conn.execute(
@@ -255,7 +362,19 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
                     (_lease_deadline(), now, req.current_job_id, req.worker_id, now),
                 )
             conn.commit()
-        return HeartbeatResponse(ack=True, preempt=False)
+        return HeartbeatResponse(ack=True, preempt=False, approved=approved)
+
+    @app.post("/workers/{worker_id}/approve")
+    def approve(worker_id: str) -> dict:
+        _worker_or_404(conn, worker_id)
+        with write_lock:
+            conn.execute(
+                "UPDATE workers SET approved = 1, device_code = NULL WHERE worker_id = ?",
+                (worker_id,),
+            )
+            conn.commit()
+        _emit(conn, "approved", worker_id=worker_id, detail="admitted via dashboard")
+        return {"ok": True, "worker_id": worker_id}
 
     @app.post("/results/{job_id}", response_model=ResultResponse)
     def results(
@@ -390,6 +509,8 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
                     free_ram_gb=worker["free_ram_gb"],
                     blacklisted=bool(worker["blacklisted"]),
                     credits=float(credits),
+                    approved=bool(worker["approved"]),
+                    device_code=worker["device_code"],
                 )
             )
         job_rows = conn.execute("SELECT * FROM jobs ORDER BY created_at ASC").fetchall()
@@ -406,6 +527,65 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
             "SELECT COALESCE(SUM(credits), 0) AS credits FROM ledger"
         ).fetchone()["credits"]
         return FleetState(workers=workers, jobs=jobs, total_credits=float(total_credits))
+
+    @app.get("/jobs/{job_id}", response_model=JobDetail)
+    def job_detail(job_id: str) -> JobDetail:
+        """Full job record incl. its output — the dashboard reads this to show a job's result.
+        Defined after /jobs/next so the literal route still wins for the long-poll."""
+        row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        return _job_detail(row)
+
+    @app.post("/workloads", response_model=WorkloadLaunchResponse)
+    def launch_workload(req: WorkloadLaunchRequest) -> WorkloadLaunchResponse:
+        """Launch a whole workload across the fleet in one call: build the hardcoded split
+        (one tile per machine) and enqueue every tile tagged with a shared workload_id."""
+        if req.kind not in LAUNCHABLE_KINDS:
+            raise HTTPException(
+                status_code=400, detail=f"kind must be one of {list(LAUNCHABLE_KINDS)}"
+            )
+        try:
+            specs = _build_workload_jobs(req.kind, req.n_tiles, req.params)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=f"could not build workload: {exc}") from exc
+        workload_id = uuid4().hex
+        job_ids: list[str] = []
+        for spec in specs:
+            try:
+                sub = SubmitRequest(**spec)
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"invalid job spec: {exc}") from exc
+            jid = submit_job(conn, sub, workload_id=workload_id)
+            job_ids.append(jid)
+            _emit(conn, "submitted", job_id=jid, detail=req.kind)
+        return WorkloadLaunchResponse(workload_id=workload_id, kind=req.kind, job_ids=job_ids)
+
+    @app.get("/workloads/catalog")
+    def workloads_catalog() -> dict:
+        """The launchable example workloads (kind, label, category, default params) so a UI can
+        render launch buttons without hardcoding. Registered before /workloads/{workload_id} so
+        'catalog' is not parsed as a workload id."""
+        return {"workloads": WORKLOAD_CATALOG}
+
+    @app.get("/workloads/{workload_id}", response_model=WorkloadView)
+    def workload_detail(workload_id: str) -> WorkloadView:
+        """All jobs (with outputs) for a launched workload — the dashboard results panel."""
+        rows = conn.execute(
+            "SELECT * FROM jobs WHERE workload_id = ? ORDER BY created_at ASC, job_id ASC",
+            (workload_id,),
+        ).fetchall()
+        if not rows:
+            raise HTTPException(status_code=404, detail="workload not found")
+        jobs = [_job_detail(row) for row in rows]
+        completed = sum(1 for row in rows if row["state"] == "completed")
+        return WorkloadView(
+            workload_id=workload_id,
+            kind=rows[0]["kind"],
+            total=len(rows),
+            completed=completed,
+            jobs=jobs,
+        )
 
     @app.get("/events")
     def events(since: int = 0) -> dict:

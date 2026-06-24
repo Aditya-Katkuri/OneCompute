@@ -12,19 +12,24 @@ Outbound-only from workers; short-poll. All bodies are the pydantic models in `c
 | Method & path | Request | Response | Notes |
 |---|---|---|---|
 | `POST /register` | `Capability` | `RegisterResponse` | assigns `class_weight` (GPU=5, CPU=1) server-side |
-| `GET /jobs/next?worker_id=…` | — | `JobAssignment` (200) or **204** | 204 = no matching work; capability-matched |
+| `GET /jobs/next?worker_id=…` | — | `JobAssignment` (200) or **204** | 204 = no matching work; capability-matched. **Also 204 until the worker is approved** (gated flows) |
 | `POST /heartbeat` | `HeartbeatRequest` | `HeartbeatResponse` | renews lease; `preempt=true` asks worker to yield |
 | `POST /results/{job_id}` | `ResultRequest` | `ResultResponse` | verifies, credits ledger, returns points |
 | `POST /jobs` | `SubmitRequest` | `SubmitResponse` | submitter enqueues a job (orchestrator fills hashes/signs) |
 | `GET /state` | — | `FleetState` | dashboard read model (T5) |
+| `POST /workers/{worker_id}/approve` | — | `{"ok": true, "worker_id": …}` (200) or **404** | **(additive)** admits a pending worker; emits the `approved` event |
+| `GET /jobs/{job_id}` | — | `JobDetail` (200) or **404** | **(additive)** one job + its parsed output; registered after `/jobs/next` so the long-poll literal route still wins |
+| `POST /workloads` | `WorkloadLaunchRequest` | `WorkloadLaunchResponse` | **(additive)** one-call fleet launch; **400** on unknown/non-launchable kind |
+| `GET /workloads/{workload_id}` | — | `WorkloadView` (200) or **404** | **(additive)** all jobs + outputs for a launched workload; registered after `/workloads/catalog` |
+| `GET /workloads/catalog` | — | `{"workloads": [...]}` | **(additive)** the launchable example workloads (UI launch buttons) |
 
 ## 2. Callable seams (pin these names exactly — parallel builds depend on them)
 
 **T1 — orchestrator** (`src/orchestrator/`)
 ```python
-from orchestrator.app import create_app          # create_app(db_path: str = ":memory:", signer=None) -> FastAPI
+from orchestrator.app import create_app          # create_app(db_path: str = ":memory:", signer=None, require_approval: bool = False) -> FastAPI
 from orchestrator.db import init_db, connect      # init_db(db_path) -> sqlite3.Connection (schema applied, WAL)
-from orchestrator.submit import submit_job        # submit_job(conn, req: SubmitRequest) -> str (job_id)
+from orchestrator.submit import submit_job        # submit_job(conn, req: SubmitRequest, workload_id: str | None = None) -> str (job_id)
 ```
 - `create_app` wires routes over a single SQLite connection/path. A background (or on-demand) **reaper**
   requeues jobs whose `lease_expires` has passed (state `leased` → `queued`, `assigned_worker=NULL`).
@@ -115,6 +120,47 @@ from isolation import run_in_isolation, isolation_proof, JobHandle
 ```
 
 ### 5.5 Dashboard read models (T1 serves → T5 reads)
-- `GET /state` → `FleetState` (exists).
-- `GET /events?since=<id>` → `{"events":[{"id","ts","type":"submitted|assigned|completed|yielded|blacklisted",
+- `GET /state` → `FleetState` (exists). `WorkerView` now also carries **live** `cpu_pct`/`gpu_pct`/`free_ram_gb`
+  (the worker streams `HeartbeatRequest` every ~1s, so `/state` reflects live per-device usage).
+- `GET /events?since=<id>` → `{"events":[{"id","ts","type":"registered|approved|submitted|assigned|completed|yielded|failed|blacklisted",
   "worker_id","job_id","detail"}], "last_id": int}` — COS adds this in integration for the live activity feed.
+
+---
+
+## 6. Additive seams (Wave C, COS) — frozen contracts above still hold
+
+These were **added** on top of the frozen Phase-0/Phase-2 seams; nothing above changed.
+
+### 6.1 New JobKinds
+`JobKind` gained `"fractal"`, `"optimize"`, `"ai.synth"` (alongside the existing
+`ai.batch_infer | eval | data.transform | render | challenge`). See [`docs/workloads.md`](workloads.md)
+for the four launchable workloads.
+
+### 6.2 Device-code approval gate (additive; off by default)
+- `create_app(db_path=":memory:", signer=None, require_approval: bool = False)`. With `require_approval=False`
+  (default) every worker auto-approves and all flows above are unchanged.
+- When gated, a freshly-registered worker is **pending**: it gets a short human `device_code` and
+  `GET /jobs/next` returns **204** until it is admitted.
+- `POST /workers/{worker_id}/approve` → `{"ok": true, "worker_id": …}` (404 unknown) flips it to approved,
+  clears the `device_code`, and emits a new `"approved"` event.
+- Model fields added (defaults keep non-gated flows identical):
+  - `RegisterResponse`: `device_code: str | None = None`, `approved: bool = True`.
+  - `HeartbeatResponse`: `approved: bool = True` (current approval state; flips true once admitted).
+  - `WorkerView`: `approved: bool = True`, `device_code: str | None = None`.
+- `workers` table gained `approved INTEGER NOT NULL DEFAULT 1` and `device_code TEXT` (default 1 keeps
+  non-gated fleets unchanged).
+
+### 6.3 Dashboard API (additive)
+One-call fleet launch + per-job/per-workload output retrieval. Full UI-integration reference:
+[`docs/dashboard-api.md`](dashboard-api.md).
+- **Launch:** `POST /workloads` `WorkloadLaunchRequest{ kind, n_tiles=3, params }` → `WorkloadLaunchResponse{
+  workload_id, kind, job_ids }`. Builds the hardcoded split (one tile per machine) and enqueues each tile
+  tagged with a shared `workload_id`. **400** on an unknown/non-launchable kind.
+- **Catalog:** `GET /workloads/catalog` → `{"workloads": [ {kind,label,category,ai,blurb,default_params,split} ]}`
+  — the launchable examples a UI renders as buttons (registered before `/workloads/{workload_id}`).
+- **Output retrieval:** `GET /jobs/{job_id}` → `JobDetail` (job record + parsed output; registered after
+  `/jobs/next`) and `GET /workloads/{workload_id}` → `WorkloadView{ workload_id, kind, total, completed,
+  jobs:[JobDetail] }`.
+- New contracts models/exports: `JobDetail`, `WorkloadLaunchRequest`, `WorkloadLaunchResponse`,
+  `WorkloadView`, and the constant `LAUNCHABLE_KINDS = ("fractal","optimize","ai.batch_infer","ai.synth","data.transform")`.
+- `jobs` table gained `workload_id TEXT` (groups jobs launched together); `submit_job(conn, req, workload_id=None)`.
