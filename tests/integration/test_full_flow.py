@@ -54,8 +54,11 @@ def test_tampered_input_is_refused_before_running():
     app = create_app(":memory:")
     with TestClient(app) as client:
         _submit(client, kind="data.transform", input={"items": [1], "op": "square"}, units=1)
-        client.post("/register", json=Capability(worker_id="w", cpus=2).model_dump())
-        assignment = JobAssignment(**client.get("/jobs/next", params={"worker_id": "w"}).json())
+        register = client.post("/register", json=Capability(worker_id="w", cpus=2).model_dump())
+        auth = {"Authorization": f"Bearer {register.json()['worker_token']}"}
+        assignment = JobAssignment(
+            **client.get("/jobs/next", params={"worker_id": "w"}, headers=auth).json()
+        )
         assignment.input = {"items": [999], "op": "square"}  # tamper after signing
         agent = WorkerAgent("http://test", Capability(worker_id="w", cpus=2), client=client)
         rr = agent.run_job(assignment)

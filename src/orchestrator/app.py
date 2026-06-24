@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import UTC, datetime, timedelta
+from hmac import compare_digest
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, Header, HTTPException, Response
 from fastapi.responses import HTMLResponse
 
 from contracts import (
@@ -30,6 +31,19 @@ from orchestrator.db import init_db, write_lock
 from orchestrator.scheduler import class_weight_for, pick_job_for
 from orchestrator.submit import submit_job
 from trust import Signer, check_challenge
+
+MAX_RESULT_OUTPUT_BYTES = 256 * 1024
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    # The demo dashboard uses inline CSS/JS and data: fonts/images.
+    "Content-Security-Policy": (
+        "default-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+        "font-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'"
+    ),
+}
 
 
 def _now() -> str:
@@ -60,6 +74,30 @@ def _worker_or_404(conn: sqlite3.Connection, worker_id: str) -> sqlite3.Row:
     return worker
 
 
+def _require_worker_token(
+    conn: sqlite3.Connection,
+    worker_id: str,
+    authorization: str | None,
+) -> sqlite3.Row:
+    worker = conn.execute(
+        "SELECT * FROM workers WHERE worker_id = ?",
+        (worker_id,),
+    ).fetchone()
+    detail = "invalid worker token"
+    if authorization is None:
+        detail = "missing bearer token"
+    elif not authorization.startswith("Bearer "):
+        detail = "invalid authorization scheme"
+    else:
+        token = authorization.removeprefix("Bearer ").strip()
+        stored_token = str(worker["token"]) if worker is not None else "0" * 32
+        token_matches = bool(token) and compare_digest(token, stored_token)
+        if worker is not None and token_matches:
+            return worker
+    _emit(conn, "auth_failed", worker_id=worker_id, detail=detail)
+    raise HTTPException(status_code=401, detail=detail)
+
+
 def _emit(
     conn: sqlite3.Connection,
     event_type: str,
@@ -82,6 +120,12 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
         signer = Signer()  # signing is ON by default; the worker verifies before running
     app = FastAPI(title="NightShift Orchestrator")
     app.state.conn = conn
+
+    @app.middleware("http")
+    async def add_security_headers(request, call_next):
+        response = await call_next(request)
+        response.headers.update(SECURITY_HEADERS)
+        return response
 
     @app.post("/register", response_model=RegisterResponse)
     def register(cap: Capability) -> RegisterResponse:
@@ -117,6 +161,7 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
 
     @app.post("/jobs", response_model=SubmitResponse)
     def submit(req: SubmitRequest) -> SubmitResponse:
+        # Production gates submit/read endpoints behind SSO; the PoC leaves them open.
         try:
             job_id = submit_job(conn, req)
         except ValueError as exc:
@@ -125,8 +170,8 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
         return SubmitResponse(job_id=job_id)
 
     @app.get("/jobs/next", response_model=JobAssignment)
-    def jobs_next(worker_id: str):
-        worker = _worker_or_404(conn, worker_id)
+    def jobs_next(worker_id: str, authorization: str | None = Header(default=None)):
+        worker = _require_worker_token(conn, worker_id, authorization)
         if worker["blacklisted"]:
             return Response(status_code=204)
         reap_expired(conn)
@@ -166,8 +211,11 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
         )
 
     @app.post("/heartbeat", response_model=HeartbeatResponse)
-    def heartbeat(req: HeartbeatRequest) -> HeartbeatResponse:
-        _worker_or_404(conn, req.worker_id)
+    def heartbeat(
+        req: HeartbeatRequest,
+        authorization: str | None = Header(default=None),
+    ) -> HeartbeatResponse:
+        _require_worker_token(conn, req.worker_id, authorization)
         now = _now()
         with write_lock:
             conn.execute(
@@ -210,10 +258,14 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
         return HeartbeatResponse(ack=True, preempt=False)
 
     @app.post("/results/{job_id}", response_model=ResultResponse)
-    def results(job_id: str, req: ResultRequest) -> ResultResponse:
+    def results(
+        job_id: str,
+        req: ResultRequest,
+        authorization: str | None = Header(default=None),
+    ) -> ResultResponse:
         if req.job_id != job_id:
             raise HTTPException(status_code=400, detail="job id mismatch")
-        worker = _worker_or_404(conn, req.worker_id)
+        worker = _require_worker_token(conn, req.worker_id, authorization)
         if worker["blacklisted"]:
             return ResultResponse(accepted=False, reason="blacklisted")
         now = _now()
@@ -234,8 +286,11 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
                 )
                 conn.commit()
                 return ResultResponse(accepted=False, credited=0.0, reason="lease_expired")
+            output = req.output or {}
+            output_json = json.dumps(output, separators=(",", ":"))
+            if len(output_json.encode("utf-8")) > MAX_RESULT_OUTPUT_BYTES:
+                return ResultResponse(accepted=False, credited=0.0, reason="payload_too_large")
             if req.status == "completed":
-                output = req.output or {}
                 if req.proof_sha256 and req.proof_sha256 != sha256_hex(output):
                     conn.execute(
                         """
@@ -273,14 +328,13 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
                             accepted=False, credited=0.0, reason="cheater_blacklisted"
                         )
                 credits = float(job["units"]) * float(worker["class_weight"])
-                result_json = json.dumps(output, separators=(",", ":"))
                 conn.execute(
                     """
                     UPDATE jobs
                     SET state = 'completed', result_json = ?, lease_expires = NULL, updated_at = ?
                     WHERE job_id = ? AND state = 'leased' AND assigned_worker = ?
                     """,
-                    (result_json, now, job_id, req.worker_id),
+                    (output_json, now, job_id, req.worker_id),
                 )
                 conn.execute(
                     """
@@ -374,9 +428,5 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
         return HTMLResponse(INDEX_HTML.read_text(encoding="utf-8"))
 
     return app
-
-
-
-
 
 

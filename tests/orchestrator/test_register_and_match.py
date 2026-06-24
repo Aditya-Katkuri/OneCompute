@@ -14,8 +14,8 @@ def test_gpu_job_only_matches_gpu_worker():
     }
     cpu_cap = {"worker_id": "cpu-1", "cpus": 8, "has_gpu": False}
 
-    assert client.post("/register", json=gpu_cap).status_code == 200
-    assert client.post("/register", json=cpu_cap).status_code == 200
+    gpu_token = client.post("/register", json=gpu_cap).json()["worker_token"]
+    cpu_token = client.post("/register", json=cpu_cap).json()["worker_token"]
     submit = client.post(
         "/jobs",
         json={
@@ -28,10 +28,18 @@ def test_gpu_job_only_matches_gpu_worker():
     assert submit.status_code == 200
     job_id = submit.json()["job_id"]
 
-    cpu_next = client.get("/jobs/next", params={"worker_id": "cpu-1"})
+    cpu_next = client.get(
+        "/jobs/next",
+        params={"worker_id": "cpu-1"},
+        headers={"Authorization": f"Bearer {cpu_token}"},
+    )
     assert cpu_next.status_code == 204
 
-    gpu_next = client.get("/jobs/next", params={"worker_id": "gpu-1"})
+    gpu_next = client.get(
+        "/jobs/next",
+        params={"worker_id": "gpu-1"},
+        headers={"Authorization": f"Bearer {gpu_token}"},
+    )
     assert gpu_next.status_code == 200
     assert gpu_next.json()["signed_manifest"]["manifest"]["job_id"] == job_id
 

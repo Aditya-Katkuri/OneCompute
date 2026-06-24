@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from datetime import UTC, datetime
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
@@ -58,6 +59,10 @@ class WorkerAgent:
         self.registered = False
 
     def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+        if self.worker_token:
+            headers = dict(kwargs.get("headers") or {})
+            headers["Authorization"] = f"Bearer {self.worker_token}"
+            kwargs["headers"] = headers
         try:
             response = self.client.request(method, url, **kwargs)
             response.raise_for_status()
@@ -124,6 +129,8 @@ class WorkerAgent:
         manifest = sm.manifest
         if sm.signature and not verify_manifest(sm):
             return False, "bad_signature"
+        if manifest.expires_at and manifest.expires_at <= datetime.now(UTC):
+            return False, "manifest_expired"
         if manifest.input_sha256 and sha256_hex(assignment.input) != manifest.input_sha256:
             return False, "input_hash_mismatch"
         return True, ""
