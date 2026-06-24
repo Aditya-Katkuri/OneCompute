@@ -19,13 +19,14 @@ def test_completed_result_credits_gpu_weight():
         },
     )
     assert register.status_code == 200
+    auth = {"Authorization": f"Bearer {register.json()['worker_token']}"}
     submit = client.post(
         "/jobs",
         json={"kind": "challenge", "input": {"x": 3}, "requires": {"needs_gpu": True}, "units": 3},
     )
     assert submit.status_code == 200
     job_id = submit.json()["job_id"]
-    assignment = client.get("/jobs/next", params={"worker_id": "gpu-1"})
+    assignment = client.get("/jobs/next", params={"worker_id": "gpu-1"}, headers=auth)
     assert assignment.status_code == 200
 
     result = client.post(
@@ -37,6 +38,7 @@ def test_completed_result_credits_gpu_weight():
             "output": {"y": 10},
             "units": 3,
         },
+        headers=auth,
     )
     assert result.status_code == 200
     assert result.json()["accepted"] is True
@@ -49,33 +51,58 @@ def test_completed_result_credits_gpu_weight():
 
 def test_results_require_lease_owner_and_do_not_double_credit():
     client = TestClient(create_app(":memory:"))
-    assert client.post("/register", json={"worker_id": "owner", "cpus": 2}).status_code == 200
-    assert client.post("/register", json={"worker_id": "other", "cpus": 2}).status_code == 200
+    owner_token = client.post("/register", json={"worker_id": "owner", "cpus": 2}).json()[
+        "worker_token"
+    ]
+    other_token = client.post("/register", json={"worker_id": "other", "cpus": 2}).json()[
+        "worker_token"
+    ]
+    owner_auth = {"Authorization": f"Bearer {owner_token}"}
+    other_auth = {"Authorization": f"Bearer {other_token}"}
     submit = client.post(
         "/jobs",
         json={"kind": "challenge", "input": {"x": 2}, "units": 2},
     )
     assert submit.status_code == 200
     job_id = submit.json()["job_id"]
-    assert client.get("/jobs/next", params={"worker_id": "owner"}).status_code == 200
+    assert client.get(
+        "/jobs/next",
+        params={"worker_id": "owner"},
+        headers=owner_auth,
+    ).status_code == 200
 
     stolen = client.post(
         f"/results/{job_id}",
         json={"worker_id": "other", "job_id": job_id, "status": "completed", "units": 99},
+        headers=other_auth,
     )
     assert stolen.status_code == 200
     assert stolen.json() == {"accepted": False, "credited": 0.0, "reason": "not_leased"}
 
     accepted = client.post(
         f"/results/{job_id}",
-        json={"worker_id": "owner", "job_id": job_id, "status": "completed", "output": {"y": 5}, "units": 99},
+        json={
+            "worker_id": "owner",
+            "job_id": job_id,
+            "status": "completed",
+            "output": {"y": 5},
+            "units": 99,
+        },
+        headers=owner_auth,
     )
     assert accepted.status_code == 200
     assert accepted.json()["credited"] == 2.0
 
     duplicate = client.post(
         f"/results/{job_id}",
-        json={"worker_id": "owner", "job_id": job_id, "status": "completed", "output": {"y": 5}, "units": 99},
+        json={
+            "worker_id": "owner",
+            "job_id": job_id,
+            "status": "completed",
+            "output": {"y": 5},
+            "units": 99,
+        },
+        headers=owner_auth,
     )
     assert duplicate.status_code == 200
     assert duplicate.json() == {"accepted": False, "credited": 0.0, "reason": "not_leased"}
@@ -85,11 +112,14 @@ def test_results_require_lease_owner_and_do_not_double_credit():
 def test_expired_result_is_requeued_without_credit(tmp_path):
     db_path = str(tmp_path / "results.db")
     client = TestClient(create_app(db_path))
-    assert client.post("/register", json={"worker_id": "worker", "cpus": 2}).status_code == 200
+    token = client.post("/register", json={"worker_id": "worker", "cpus": 2}).json()[
+        "worker_token"
+    ]
+    auth = {"Authorization": f"Bearer {token}"}
     submit = client.post("/jobs", json={"kind": "challenge", "input": {"x": 5}, "units": 4})
     assert submit.status_code == 200
     job_id = submit.json()["job_id"]
-    assert client.get("/jobs/next", params={"worker_id": "worker"}).status_code == 200
+    assert client.get("/jobs/next", params={"worker_id": "worker"}, headers=auth).status_code == 200
 
     expired = (datetime.now(UTC) - timedelta(seconds=1)).isoformat()
     conn = connect(db_path)
@@ -101,6 +131,7 @@ def test_expired_result_is_requeued_without_credit(tmp_path):
     result = client.post(
         f"/results/{job_id}",
         json={"worker_id": "worker", "job_id": job_id, "status": "completed", "units": 4},
+        headers=auth,
     )
     assert result.status_code == 200
     assert result.json() == {"accepted": False, "credited": 0.0, "reason": "lease_expired"}
@@ -111,15 +142,19 @@ def test_expired_result_is_requeued_without_credit(tmp_path):
 
 def test_invalid_challenge_result_blacklists_the_cheater():
     client = TestClient(create_app(":memory:"))
-    assert client.post("/register", json={"worker_id": "worker", "cpus": 2}).status_code == 200
+    token = client.post("/register", json={"worker_id": "worker", "cpus": 2}).json()[
+        "worker_token"
+    ]
+    auth = {"Authorization": f"Bearer {token}"}
     submit = client.post("/jobs", json={"kind": "challenge", "input": {"x": 3}, "units": 4})
     assert submit.status_code == 200
     job_id = submit.json()["job_id"]
-    assert client.get("/jobs/next", params={"worker_id": "worker"}).status_code == 200
+    assert client.get("/jobs/next", params={"worker_id": "worker"}, headers=auth).status_code == 200
 
     result = client.post(
         f"/results/{job_id}",
         json={"worker_id": "worker", "job_id": job_id, "status": "completed", "output": {"y": 999}},
+        headers=auth,
     )
     assert result.status_code == 200
     assert result.json() == {"accepted": False, "credited": 0.0, "reason": "cheater_blacklisted"}
@@ -130,4 +165,3 @@ def test_invalid_challenge_result_blacklists_the_cheater():
     worker_view = next(w for w in state["workers"] if w["worker_id"] == "worker")
     assert worker_view["blacklisted"] is True
     assert worker_view["credits"] == 0.0
-

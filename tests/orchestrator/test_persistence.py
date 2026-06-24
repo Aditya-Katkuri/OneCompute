@@ -11,12 +11,13 @@ def test_worker_and_ledger_survive_db_reopen(tmp_path):
     app = create_app(db_path)
     client = TestClient(app)
 
-    assert client.post("/register", json={"worker_id": "w1", "cpus": 4}).status_code == 200
+    token = client.post("/register", json={"worker_id": "w1", "cpus": 4}).json()["worker_token"]
+    auth = {"Authorization": f"Bearer {token}"}
     # x=3 -> challenge expects y = x*x + 1 = 10, so {"y": 10} is a valid answer.
     submit = client.post("/jobs", json={"kind": "challenge", "input": {"x": 3}, "units": 2})
     assert submit.status_code == 200
     job_id = submit.json()["job_id"]
-    assert client.get("/jobs/next", params={"worker_id": "w1"}).status_code == 200
+    assert client.get("/jobs/next", params={"worker_id": "w1"}, headers=auth).status_code == 200
     result = client.post(
         f"/results/{job_id}",
         json={
@@ -26,6 +27,7 @@ def test_worker_and_ledger_survive_db_reopen(tmp_path):
             "output": {"y": 10},
             "units": 2,
         },
+        headers=auth,
     )
     assert result.status_code == 200
     assert result.json()["accepted"] is True
