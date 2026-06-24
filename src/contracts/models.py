@@ -182,3 +182,49 @@ class FleetState(BaseModel):
     workers: list[WorkerView] = Field(default_factory=list)
     jobs: list[JobView] = Field(default_factory=list)
     total_credits: float = 0.0
+
+
+# --- dashboard: job/workload detail (output retrieval + one-call launch) ------
+
+# Workload kinds a dashboard can launch across the fleet with POST /workloads.
+LAUNCHABLE_KINDS: tuple[str, ...] = (
+    "fractal", "optimize", "ai.batch_infer", "ai.synth", "data.transform",
+)
+
+
+class JobDetail(BaseModel):
+    """A job record plus its parsed output — what a dashboard reads to show results."""
+
+    job_id: str
+    kind: JobKind
+    state: JobState
+    assigned_worker: str | None = None
+    units: int = 1
+    workload_id: str | None = None
+    output: dict[str, Any] | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class WorkloadLaunchRequest(BaseModel):
+    """Launch a whole workload across the fleet in one call (hardcoded split into n_tiles)."""
+
+    kind: str
+    n_tiles: int = 3
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkloadLaunchResponse(BaseModel):
+    workload_id: str
+    kind: str
+    job_ids: list[str] = Field(default_factory=list)
+
+
+class WorkloadView(BaseModel):
+    """A launched workload's jobs + outputs, for the dashboard results panel."""
+
+    workload_id: str
+    kind: str
+    total: int = 0
+    completed: int = 0
+    jobs: list[JobDetail] = Field(default_factory=list)

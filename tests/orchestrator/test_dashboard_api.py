@@ -1,0 +1,114 @@
+"""Dashboard-readiness API: output retrieval (GET /jobs/{id}, GET /workloads/{id})
+and one-call workload launch (POST /workloads)."""
+
+from fastapi.testclient import TestClient
+
+from jobkit.execute import execute
+from orchestrator.app import create_app
+
+
+def _complete_next(client: TestClient, worker_id: str) -> str | None:
+    """Lease the next job for worker_id, run it via jobkit, post the real output.
+
+    Mirrors what a worker does, so the stored output is the genuine executor result.
+    Returns the completed job_id, or None when there is no work to lease.
+    """
+    assignment = client.get("/jobs/next", params={"worker_id": worker_id})
+    if assignment.status_code == 204:
+        return None
+    data = assignment.json()
+    manifest = data["signed_manifest"]["manifest"]
+    job_id = manifest["job_id"]
+    output = execute(manifest["kind"], data["input"])
+    client.post(
+        f"/results/{job_id}",
+        json={
+            "worker_id": worker_id,
+            "job_id": job_id,
+            "status": "completed",
+            "output": output,
+            "units": 1,
+        },
+    )
+    return job_id
+
+
+def test_job_detail_returns_stored_output():
+    client = TestClient(create_app(":memory:"))
+    client.post("/register", json={"worker_id": "w1", "cpus": 4, "ram_gb": 8.0})
+    job_id = client.post(
+        "/jobs",
+        json={"kind": "data.transform", "input": {"items": [1, 2, 3], "op": "square"}, "units": 3},
+    ).json()["job_id"]
+
+    queued = client.get(f"/jobs/{job_id}")
+    assert queued.status_code == 200
+    body = queued.json()
+    assert body["state"] == "queued" and body["output"] is None and body["workload_id"] is None
+
+    assert _complete_next(client, "w1") == job_id
+    done = client.get(f"/jobs/{job_id}").json()
+    assert done["state"] == "completed"
+    assert done["output"]["results"] == [1, 4, 9]
+
+
+def test_job_detail_unknown_is_404():
+    client = TestClient(create_app(":memory:"))
+    assert client.get("/jobs/does-not-exist").status_code == 404
+
+
+def test_jobs_next_literal_route_still_wins():
+    # GET /jobs/next must remain the long-poll, not get swallowed by GET /jobs/{job_id}.
+    client = TestClient(create_app(":memory:"))
+    client.post("/register", json={"worker_id": "w1", "cpus": 2})
+    assert client.get("/jobs/next", params={"worker_id": "w1"}).status_code == 204
+
+
+def test_launch_workload_splits_and_tags():
+    client = TestClient(create_app(":memory:"))
+    resp = client.post(
+        "/workloads",
+        json={"kind": "fractal", "n_tiles": 3, "params": {"width": 40, "height": 30, "max_iter": 40}},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    workload_id = body["workload_id"]
+    assert body["kind"] == "fractal" and len(body["job_ids"]) == 3
+
+    view = client.get(f"/workloads/{workload_id}").json()
+    assert view["total"] == 3 and view["completed"] == 0
+    assert all(job["workload_id"] == workload_id for job in view["jobs"])
+    for job_id in body["job_ids"]:
+        assert client.get(f"/jobs/{job_id}").json()["workload_id"] == workload_id
+
+
+def test_launch_workload_outputs_retrievable():
+    client = TestClient(create_app(":memory:"))
+    client.post("/register", json={"worker_id": "w1", "cpus": 4, "ram_gb": 8.0})
+    body = client.post(
+        "/workloads",
+        json={"kind": "fractal", "n_tiles": 3, "params": {"width": 30, "height": 24, "max_iter": 30}},
+    ).json()
+    workload_id = body["workload_id"]
+
+    for _ in range(10):
+        if _complete_next(client, "w1") is None:
+            break
+
+    view = client.get(f"/workloads/{workload_id}").json()
+    assert view["completed"] == 3
+    rows_total = 0
+    for job in view["jobs"]:
+        assert job["output"] is not None and "rows" in job["output"]
+        rows_total += len(job["output"]["rows"])
+    assert rows_total == 24  # the tiles reassemble to the full image height
+
+
+def test_launch_workload_rejects_bad_kind():
+    client = TestClient(create_app(":memory:"))
+    assert client.post("/workloads", json={"kind": "bogus"}).status_code == 400
+
+
+def test_workload_unknown_is_404():
+    client = TestClient(create_app(":memory:"))
+    assert client.get("/workloads/nope").status_code == 404

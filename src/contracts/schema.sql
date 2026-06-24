@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     input_json      TEXT,
     state           TEXT NOT NULL DEFAULT 'queued',  -- queued | leased | completed | failed
     units           INTEGER NOT NULL DEFAULT 1,
+    workload_id     TEXT,                            -- groups jobs launched together via POST /workloads
     assigned_worker TEXT,
     lease_expires   TEXT,
     result_json     TEXT,
