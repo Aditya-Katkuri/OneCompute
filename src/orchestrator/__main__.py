@@ -116,11 +116,13 @@ def _banner_lines(host: str, port: int, db_path: str, scheme: str = "http") -> l
 
 
 def _serve(host: str, port: int, db_path: str, log_level: str,
-           tls_cert: str | None = None, tls_key: str | None = None) -> None:
+           tls_cert: str | None = None, tls_key: str | None = None,
+           require_approval: bool = False) -> None:
     """Start uvicorn against a persistent file-backed app. Serves HTTPS when a TLS cert+key are
-    given (the doctrine's 'plain HTTPS' transport for a cloud/multi-site pilot). Blocks until
-    shutdown."""
-    app = create_app(db_path)
+    given (the doctrine's 'plain HTTPS' transport for a cloud/multi-site pilot). When
+    require_approval is set, joining workers are gated behind a dashboard device-code approval.
+    Blocks until shutdown."""
+    app = create_app(db_path, require_approval=require_approval)
     config = uvicorn.Config(
         app, host=host, port=port, log_level=log_level,
         ssl_certfile=tls_cert, ssl_keyfile=tls_key,
@@ -142,6 +144,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--log-level", default="info", help="uvicorn log level (default info)")
     parser.add_argument("--tls-cert", default=None, help="TLS cert file (serve HTTPS; pair with --tls-key)")
     parser.add_argument("--tls-key", default=None, help="TLS key file (serve HTTPS; pair with --tls-cert)")
+    parser.add_argument(
+        "--require-approval",
+        action="store_true",
+        help="Gate joining workers behind a dashboard device-code approval (a worker shows a code "
+             "and is PENDING until an admin clicks Approve in the dashboard).",
+    )
     args = parser.parse_args(argv)
 
     host = args.host if args.host is not None else env_host
@@ -163,12 +171,15 @@ def main(argv: list[str] | None = None) -> int:
 
     for banner_line in _banner_lines(host, port, db_path, scheme):
         print(banner_line)
+    if args.require_approval:
+        print("  Credential gate: ON — workers join PENDING and need dashboard approval (device code).")
     sys.stdout.flush()
 
     try:
         _serve(
             host, port, db_path, args.log_level,
             args.tls_cert if tls else None, args.tls_key if tls else None,
+            require_approval=args.require_approval,
         )
     except KeyboardInterrupt:
         print("\nshutting down (Ctrl-C)")

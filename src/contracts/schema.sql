@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS workers (
     gpu_pct        REAL,
     on_ac          INTEGER NOT NULL DEFAULT 1,
     blacklisted    INTEGER NOT NULL DEFAULT 0,
+    approved       INTEGER NOT NULL DEFAULT 1,  -- dashboard-approval gate; 1 keeps non-gated flows unchanged
+    device_code    TEXT,                        -- short human code shown while pending approval
     last_heartbeat TEXT,
     registered_at  TEXT NOT NULL
 );
@@ -48,7 +50,7 @@ CREATE INDEX IF NOT EXISTS idx_ledger_worker ON ledger(worker_id);
 CREATE TABLE IF NOT EXISTS events (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     ts        TEXT NOT NULL,
-    type      TEXT NOT NULL,   -- registered | submitted | assigned | completed | yielded | failed | blacklisted
+    type      TEXT NOT NULL,   -- registered | approved | submitted | assigned | completed | yielded | failed | blacklisted
     worker_id TEXT,
     job_id    TEXT,
     detail    TEXT

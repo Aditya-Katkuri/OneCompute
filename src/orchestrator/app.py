@@ -36,6 +36,18 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+# Crockford-ish alphabet: no 0/1/O/I so a code read aloud / typed from a screen is unambiguous.
+_DEVICE_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def _make_device_code() -> str:
+    """A short human code like 'WX7Q-12' derived from uuid4 entropy (6 chars, dash after 4)."""
+    raw = uuid4().hex
+    chars = [_DEVICE_CODE_ALPHABET[int(raw[i : i + 2], 16) % len(_DEVICE_CODE_ALPHABET)]
+             for i in range(0, 12, 2)]
+    return f"{''.join(chars[:4])}-{''.join(chars[4:6])}"
+
+
 def _lease_deadline() -> str:
     return (datetime.now(UTC) + timedelta(seconds=20)).isoformat()
 
@@ -76,7 +88,7 @@ def _emit(
         conn.commit()
 
 
-def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
+def create_app(db_path: str = ":memory:", signer=None, require_approval: bool = False) -> FastAPI:
     conn = init_db(db_path)
     if signer is None:
         signer = Signer()  # signing is ON by default; the worker verifies before running
@@ -88,32 +100,50 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
         token = uuid4().hex
         now = _now()
         weight = class_weight_for(cap)
+        approved = 0 if require_approval else 1
+        # Only pending workers carry a device code; an auto-approved (non-gated) worker has none.
+        device_code = None if approved else _make_device_code()
         with write_lock:
             conn.execute(
                 """
                 INSERT INTO workers (
                     worker_id, token, capability_json, class_weight, free_ram_gb, idle,
-                    registered_at, last_heartbeat
-                ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+                    approved, device_code, registered_at, last_heartbeat
+                ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
                 ON CONFLICT(worker_id) DO UPDATE SET
                     token = excluded.token,
                     capability_json = excluded.capability_json,
                     class_weight = excluded.class_weight,
                     free_ram_gb = excluded.free_ram_gb,
                     idle = 1,
+                    -- never demote an already-approved worker on re-register; only a
+                    -- pending worker keeps its (refreshed) device code while gated.
+                    approved = MAX(workers.approved, excluded.approved),
+                    device_code = CASE WHEN workers.approved = 1 THEN NULL
+                                       ELSE excluded.device_code END,
                     registered_at = excluded.registered_at,
                     last_heartbeat = excluded.last_heartbeat
                 """,
                 (
                     cap.worker_id, token, cap.model_dump_json(), weight,
                     cap.free_ram_gb if cap.free_ram_gb is not None else cap.ram_gb,
+                    approved, device_code,
                     now, now,
                 ),
             )
             conn.commit()
+            row = conn.execute(
+                "SELECT approved, device_code FROM workers WHERE worker_id = ?",
+                (cap.worker_id,),
+            ).fetchone()
+        is_approved = bool(row["approved"])
         _emit(conn, "registered", worker_id=cap.worker_id,
               detail="gpu" if cap.has_gpu else "cpu")
-        return RegisterResponse(worker_token=token)
+        return RegisterResponse(
+            worker_token=token,
+            device_code=None if is_approved else row["device_code"],
+            approved=is_approved,
+        )
 
     @app.post("/jobs", response_model=SubmitResponse)
     def submit(req: SubmitRequest) -> SubmitResponse:
@@ -128,6 +158,8 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
     def jobs_next(worker_id: str):
         worker = _worker_or_404(conn, worker_id)
         if worker["blacklisted"]:
+            return Response(status_code=204)
+        if not worker["approved"]:
             return Response(status_code=204)
         reap_expired(conn)
         cap = Capability(**json.loads(worker["capability_json"]))
@@ -167,7 +199,8 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
 
     @app.post("/heartbeat", response_model=HeartbeatResponse)
     def heartbeat(req: HeartbeatRequest) -> HeartbeatResponse:
-        _worker_or_404(conn, req.worker_id)
+        worker = _worker_or_404(conn, req.worker_id)
+        approved = bool(worker["approved"])
         now = _now()
         with write_lock:
             conn.execute(
@@ -207,7 +240,19 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
                     (_lease_deadline(), now, req.current_job_id, req.worker_id, now),
                 )
             conn.commit()
-        return HeartbeatResponse(ack=True, preempt=False)
+        return HeartbeatResponse(ack=True, preempt=False, approved=approved)
+
+    @app.post("/workers/{worker_id}/approve")
+    def approve(worker_id: str) -> dict:
+        _worker_or_404(conn, worker_id)
+        with write_lock:
+            conn.execute(
+                "UPDATE workers SET approved = 1, device_code = NULL WHERE worker_id = ?",
+                (worker_id,),
+            )
+            conn.commit()
+        _emit(conn, "approved", worker_id=worker_id, detail="admitted via dashboard")
+        return {"ok": True, "worker_id": worker_id}
 
     @app.post("/results/{job_id}", response_model=ResultResponse)
     def results(job_id: str, req: ResultRequest) -> ResultResponse:
@@ -336,6 +381,8 @@ def create_app(db_path: str = ":memory:", signer=None) -> FastAPI:
                     free_ram_gb=worker["free_ram_gb"],
                     blacklisted=bool(worker["blacklisted"]),
                     credits=float(credits),
+                    approved=bool(worker["approved"]),
+                    device_code=worker["device_code"],
                 )
             )
         job_rows = conn.execute("SELECT * FROM jobs ORDER BY created_at ASC").fetchall()

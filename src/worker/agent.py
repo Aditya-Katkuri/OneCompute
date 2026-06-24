@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
@@ -56,6 +57,8 @@ class WorkerAgent:
         self.worker_token: str | None = None
         self.poll_interval_s: float | None = None
         self.registered = False
+        self.approved: bool = True
+        self.device_code: str | None = None
 
     def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
         try:
@@ -92,6 +95,8 @@ class WorkerAgent:
             register_response = RegisterResponse(**resp.json())
             self.worker_token = register_response.worker_token
             self.poll_interval_s = register_response.poll_interval_s
+            self.approved = register_response.approved
+            self.device_code = register_response.device_code
             self.registered = True
         except httpx.HTTPError as exc:
             logger.warning("worker registration failed: %s", exc)
@@ -99,6 +104,35 @@ class WorkerAgent:
         except Exception as exc:
             logger.warning("worker registration failed: %s", exc)
             self.registered = False
+
+    def wait_for_approval(self, poll_s: float | None = None, once: bool = False) -> bool:
+        """Block (heartbeating) until the dashboard approves this worker.
+
+        Returns True once approved. With once=True, send a single heartbeat and return the
+        current approval state without looping (keeps --once non-hanging). The device code is
+        printed prominently so an admin can approve it in the dashboard.
+        """
+        if self.approved:
+            return True
+        code = self.device_code or "????-??"
+        print(
+            f"Fleet access code: {code} — waiting for approval in the dashboard…",
+            flush=True,
+        )
+        delay = poll_s if poll_s is not None else (self.poll_interval_s or 1.5)
+        while True:
+            hb = self.heartbeat()
+            if hb.approved:
+                self.approved = True
+                self.device_code = None
+                print(
+                    f"[+] Access granted — {self.capability.worker_id} joined the fleet",
+                    flush=True,
+                )
+                return True
+            if once:
+                return False
+            time.sleep(max(0.0, delay))
 
     def poll_once(self) -> JobAssignment | None:
         try:
@@ -149,9 +183,13 @@ class WorkerAgent:
         try:
             if self.isolated:
                 # GPU jobs must run host-side (real CUDA device); a Linux container can't see
-                # the GPU. Route them to the on-host Job-Object path even when Docker is up.
+                # the GPU. AI kinds also run host-side so the real SDK + API-key env are
+                # available (the slim container has neither). Route both to the on-host
+                # Job-Object path even when Docker is up.
                 host_side = (
-                    manifest.requires.needs_gpu or manifest.sandbox.type == "job_object"
+                    manifest.requires.needs_gpu
+                    or manifest.sandbox.type == "job_object"
+                    or manifest.kind.startswith("ai.")
                 )
                 out = run_in_isolation(
                     manifest.kind,
@@ -218,6 +256,10 @@ class WorkerAgent:
             self.register()
         if not self.registered:
             return None
+        if not self.approved:
+            # --once must not hang: a single heartbeat, then bail if still pending.
+            if not self.wait_for_approval(once=True):
+                return None
         assignment = self.poll_once()
         if assignment is None:
             return None

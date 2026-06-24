@@ -14,7 +14,10 @@ from pydantic import BaseModel, Field
 
 # --- enums (string literals keep the JSON contract obvious) ------------------
 
-JobKind = Literal["ai.batch_infer", "eval", "data.transform", "render", "challenge"]
+JobKind = Literal[
+    "ai.batch_infer", "eval", "data.transform", "render", "challenge",
+    "fractal", "optimize", "ai.synth",
+]
 JobState = Literal["queued", "leased", "completed", "failed"]
 ResultStatus = Literal["completed", "failed", "yielded"]
 SandboxType = Literal["docker", "windows_sandbox", "job_object"]
@@ -95,6 +98,8 @@ class SignedManifest(BaseModel):
 class RegisterResponse(BaseModel):
     worker_token: str
     poll_interval_s: float = 1.5
+    device_code: str | None = None     # short human code shown for dashboard approval (gated flows)
+    approved: bool = True              # False when the fleet requires dashboard approval to join
 
 
 class JobAssignment(BaseModel):
@@ -117,6 +122,7 @@ class HeartbeatRequest(BaseModel):
 class HeartbeatResponse(BaseModel):
     ack: bool = True
     preempt: bool = False      # server asks the worker to yield the current job
+    approved: bool = True      # current approval state; flips true once an admin approves the worker
 
 
 class ResultRequest(BaseModel):
@@ -161,6 +167,8 @@ class WorkerView(BaseModel):
     free_ram_gb: float | None = None
     blacklisted: bool = False
     credits: float = 0.0
+    approved: bool = True              # whether the worker has been admitted (dashboard approval gate)
+    device_code: str | None = None     # short pending code shown until an admin approves
 
 
 class JobView(BaseModel):

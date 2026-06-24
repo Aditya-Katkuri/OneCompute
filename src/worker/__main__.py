@@ -55,6 +55,13 @@ def main() -> None:
             print(rr.model_dump() if rr else "no work")
             return
 
+        # Join the fleet before doing any work: register, then (if the fleet gates access)
+        # show the device code and block on heartbeats until an admin approves in the dashboard.
+        if not agent.registered:
+            agent.register()
+        if agent.registered and not agent.approved:
+            agent.wait_for_approval()
+
         idle_gate = IdleGate(input_idle_threshold_s=args.idle_threshold)
         adaptive = args.governor == "adaptive"
         # The adaptive governor is a drop-in for IdleGate: same should_run()/active_now(), but
