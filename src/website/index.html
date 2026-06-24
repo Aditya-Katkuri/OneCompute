@@ -1,0 +1,1058 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OneCompute — Let your compute work when you are not.</title>
+<meta name="description" content="OneCompute harvests the idle CPUs and GPUs of your existing PC fleet into a private, opt-in compute grid. Switch it on tonight.">
+<!--
+  OneCompute marketing site. Self-contained: vendored GSAP + one vendored serif (woff2); everything else
+  is system fonts + inline SVG/canvas + a raw-WebGL background shader (no libraries).
+
+  SIGNATURE: "The Waking Field" — a full-bleed WebGL fragment shader paints a calm, slowly drifting
+  pastel dawn-fluid (idle compute at rest). The cursor leaves a liquid wake: velocity-driven ripples
+  that displace + refract the field and bloom toward coral/magenta (idle compute waking), then settle.
+  Inspired by unseen.co's cursor displacement technique, in our palette, meaning what OneCompute does.
+  Perf-capped (low internal resolution, DPR 1, pauses when hidden). prefers-reduced-motion => a still
+  pastel field, no ripples. No-WebGL => the CSS orb gradient fallback. Grain/film/vignette on top.
+-->
+<link rel="preload" as="font" type="font/woff2" crossorigin href="vendor/fonts/dm-serif-display-400-italic.woff2">
+<style>
+  @font-face{font-family:"DM Serif Display";font-style:italic;font-weight:400;font-display:swap;src:url(vendor/fonts/dm-serif-display-400-italic.woff2) format("woff2")}
+  @font-face{font-family:"DM Serif Display";font-style:normal;font-weight:400;font-display:swap;src:url(vendor/fonts/dm-serif-display-400.woff2) format("woff2")}
+
+  :root{
+    --cream:#F7EFE9; --paper:#F3E7EE;
+    --lilac:#C9B8F0; --purple:#B59FE3; --mauve:#9F86C9;
+    --pink:#F2B5D4; --blush:#F8CCDD; --peach:#F8D3BC; --coral:#E8A38C;
+    --magenta:#D98FC0; --magenta-ink:#b23d80;
+    --plum:#2B2233; --ink:#3A2E45; --muted:#6b6076;
+    --line:rgba(43,34,51,.14);
+    /* unified on-cream surface: paper-tinted + soft shadow + inner light, so "frosted glass over the
+       lake" and "tinted editorial card on cream" read as ONE material that deepens as you scroll */
+    --surface:rgba(243,231,238,.82); --surface-line:rgba(43,34,51,.16);
+    --surface-sh:0 18px 46px -30px rgba(43,34,51,.42), inset 0 1px 0 rgba(255,255,255,.5);
+    --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+    --serif:"DM Serif Display","Iowan Old Style",Georgia,serif;
+    --sans:"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif;
+    --disp:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+    --grad:linear-gradient(120deg,var(--mauve),var(--magenta) 55%,var(--coral));
+    --grad-dark:linear-gradient(140deg,var(--plum) 22%,var(--magenta) 72%,var(--coral));
+    --ease:cubic-bezier(.34,1.56,.64,1);
+    --ease-out:cubic-bezier(.22,1,.36,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  body{background:var(--cream);color:var(--plum);font-family:var(--sans);font-size:17px;
+    overflow-x:hidden;position:relative;line-height:1.5;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  ::selection{background:var(--pink);color:var(--plum)}
+  a{color:inherit;text-decoration:none}
+  :focus-visible{outline:2.5px solid var(--magenta-ink);outline-offset:3px;border-radius:6px}
+  .skip{position:fixed;top:10px;left:10px;z-index:130;background:var(--plum);color:var(--cream);
+    padding:11px 18px;border-radius:10px;font-family:var(--sans);font-weight:600;font-size:14px;
+    transform:translateY(-180%);transition:transform .2s var(--ease-out)}
+  .skip:focus{transform:none}
+
+  /* ---- WebGL liquid background + CSS fallback ---- */
+  /* soft bottom fade dissolves the lake's deep-water edge into cream — no hard seam at 100vh */
+  #fluid{position:absolute;top:0;left:0;width:100%;height:100vh;z-index:0;display:block;
+    -webkit-mask:linear-gradient(#000 62%,transparent 100%);mask:linear-gradient(#000 62%,transparent 100%)}
+  .orbs{position:absolute;top:0;left:0;width:100%;height:100vh;z-index:0;overflow:hidden;pointer-events:none;
+    -webkit-mask:linear-gradient(#000 62%,transparent 100%);mask:linear-gradient(#000 62%,transparent 100%)}
+  .orb{position:absolute;border-radius:50%;filter:blur(80px);opacity:.8;mix-blend-mode:multiply}
+  .o1{width:46vw;height:46vw;background:var(--lilac);left:-8vw;top:-6vw;animation:d1 26s var(--ease) infinite alternate}
+  .o2{width:42vw;height:42vw;background:var(--pink);right:-6vw;top:2vw;animation:d2 30s var(--ease) infinite alternate}
+  .o3{width:50vw;height:50vw;background:var(--peach);left:18vw;bottom:-18vw;animation:d3 34s var(--ease) infinite alternate}
+  .o4{width:34vw;height:34vw;background:var(--purple);right:8vw;bottom:6vw;animation:d4 28s var(--ease) infinite alternate}
+  .o5{width:30vw;height:30vw;background:var(--blush);left:34vw;top:30vh;animation:d2 32s var(--ease) infinite alternate}
+  @keyframes d1{to{transform:translate(8vw,10vh) scale(1.15)}}
+  @keyframes d2{to{transform:translate(-7vw,8vh) scale(1.1)}}
+  @keyframes d3{to{transform:translate(6vw,-9vh) scale(1.2)}}
+  @keyframes d4{to{transform:translate(-9vw,-7vh) scale(1.1)}}
+
+  /* ---- grain + atmosphere on top of everything ---- */
+  body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:95;opacity:.42;mix-blend-mode:multiply;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.86' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E")}
+  body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:94;opacity:.14;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='m'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.5' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23m)'/%3E%3C/svg%3E")}
+  .filmgrain{position:fixed;inset:-150%;z-index:96;pointer-events:none;opacity:.08;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23f)' opacity='0.6'/%3E%3C/svg%3E");
+    animation:grainshift .5s steps(6) infinite}
+  @keyframes grainshift{0%{transform:translate(0,0)}20%{transform:translate(-8%,5%)}40%{transform:translate(6%,-9%)}60%{transform:translate(-5%,7%)}80%{transform:translate(9%,-4%)}100%{transform:translate(0,0)}}
+  .vignette{position:fixed;inset:0;z-index:96;pointer-events:none;mix-blend-mode:multiply;
+    background:radial-gradient(130% 130% at 50% 44%, transparent 54%, rgba(43,34,51,.20) 100%)}
+  @media(prefers-reduced-motion:reduce){.orb,.filmgrain{animation:none}}
+
+  /* ---- layout ---- */
+  .wrap{position:relative;z-index:2;max-width:1280px;margin:0 auto;padding:0 clamp(22px,5vw,90px)}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.30em;text-transform:uppercase;color:var(--muted)}
+  h1,h2,h3{font-family:var(--disp);font-weight:700;letter-spacing:-.025em;line-height:1.0;text-wrap:balance}
+  /* hero focal word: solid AA-safe magenta on the pastel field (was gradient-clip text, 1.15:1) */
+  .it{font-family:var(--serif);font-weight:400;font-style:italic;letter-spacing:-.01em;color:var(--magenta-ink)}
+  /* all live numbers in solid high-contrast ink (was gradient-clip text, ~1.84:1 — §5 ban + fail) */
+  .grad-num{color:var(--plum);font-variant-numeric:tabular-nums}
+
+  .nav{position:fixed;top:0;left:0;right:0;z-index:40;transition:background .4s var(--ease-out),box-shadow .4s var(--ease-out)}
+  .nav.scrolled{background:rgba(247,239,233,.7);backdrop-filter:saturate(1.4) blur(12px);box-shadow:0 1px 0 var(--line)}
+  .nav__in{max-width:1280px;margin:0 auto;padding:0 clamp(22px,5vw,90px);height:74px;display:flex;align-items:center;justify-content:space-between}
+  .brand{display:flex;align-items:center;gap:12px;font-family:var(--disp);font-weight:700;font-size:19px;letter-spacing:-.02em}
+  .brand svg{width:30px;height:30px}
+  .nav__links{display:flex;align-items:center;gap:30px}
+  .nav__links a{font-size:14px;color:var(--ink);font-weight:500}
+  .nav__links a.nh{padding:12px 6px}
+  .nav__links a:hover{color:var(--plum)}
+  @media(max-width:820px){.nav__links .nh{display:none}}
+
+  .btn{display:inline-flex;align-items:center;gap:9px;font-family:var(--sans);font-weight:600;font-size:14px;
+    padding:13px 22px;border-radius:999px;border:1.5px solid var(--plum);background:var(--plum);color:var(--cream);
+    cursor:pointer;transition:transform .3s var(--ease),box-shadow .3s var(--ease),background .3s var(--ease-out),color .3s var(--ease-out)}
+  .btn:hover{transform:translateY(-2px);box-shadow:0 14px 30px -12px rgba(43,34,51,.6)}
+  .btn--ghost{background:transparent;color:var(--plum)}
+  .btn--ghost:hover{background:var(--plum);color:var(--cream)}
+  .btn .ar{transition:transform .3s var(--ease)}
+  .btn:hover .ar{transform:translateX(4px)}
+
+  .hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:150px 0 90px;position:relative}
+  .kick{display:flex;gap:16px;align-items:center;margin-bottom:34px}
+  .kick .ln{height:1px;width:70px;background:linear-gradient(90deg,var(--magenta),transparent)}
+  .hero h1{font-size:clamp(50px,10.5vw,158px);margin:0 0 -.04em -.01em;color:var(--plum);text-shadow:0 1px 30px rgba(247,239,233,.5)}
+  .hero .sub{max-width:580px;margin-top:38px;color:var(--ink);font-size:clamp(17px,1.7vw,21px);line-height:1.5;text-wrap:pretty}
+  .hero__cta{display:flex;flex-wrap:wrap;gap:14px;margin-top:38px}
+  .scrollcue{margin-top:74px;font-family:var(--mono);font-size:11px;letter-spacing:.3em;color:var(--muted);text-transform:uppercase;display:flex;align-items:center;gap:12px}
+  .scrollcue::before{content:"";width:34px;height:1px;background:var(--muted)}
+
+  section.block{padding:118px 0;position:relative}
+  @media(max-width:760px){section.block{padding:78px 0}}
+  .head{display:flex;justify-content:space-between;align-items:baseline;gap:20px;margin-bottom:54px;border-top:1px solid var(--line);padding-top:22px}
+  .head h2{font-size:clamp(28px,3.6vw,52px);color:var(--plum);max-width:16ch}
+  .head .meta{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right;max-width:320px;letter-spacing:.03em;line-height:1.7}
+  @media(max-width:680px){.head{flex-direction:column}.head .meta{text-align:left}}
+
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:20px}
+  @media(max-width:860px){.stats{grid-template-columns:repeat(2,1fr)}}
+  .stat{padding:28px 24px;border-radius:14px;background:var(--surface);border:1px solid var(--surface-line);box-shadow:var(--surface-sh);backdrop-filter:blur(6px)}
+  .stat .num{font-family:var(--disp);font-weight:700;font-size:clamp(34px,4vw,52px);letter-spacing:-.03em;line-height:1}
+  .stat .cap{margin-top:12px;font-size:14px;color:var(--ink);line-height:1.5}
+
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+  @media(max-width:820px){.split{grid-template-columns:1fr}}
+  .panel{padding:34px;border-radius:18px;border:1px solid var(--surface-line);background:var(--surface);box-shadow:var(--surface-sh);backdrop-filter:blur(6px)}
+  .panel--dark{background:var(--plum);color:var(--cream);border-color:var(--plum)}
+  .panel h3{font-size:22px;margin:14px 0 18px}
+  .panel--dark h3{color:var(--cream)}
+  .prow{display:flex;justify-content:space-between;gap:16px;padding:14px 0;border-top:1px solid var(--line);font-size:15px}
+  .panel--dark .prow{border-top-color:rgba(247,239,233,.16)}
+  .prow:first-of-type{border-top:0}
+  .prow b{font-weight:600}
+  .pop{color:var(--magenta-ink);font-weight:700}
+  .panel--dark .pop{color:var(--pink)}
+  .disclosure{margin-top:20px;font-family:var(--mono);font-size:12px;color:var(--muted);max-width:74ch;line-height:1.8;letter-spacing:.02em;text-wrap:pretty}
+
+  .route{display:grid;grid-template-columns:.95fr 1.05fr;gap:46px;align-items:center}
+  @media(max-width:900px){.route{grid-template-columns:1fr}}
+  .steps{display:flex;flex-direction:column;gap:14px}
+  .step{display:flex;gap:18px;padding:22px 24px;border-radius:16px;background:var(--surface);border:1px solid var(--surface-line);
+    box-shadow:var(--surface-sh);backdrop-filter:blur(6px);transition:transform .35s var(--ease),box-shadow .35s var(--ease)}
+  .step:hover{transform:translateY(-3px);box-shadow:0 22px 50px -28px rgba(43,34,51,.5)}
+  .step .n{font-family:var(--mono);font-size:13px;color:var(--magenta-ink);letter-spacing:.08em;padding-top:5px}
+  .step h3{font-size:19px;margin-bottom:7px}
+  .step p{margin:0;font-size:15px;color:var(--ink);line-height:1.55}
+  .routebox{position:relative;aspect-ratio:1/.94;border-radius:20px;border:1px solid var(--surface-line);overflow:hidden;
+    background:var(--surface);backdrop-filter:blur(6px);box-shadow:0 30px 70px -42px rgba(43,34,51,.55)}
+  .routebox svg{position:absolute;inset:0;width:100%;height:100%}
+
+  .yield{background:var(--plum);color:var(--cream);border-radius:26px;padding:60px;position:relative;overflow:hidden}
+  @media(max-width:820px){.yield{padding:32px}}
+  .yield__grid{display:grid;grid-template-columns:1.05fr .95fr;gap:42px;align-items:center}
+  @media(max-width:820px){.yield__grid{grid-template-columns:1fr}}
+  .yield .eyebrow{color:var(--pink)}
+  .yield h2{color:var(--cream);font-size:clamp(28px,3.6vw,46px);margin:14px 0 0;max-width:18ch}
+  .yield p{color:rgba(247,239,233,.78);margin-top:18px;max-width:44ch;line-height:1.6}
+  .yield p.k{color:var(--cream);font-weight:600}
+  .ydemo{position:relative;aspect-ratio:1/.72;border-radius:16px;overflow:hidden;
+    background:radial-gradient(at 50% 16%,rgba(159,134,201,.4),transparent 60%),#241a30}
+  .ydemo canvas{position:absolute;inset:0;width:100%;height:100%}
+  .yhint{position:absolute;left:0;right:0;bottom:12px;text-align:center;font-family:var(--mono);font-size:12px;color:rgba(247,239,233,.6);letter-spacing:.04em}
+
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+  @media(max-width:860px){.cards{grid-template-columns:1fr}}
+  .feat{padding:30px 28px;border-radius:18px;background:var(--surface);border:1px solid var(--surface-line);box-shadow:var(--surface-sh);
+    transition:transform .35s var(--ease),box-shadow .35s var(--ease)}
+  .feat:hover{transform:translateY(-4px);box-shadow:0 24px 54px -30px rgba(43,34,51,.5)}
+  .feat__h{display:flex;align-items:center;gap:13px;margin-bottom:14px}
+  .feat__ic{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;background:var(--lilac)}
+  .feat__h h3{font-size:18px;margin:0}
+  .feat p{margin:0;font-size:15px;color:var(--ink);line-height:1.55}
+
+  .ceiling{display:grid;grid-template-columns:1fr 1fr;gap:38px;align-items:center}
+  @media(max-width:820px){.ceiling{grid-template-columns:1fr}}
+  /* deliberate oversize hero exception (signature display, exceeds the 6rem cap on purpose);
+     letter-spacing held at the -.04em floor per §4.2 */
+  .ceiling .big{font-family:var(--disp);font-weight:700;font-size:clamp(72px,12vw,150px);letter-spacing:-.04em;line-height:.86}
+  .bars{display:flex;flex-direction:column;gap:22px}
+  .bar__top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;font-size:14px;color:var(--ink)}
+  .bar__fig{font-family:var(--disp);font-weight:700;font-size:20px;letter-spacing:-.01em}
+  .bar__track{height:14px;border-radius:999px;background:rgba(43,34,51,.08);overflow:hidden;border:1px solid var(--line)}
+  .bar__fill{height:100%;width:100%;border-radius:999px;transform:scaleX(0);transform-origin:left center;transition:transform 1.4s var(--ease-out)}
+  .bar__fill.ceil{background:linear-gradient(90deg,var(--lilac),var(--purple))}
+  .bar__fill.meas{background:linear-gradient(90deg,var(--magenta),var(--coral))}
+  @media(prefers-reduced-motion:reduce){.bar__fill{transition:none}}
+
+  .cta{text-align:center;padding:96px 28px;border-radius:26px;border:1px solid var(--surface-line);
+    background:var(--surface);box-shadow:var(--surface-sh)}
+  .cta h2{font-size:clamp(34px,5vw,72px);max-width:16ch;margin:14px auto 20px}
+  .cta p{max-width:52ch;margin:0 auto 30px;color:var(--ink);font-size:18px;line-height:1.55;text-wrap:pretty}
+  @media(max-width:760px){.cta{padding:56px 22px}}
+  footer{padding:70px 0 64px;border-top:1px solid var(--line);margin-top:30px}
+  .foot{display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.04em}
+  .foot .mk{font-family:var(--disp);font-weight:700;font-size:21px;letter-spacing:-.02em;color:var(--magenta-ink)}
+  .foot__dis{margin-top:18px;font-family:var(--mono);font-size:12px;color:var(--muted);max-width:80ch;line-height:1.8;letter-spacing:.02em;text-wrap:pretty}
+
+  /* reveals default VISIBLE; the hidden start only engages once JS confirms it's running (html.js),
+     so a hidden tab / headless render / GSAP error never ships a blank section */
+  .reveal{opacity:1;transform:none}
+  html.js .reveal{opacity:0;transform:translateY(28px)}
+  html.js .reveal.in{opacity:1;transform:none;transition:opacity .9s var(--ease-out),transform .95s var(--ease-out)}
+  @media(prefers-reduced-motion:reduce){html.js .reveal{opacity:1;transform:none}}
+
+  /* ---- custom cursor (black ring that tightens on click, grows on interactive) ---- */
+  .cursor{position:fixed;top:0;left:0;z-index:120;pointer-events:none;will-change:transform}
+  .cursor__ring{position:absolute;width:30px;height:30px;margin:-15px 0 0 -15px;border:1.6px solid var(--plum);border-radius:50%;
+    transition:width .28s var(--ease-out),height .28s var(--ease-out),margin .28s var(--ease-out),background .3s,opacity .3s}
+  .cursor__dot{position:absolute;width:4px;height:4px;margin:-2px 0 0 -2px;background:var(--plum);border-radius:50%}
+  .cursor.hover .cursor__ring{width:54px;height:54px;margin:-27px 0 0 -27px;background:rgba(43,34,51,.05)}
+  .cursor.down .cursor__ring{width:15px;height:15px;margin:-7.5px 0 0 -7.5px;border-width:2px}
+  @media(hover:hover) and (pointer:fine){ body.has-cursor{cursor:none} body.has-cursor a,body.has-cursor button,body.has-cursor .feat,body.has-cursor .step{cursor:none} }
+  @media(pointer:coarse){ .cursor{display:none} }
+
+  /* ---- cursor-reactive letters ---- */
+  .ch{display:inline-block;will-change:transform}
+
+  /* ---- routing cinematic: lake droplets harvested into the compute cloud ---- */
+  .cinema{position:relative;height:260vh}
+  .cinema__stage{position:sticky;top:0;height:100vh;width:100vw;margin-left:calc(50% - 50vw);
+    overflow:hidden;display:block;
+    background:
+      linear-gradient(180deg, rgba(159,134,201,.20) 0%, rgba(201,184,240,.10) 12%, rgba(247,239,233,0) 30%),
+      radial-gradient(150% 120% at 50% 118%, var(--paper) 0%, var(--cream) 64%)}
+  .cinema__canvas{position:absolute;inset:0;width:100%;height:100%;z-index:1;display:block}
+  .cinema__copy{position:absolute;left:clamp(22px,5vw,90px);top:clamp(84px,12vh,128px);z-index:4;max-width:30ch;pointer-events:none}
+  .cinema__copy h2{font-size:clamp(28px,4.6vw,58px);color:var(--plum);margin-top:14px;text-shadow:0 1px 26px rgba(247,239,233,.7)}
+
+  .cloud{position:absolute;left:50%;top:55%;transform:translate(-50%,-50%);
+    width:min(540px,88vw);height:min(360px,52vh);z-index:2;display:grid;place-items:center}
+  .cloud::before{content:"";position:absolute;inset:-16% -10%;z-index:0;
+    border-radius:50% 50% 48% 52%/56% 56% 46% 44%;
+    background:
+      radial-gradient(38% 42% at 24% 60%, #ffffff 0%, rgba(255,255,255,0) 70%),
+      radial-gradient(40% 46% at 44% 36%, var(--blush) 0%, rgba(248,204,221,0) 72%),
+      radial-gradient(46% 52% at 64% 34%, var(--lilac) 0%, rgba(201,184,240,0) 72%),
+      radial-gradient(40% 46% at 80% 58%, var(--peach) 0%, rgba(248,211,188,0) 74%),
+      radial-gradient(60% 60% at 50% 74%, #ffffff 0%, rgba(255,255,255,0) 74%),
+      radial-gradient(72% 70% at 50% 50%, rgba(255,255,255,.94) 0%, rgba(255,255,255,.55) 44%, rgba(255,255,255,0) 72%);
+    filter:blur(18px);opacity:.97}
+  .cloud__glow{position:absolute;inset:-30% -18%;z-index:1;border-radius:50%;pointer-events:none;
+    background:radial-gradient(50% 50% at 50% 48%, rgba(242,181,212,.78) 0%, rgba(232,163,140,.34) 38%, rgba(232,163,140,0) 70%);
+    filter:blur(22px);opacity:.22;mix-blend-mode:screen;will-change:opacity}
+
+  .term{position:relative;z-index:3;width:min(420px,82vw);
+    background:var(--surface);border:1px solid var(--surface-line);border-radius:14px;
+    box-shadow:var(--surface-sh),0 34px 80px -42px rgba(43,34,51,.55);
+    backdrop-filter:blur(7px);overflow:hidden;font-family:var(--mono)}
+  .term__bar{display:flex;align-items:center;gap:7px;padding:10px 14px;border-bottom:1px solid var(--surface-line);
+    background:linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,0))}
+  .term__bar i{width:10px;height:10px;border-radius:50%;background:var(--coral);opacity:.9}
+  .term__bar i:nth-child(2){background:var(--peach)}
+  .term__bar i:nth-child(3){background:var(--mauve)}
+  .term__bar span{margin-left:8px;font-size:11px;letter-spacing:.04em;color:var(--muted)}
+  .term__body{display:block;margin:0;padding:16px 16px 8px;min-height:168px;font-family:var(--mono);
+    font-size:13px;line-height:1.7;color:var(--ink);white-space:pre-wrap;word-break:break-word}
+  .term__body .cmd{color:var(--magenta-ink)}
+  .term__body .out{color:var(--ink)}
+  .term__body .harv{color:var(--magenta-ink)}
+  .term__body .ok{color:#136b3c}
+  .term__cur{display:inline-block;width:8px;height:15px;margin-left:1px;vertical-align:-2px;
+    background:var(--magenta-ink);animation:termblink 1s steps(1) infinite}
+  @keyframes termblink{0%,49.9%{opacity:1}50%,100%{opacity:0}}
+  .term__meter{padding:10px 16px 14px;border-top:1px solid var(--surface-line);
+    font-size:12px;color:var(--muted);letter-spacing:.02em}
+  .term__num{font-family:var(--mono);font-weight:700;color:var(--plum);font-variant-numeric:tabular-nums}
+  @media(max-width:720px){.cinema__copy{top:80px;max-width:22ch}.term{width:min(360px,86vw)}}
+  @media(prefers-reduced-motion:reduce){.cinema{height:110vh}.term__cur{animation:none}.cloud__glow{opacity:.42}}
+
+
+</style>
+</head>
+<body>
+<a class="skip" href="#top">Skip to content</a>
+<canvas id="fluid" aria-hidden="true"></canvas>
+<div class="cursor" id="cursor" aria-hidden="true"><span class="cursor__dot"></span><span class="cursor__ring"></span></div>
+<div class="orbs" id="orbs" hidden><div class="orb o1"></div><div class="orb o2"></div><div class="orb o3"></div><div class="orb o4"></div><div class="orb o5"></div></div>
+<div class="filmgrain"></div>
+<div class="vignette"></div>
+
+<header class="nav" id="nav">
+  <div class="nav__in">
+    <a class="brand" href="#top" aria-label="OneCompute home">
+      <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <rect x="1.4" y="1.4" width="29.2" height="29.2" rx="9" stroke="#2B2233" stroke-width="1.6"/>
+        <circle cx="16" cy="16" r="4.2" fill="#D98FC0"/>
+        <circle cx="7.4" cy="7.4" r="2" fill="#2B2233"/><circle cx="24.6" cy="7.4" r="2" fill="#2B2233"/>
+        <circle cx="7.4" cy="24.6" r="2" fill="#2B2233"/><circle cx="24.6" cy="24.6" r="2" fill="#2B2233"/>
+        <path d="M9.2 9.2l4.3 4.3M22.8 9.2l-4.3 4.3M9.2 22.8l4.3-4.3M22.8 22.8l-4.3-4.3" stroke="#2B2233" stroke-width="1.1" opacity=".4"/>
+      </svg>
+      OneCompute
+    </a>
+    <nav class="nav__links" aria-label="Primary">
+      <a class="nh" href="#problem">The problem</a>
+      <a class="nh" href="#how">How it works</a>
+      <a class="nh" href="#trust">Trust</a>
+      <a class="btn btn--ghost" href="#cta">Open the console <span class="ar">&rarr;</span></a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap" id="top">
+  <header class="hero">
+    <div class="kick reveal">
+      <span class="ln"></span>
+      <span class="eyebrow">The second supercomputer</span>
+    </div>
+    <h1 class="reveal">Idle machines,<br>woken at <span class="it">dawn.</span></h1>
+    <p class="sub reveal">Every company already owns a second supercomputer, scattered across the laptops that sit idle overnight and through the long browser-and-chat hours of the day. OneCompute harvests that spare headroom into a private, opt-in grid, and steps aside the instant someone needs their machine back.</p>
+    <div class="hero__cta reveal">
+      <a class="btn" href="#cta">Switch it on tonight <span class="ar">&rarr;</span></a>
+      <a class="btn btn--ghost" href="#how">See how it routes work</a>
+    </div>
+    <div class="scrollcue reveal">Move your cursor &middot; then scroll</div>
+  </header>
+
+
+
+  <section class="cinema" id="routing" aria-label="How idle compute is reclaimed">
+    <div class="cinema__stage">
+      <canvas class="cinema__canvas" aria-hidden="true"></canvas>
+      <div class="cinema__copy">
+        <span class="eyebrow">Routing &middot; reclaiming</span>
+        <h2>Spare cycles, gathered like rain.</h2>
+      </div>
+      <div class="cloud">
+        <div class="cloud__glow" aria-hidden="true"></div>
+        <div class="term" role="img" aria-label="OneCompute routing terminal harvesting spare cycles from idle machines into the grid">
+          <div class="term__bar"><i></i><i></i><i></i><span>onecompute &mdash; routing</span></div>
+          <pre class="term__body"></pre>
+          <div class="term__meter"><span class="term__num" data-reclaim>0.0</span> PFLOP&middot;h reclaimed</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="problem">
+    <div class="head reveal">
+      <h2>The trillion-dollar reflex</h2>
+      <div class="meta">01 &middot; the industry answer to AI demand is concrete and copper. the bill, the power, and the lead times all go vertical.</div>
+    </div>
+    <div class="stats">
+      <div class="stat reveal"><div class="num grad-num" data-count="725" data-prefix="$" data-suffix="B">$0B</div><div class="cap">projected 2026 AI-infrastructure spend across the four hyperscalers, of a roughly $1T buildout.</div></div>
+      <div class="stat reveal"><div class="num grad-num" data-count="475" data-prefix="$" data-suffix="M">$0M</div><div class="cap">average cost of a single new datacenter, up 167% year over year.</div></div>
+      <div class="stat reveal"><div class="num grad-num" data-count="500" data-suffix=" MW">0</div><div class="cap">continuous draw of one AI facility, the load of a small city, with multi-year grid lead times.</div></div>
+      <div class="stat reveal"><div class="num grad-num" data-count="300" data-suffix="k gal">0</div><div class="cap">water a 100 MW datacenter can consume per day, about 2,600 households.</div></div>
+    </div>
+  </section>
+
+  <section class="block" id="shift">
+    <div class="head reveal">
+      <h2>Your second supercomputer is already bought</h2>
+      <div class="meta">02 &middot; not a datacenter replacement. a pressure-relief valve for the work that does not need a $475M building.</div>
+    </div>
+    <div class="split">
+      <div class="panel panel--dark reveal">
+        <span class="eyebrow" style="color:var(--pink)">Build a new datacenter</span>
+        <h3>The expensive path</h3>
+        <div class="prow"><span>Capex</span><b>~$475M per facility</b></div>
+        <div class="prow"><span>Lead time</span><b>2 to 5 years</b></div>
+        <div class="prow"><span>Power &amp; water</span><b>new substations, 100s of MW</b></div>
+        <div class="prow"><span>Failure domain</span><b>concentrated</b></div>
+      </div>
+      <div class="panel reveal">
+        <span class="eyebrow" style="color:var(--magenta-ink)">Harvest the idle fleet</span>
+        <h3>The OneCompute path</h3>
+        <div class="prow"><span>Capex</span><b class="pop">$0 &middot; already bought</b></div>
+        <div class="prow"><span>Lead time</span><b class="pop">switch it on tonight</b></div>
+        <div class="prow"><span>Marginal cost</span><b>~$10 to $20 / machine / mo</b></div>
+        <div class="prow"><span>Resilience</span><b>naturally geo-distributed</b></div>
+      </div>
+    </div>
+    <p class="disclosure reveal">Honest framing: OneCompute does not replace datacenters for frontier training, which needs co-located GPU clusters. It absorbs the large class of substitutable work (evaluation, batch inference, agent runs, synthetic data). Every idle hour harvested is a dollar of cloud spend deferred.</p>
+  </section>
+
+  <section class="block" id="how">
+    <div class="head reveal">
+      <h2>A job is signed work. A worker is idle capacity. The orchestrator routes between them.</h2>
+      <div class="meta">03 &middot; submit &rarr; match by capability &rarr; fan out &rarr; verify &rarr; pay. requeue on failure.</div>
+    </div>
+    <div class="route">
+      <div class="steps">
+        <div class="step reveal"><span class="n">01</span><div><h3>Workers advertise headroom</h3><p>An opt-in agent on each PC reports spare CPU and GPU, detects idleness, and pulls work over an outbound-only connection.</p></div></div>
+        <div class="step reveal"><span class="n">02</span><div><h3>The orchestrator routes</h3><p>It matches each signed job to a suitable idle worker, fans the batch out across the fleet, and requeues anything that drops.</p></div></div>
+        <div class="step reveal"><span class="n">03</span><div><h3>Results are verified, then paid</h3><p>Hidden challenge tasks catch bad actors. Employees earn credits for verified useful work, never for claimed performance.</p></div></div>
+      </div>
+      <div class="routebox reveal" aria-label="Animated diagram of the orchestrator routing workloads across a fleet of workers">
+        <svg id="routeSvg" viewBox="0 0 460 432" preserveAspectRatio="xMidYMid meet" aria-hidden="true"></svg>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="yield">
+    <div class="yield reveal">
+      <div class="yield__grid">
+        <div>
+          <span class="eyebrow">The money shot</span>
+          <h2>It never competes with the person at the keyboard.</h2>
+          <p>OneCompute rides the learned headroom between what someone uses and what their hardware can do. The moment real work returns it throttles down or kills the job in well under a second, then reroutes it elsewhere.</p>
+          <p class="k">Touch the mouse, and your machine is yours again in about 0.3 seconds.</p>
+        </div>
+        <div class="ydemo" aria-label="Demonstration: a working node yields and its task reroutes to a neighbor">
+          <canvas id="yieldCanvas"></canvas>
+          <div class="yhint" id="yhint">move your cursor over the panel</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="trust">
+    <div class="head reveal">
+      <h2>The worker never sees the job. The job never touches the worker.</h2>
+      <div class="meta">04 &middot; signed, sandboxed, verified. privacy holds in both directions.</div>
+    </div>
+    <div class="cards">
+      <div class="feat reveal">
+        <div class="feat__h">
+          <span class="feat__ic" style="background:var(--lilac)" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 5-3.5 8-8 11-4.5-3-8-6-8-11V5l8-3z" stroke="#2B2233" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="#2B2233" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          <h3>Signed manifests</h3>
+        </div>
+        <p>Every job ships as an Ed25519-signed manifest. The worker verifies the code hash, data hash, and resource limits before it runs a line. Flip one byte and it refuses.</p>
+      </div>
+      <div class="feat reveal">
+        <div class="feat__h">
+          <span class="feat__ic" style="background:var(--pink)" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3.5" y="3.5" width="17" height="17" rx="4" stroke="#2B2233" stroke-width="1.6"/><path d="M8 12h8M12 8v8" stroke="#2B2233" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+          <h3>Sandboxed, no residue</h3>
+        </div>
+        <p>Work runs in a per-job container with no network and a read-only payload. Inputs and outputs are wiped when the job ends. The instant-yield kill is a real process-tree kill, not a pause.</p>
+      </div>
+      <div class="feat reveal">
+        <div class="feat__h">
+          <span class="feat__ic" style="background:var(--peach)" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 3v18M5 8l7-5 7 5M5 8v8l7 5 7-5V8" stroke="#2B2233" stroke-width="1.6" stroke-linejoin="round"/></svg></span>
+          <h3>Verified, not claimed</h3>
+        </div>
+        <p>Hidden challenge tasks with known answers spot-check results. A worker that fakes output is blacklisted and forfeits its points. Credit tracks verified work, never a self-reported number.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="ceiling">
+    <div class="head reveal">
+      <h2>The honest number</h2>
+      <div class="meta">05 &middot; a ceiling worth chasing, always reported beside what we actually measure.</div>
+    </div>
+    <div class="ceiling">
+      <div class="reveal">
+        <div class="big grad-num">1.8<span style="font-size:.34em;font-family:var(--mono);letter-spacing:.04em"> ExaOPS</span></div>
+        <p style="margin-top:18px;color:var(--ink);font-size:18px;line-height:1.55;max-width:42ch">Forty thousand Copilot+ PCs at roughly 45 INT8 TOPS each is about 1.8 ExaOPS of theoretical peak. That is a ceiling at full adoption, not a demo result. A single RTX 5090 laptop alone is about 1,824 TOPS, so a GPU-equipped fleet pushes the real number up fast.</p>
+      </div>
+      <div class="bars reveal">
+        <div>
+          <div class="bar__top"><span>Theoretical NPU ceiling, full fleet</span><span class="bar__fig grad-num">1.8 ExaOPS</span></div>
+          <div class="bar__track"><div class="bar__fill ceil" data-w="100"></div></div>
+        </div>
+        <div>
+          <div class="bar__top"><span>Measured today, live demo fleet</span><span class="bar__fig grad-num">honest &amp; real</span></div>
+          <div class="bar__track"><div class="bar__fill meas" data-w="34"></div></div>
+        </div>
+        <p class="disclosure">We never show peak-NPU marketing math in place of a real number. The dashboard reports measured harvested throughput from the live fleet, beside the ceiling.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="cta">
+    <div class="cta reveal">
+      <span class="eyebrow">Win-win by construction</span>
+      <h2>Idle compute, paid back to the people who lend it.</h2>
+      <p>Employees opt in and stay in control with caps, schedules, and instant opt-out. They earn gift cards and perks for compute they were not using. The company offloads cost it would otherwise pay a cloud provider.</p>
+      <a class="btn" href="#" id="consoleBtn">Open the live fleet console <span class="ar">&rarr;</span></a>
+    </div>
+  </section>
+
+  <footer>
+    <div class="foot">
+      <span class="mk">OneCompute</span>
+      <span>Let your compute work when you are not.</span>
+      <span>Warm pastels &middot; a living field &middot; honest numbers</span>
+    </div>
+    <p class="foot__dis">OneCompute is an internal, opt-in research concept. Throughput is reported as measured harvested performance beside the theoretical 1.8-ExaOPS ceiling, never instead of it. Engine codename: NightShift.</p>
+  </footer>
+</div>
+
+<script id="vert" type="x-shader/x-vertex">
+attribute vec2 p; varying vec2 vUv;
+void main(){ vUv = p*0.5+0.5; gl_Position = vec4(p,0.0,1.0); }
+</script>
+<script id="frag" type="x-shader/x-fragment">
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+varying vec2 vUv;
+uniform vec2 u_res;
+uniform float u_time;
+uniform float u_aspect;
+uniform float u_reduce;
+uniform vec2 u_mouse;       // smoothed mouse in UV (y up)
+uniform vec3 u_rip[10];     // x,y = UV pos, z = age 0..1 (>=1 dead)
+uniform float u_ripStr[10];
+uniform vec3 u_trail[14];   // cursor cloud-push trail (x,y, age 0..1)
+uniform sampler2D u_clouds;  // Higgsfield-generated pastel cumulus cloudscape
+uniform float u_cloudsReady; // 1 once the cloud texture has loaded
+
+float hash(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
+float vnoise(vec2 p){ vec2 i=floor(p),f=fract(p);
+  float a=hash(i),b=hash(i+vec2(1.0,0.0)),c=hash(i+vec2(0.0,1.0)),d=hash(i+vec2(1.0,1.0));
+  vec2 u=f*f*(3.0-2.0*f); return mix(mix(a,b,u.x),mix(c,d,u.x),u.y); }
+float fbm(vec2 p){ float v=0.0,a=0.5; for(int i=0;i<4;i++){ v+=a*vnoise(p); p*=2.0; a*=0.5; } return v; }
+float billow(vec2 p){ float v=0.0,a=0.55; for(int i=0;i<5;i++){ v+=a*(1.0-abs(2.0*vnoise(p)-1.0)); p=p*2.02+vec2(1.7,9.2); a*=0.5; } return v; }
+
+vec3 ramp(float t){
+  vec3 cream=vec3(0.969,0.937,0.913);
+  vec3 lilac=vec3(0.788,0.722,0.941);
+  vec3 pink =vec3(0.949,0.710,0.831);
+  vec3 peach=vec3(0.973,0.827,0.737);
+  vec3 mag  =vec3(0.851,0.561,0.753);
+  t=clamp(t,0.0,1.0);
+  vec3 c=mix(cream,lilac,smoothstep(0.0,0.32,t));
+  c=mix(c,pink ,smoothstep(0.26,0.56,t));
+  c=mix(c,peach,smoothstep(0.5,0.78,t));
+  c=mix(c,mag  ,smoothstep(0.74,1.0,t));
+  return c;
+}
+
+void main(){
+  vec2 uv=vUv;
+  vec2 auv=vec2(uv.x*u_aspect,uv.y);
+  float t = u_reduce>0.5 ? 12.0 : u_time;
+  float H=0.6;                          // horizon: a big lake fills the lower 60%
+  float water=step(uv.y,H);             // 1 = water pixel, 0 = sky pixel
+  float mWater=step(u_mouse.y,H);       // 1 = cursor is over the lake
+
+  vec2 disp=vec2(0.0); float energy=0.0; float ringGlow=0.0;
+  for(int i=0;i<10;i++){
+    float age=u_rip[i].z;
+    if(age>=1.0) continue;
+    vec2 rp=vec2(u_rip[i].x*u_aspect,u_rip[i].y);
+    vec2 d=auv-rp; float dist=length(d);
+    float depthR=clamp((H-u_rip[i].y)/H,0.0,1.0);    // near ripples read a touch larger (perspective)
+    float front=age*mix(0.34,0.62,depthR);            // leading edge expands outward over the ripple's life
+    float w=front-dist;                               // >0 inside the expanding front
+    float inFront=smoothstep(0.0,0.025,w);            // confine the ripple inside its leading edge
+    float rings=sin(w*78.0 - age*4.0);                // CONCENTRIC ring train travelling outward
+    float envel=exp(-clamp(w,0.0,1.0)*5.0)*inFront;   // brightest at the front, fading inward
+    float wave=rings*envel;                           // signed ripple height (multiple rings)
+    float str=u_ripStr[i]*(1.0-age)*(1.0-age);        // smooth ease-out over the life
+    disp += normalize(d+vec2(1e-4))*wave*str*0.12;    // rings refract the mirror reflection
+    ringGlow += max(wave,0.0)*str*1.05;               // bright crests catch the dawn light
+    energy += abs(wave)*str*0.55;                     // rings pick up the colourful water
+  }
+  vec2 mp=vec2(u_mouse.x*u_aspect,u_mouse.y);
+  float md=length(auv-mp);
+  float mm=md*9.0;
+  float blob=exp(-mm*mm);
+  // the cursor no longer drags a standing ripple; ripples ORIGINATE where the mouse moves (spawned in JS)
+  disp*=water; energy*=water; ringGlow*=water;     // render ripples only in the water
+
+  // cloud-push trail: the cursor pushes a soft poof in the cloud texture; it reforms as the trail ages out
+  float carve=0.0; vec2 cloudPush=vec2(0.0);
+  for(int j=0;j<14;j++){
+    float tage=u_trail[j].z;
+    if(tage>=1.0) continue;
+    vec2 tp=vec2(u_trail[j].x*u_aspect,u_trail[j].y);
+    vec2 td=auv-tp; float tdist=length(td);
+    float kk=tdist*13.0; float fall=exp(-kk*kk);
+    float w=(1.0-tage)*fall;
+    carve += w;
+    vec2 nrm=normalize(td+vec2(1e-4));
+    cloudPush += nrm*w + vec2(-nrm.y,nrm.x)*w*0.45;  // push aside + swirl => clouds curl apart, then reform
+  }
+  cloudPush += normalize(auv-mp+vec2(1e-4))*blob*(1.0-mWater);
+  carve = clamp((carve*1.15 + blob*0.85*(1.0-mWater))*(1.0-water), 0.0, 1.0);   // poof strength, sky-only
+
+  // water reflects the sky; a PERSPECTIVE wave field makes the lake recede into the screen:
+  // broad, defined swells near the viewer (bottom) -> small, tight, compressed waves toward the horizon
+  vec2 suv = uv;
+  float wspec=0.0, wshade=0.0;
+  if(water>0.5){
+    float depth=clamp((H-uv.y)/H,0.0,1.0);             // 0 at the horizon -> 1 at the bottom (nearest)
+    float amp=mix(0.0014,0.0125,depth*depth);          // wave size grows toward the viewer
+    float fy =mix(155.0,24.0,depth);                   // far = many tight crests, near = broad swells
+    float px =uv.x*mix(2.6,7.0,depth);
+    float wv = sin(uv.y*fy + px + t*1.7);
+    wv      += sin(uv.y*fy*0.52 - px*0.7 + t*1.15)*0.6;
+    wv      += (fbm(vec2(uv.x*u_aspect*mix(2.0,5.5,depth), uv.y*mix(7.0,22.0,depth)) + vec2(t*0.18,t*0.55))-0.5)*0.9;
+    suv = vec2(uv.x, 2.0*H - uv.y);
+    suv += disp;                                       // spawned ripples only (no cursor-follow)
+    suv.x += wv*amp*1.7;
+    suv.y += wv*amp*0.75;
+    wspec = pow(clamp(wv*0.5+0.5,0.0,1.0),7.0)*mix(0.22,1.0,depth);   // crest glints, brighter near
+    wshade= clamp(-wv,0.0,1.0)*mix(0.06,0.22,depth);                   // trough shading -> visible texture
+  }
+
+  // base colorful field (sky + reflected sky); NO global ripple on the sky
+  vec2 q=suv*1.7;
+  float w1=fbm(q + vec2(t*0.028,-t*0.022));
+  float w2=fbm(q*1.7 + w1*1.2 + vec2(-t*0.02,t*0.03));
+  float field=fbm(q + w2*0.9 + vec2(t*0.014,0.0));
+  field=field*0.7 + w2*0.3;
+  float tt=field + energy*0.20;
+  vec3 col=ramp(tt);
+
+  // sky lifts cooler toward the top
+  float skyG=smoothstep(H,1.0,uv.y);
+  col=mix(col, mix(col, vec3(0.80,0.73,0.83), 0.42), skyG*(1.0-water));
+
+  // surface ripple: a thin bright specular crest rides the expanding ring (real water, no rainbow/paint).
+  // The reflection-bend comes from `disp` above (suv += disp); here we only catch the dawn light on the crest.
+  if(ringGlow>0.001){
+    float crest=clamp(ringGlow,0.0,1.0);
+    crest=crest*crest*(3.0-2.0*crest);             // soft shoulder keeps the glint thin, like a real wave catching light
+    col=mix(col, vec3(0.995,0.965,0.94), clamp(crest*0.6,0.0,0.6)*water);
+  }
+
+  // pastel clouds: a Higgsfield-generated cumulus cloudscape sampled as a TEXTURE (no procedural lattice/rectangles).
+  // drifts slowly left; the cursor pushes a soft poof that reforms; the lake catches a faint reflection.
+  if(u_cloudsReady>0.5){
+    vec2 cuv = vec2(suv.x*1.12 + t*0.006 + cloudPush.x*0.07*(1.0-water),
+                    (suv.y - H)/(1.0 - H) + cloudPush.y*0.07*(1.0-water));
+    vec3 cloudTex = texture2D(u_clouds, cuv).rgb;
+    col = mix(col, cloudTex, (1.0-water)*0.94*(1.0-carve*0.92));       // sky band = the cloudscape; cursor poof parts it
+    float cl = dot(cloudTex, vec3(0.299,0.587,0.114));                 // bright cloud pixels
+    col = mix(col, cloudTex, water*smoothstep(0.66,0.86,cl)*0.26);     // faint cloud reflection on the lake
+  }
+
+  // distant land on the far left & right of the horizon (soft muted hills)
+  float landH=(smoothstep(0.20,0.0,uv.x)+smoothstep(0.80,1.0,uv.x))*0.045;
+  landH*=(0.85+0.15*sin(uv.x*60.0));
+  float land=smoothstep(H+landH,H+landH-0.004,uv.y)*step(H-0.02,uv.y);
+  col=mix(col, vec3(0.56,0.60,0.55), clamp(land,0.0,1.0)*0.5);   // muted green-grey distant hills
+
+  // water tint + bright surface line at the shoreline
+  col=mix(col, vec3(0.74,0.62,0.67), 0.40*water);   // warm muted rose reflection
+  col=mix(col, col*0.84, water*smoothstep(H,0.0,uv.y)*0.42);   // deeper water reads darker
+  col=mix(col, col*0.82, wshade*water);             // wave troughs -> the water reads textured
+  col=mix(col, vec3(0.995,0.965,0.94), wspec*0.55*water);   // bright dawn glints ride the crests
+  col=mix(col, vec3(0.99,0.97,0.98), smoothstep(H-0.012,H,uv.y)*step(uv.y,H+0.012)*0.5);
+
+  // horizon glow
+  float hbx=(uv.y-H)*34.0; float hb=exp(-hbx*hbx);
+  col=mix(col, vec3(0.99,0.90,0.84), hb*0.26);
+
+  col *= 0.91;   // deepen toward the dustier reference palette
+  gl_FragColor=vec4(col,1.0);
+}
+</script>
+
+<script src="vendor/gsap/gsap.min.js"></script>
+<script src="vendor/gsap/ScrollTrigger.min.js"></script>
+<script>
+(function(){
+  "use strict";
+  var REDUCE = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  /* JS is confirmed running: enable the reveal hidden-start (see html.js .reveal in CSS) */
+  document.documentElement.classList.add("js");
+  var DPRc = 1;
+  var PAL={lilac:"#C9B8F0",purple:"#B59FE3",mauve:"#9F86C9",pink:"#F2B5D4",peach:"#F8D3BC",coral:"#E8A38C",magenta:"#D98FC0",plum:"#2B2233"};
+  function fit(c){var r=c.getBoundingClientRect();var d=Math.min(window.devicePixelRatio||1,2);c.width=Math.max(1,Math.round(r.width*d));c.height=Math.max(1,Math.round(r.height*d));var x=c.getContext("2d");x.setTransform(d,0,0,d,0,0);return {w:r.width,h:r.height,ctx:x};}
+  function rr(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+  function ease(p){return p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;}
+
+  /* ===== The Waking Field — raw WebGL liquid background ===== */
+  var fluidOK = (function(){
+    var canvas=document.getElementById("fluid"); if(!canvas) return false;
+    var gl=canvas.getContext("webgl")||canvas.getContext("experimental-webgl");
+    if(!gl){ return false; }
+    function sh(type,src){var s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
+      if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){ console.warn(gl.getShaderInfoLog(s)); return null;} return s;}
+    var vs=sh(gl.VERTEX_SHADER,document.getElementById("vert").textContent);
+    var fs=sh(gl.FRAGMENT_SHADER,document.getElementById("frag").textContent);
+    if(!vs||!fs) return false;
+    var prog=gl.createProgram();gl.attachShader(prog,vs);gl.attachShader(prog,fs);gl.linkProgram(prog);
+    if(!gl.getProgramParameter(prog,gl.LINK_STATUS)){ console.warn(gl.getProgramInfoLog(prog)); return false; }
+    gl.useProgram(prog);
+    var buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1, 3,-1, -1,3]),gl.STATIC_DRAW);
+    var loc=gl.getAttribLocation(prog,"p");gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+    var U={res:gl.getUniformLocation(prog,"u_res"),time:gl.getUniformLocation(prog,"u_time"),
+      aspect:gl.getUniformLocation(prog,"u_aspect"),reduce:gl.getUniformLocation(prog,"u_reduce"),
+      mouse:gl.getUniformLocation(prog,"u_mouse"),rip:gl.getUniformLocation(prog,"u_rip"),ripStr:gl.getUniformLocation(prog,"u_ripStr"),trail:gl.getUniformLocation(prog,"u_trail"),clouds:gl.getUniformLocation(prog,"u_clouds"),cloudsReady:gl.getUniformLocation(prog,"u_cloudsReady")};
+    var SCALE=0.58; // render below native res; the field is soft so it stays crisp enough + fast
+    var W=1,H=1,aspect=1;
+    function resize(){var dw=window.innerWidth,dh=window.innerHeight;W=Math.max(1,Math.round(dw*DPRc*SCALE));H=Math.max(1,Math.round(dh*DPRc*SCALE));
+      canvas.width=W;canvas.height=H;gl.viewport(0,0,W,H);aspect=dw/dh;gl.uniform2f(U.res,W,H);gl.uniform1f(U.aspect,aspect);}
+    resize();addEventListener("resize",resize);
+    gl.uniform1f(U.reduce,REDUCE?1.0:0.0);
+
+    // Higgsfield pastel cloudscape as a drifting texture (replaces the procedural billow clouds; fixes the lattice artifact)
+    var cloudTex=gl.createTexture(), cloudsReady=0;
+    gl.bindTexture(gl.TEXTURE_2D,cloudTex);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,1,1,0,gl.RGB,gl.UNSIGNED_BYTE,new Uint8Array([205,190,214]));
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    (function(){var im=new Image();
+      im.onload=function(){gl.bindTexture(gl.TEXTURE_2D,cloudTex);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+        gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,im);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.MIRRORED_REPEAT);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.MIRRORED_REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+        cloudsReady=1;};
+      im.onerror=function(){cloudsReady=0;};
+      im.src="textures/clouds.jpg";})();
+
+    // ripple pool (10), mouse smoothing
+    var N=10,ripXYZ=new Float32Array(N*3),ripStr=new Float32Array(N);
+    for(var i=0;i<N;i++){ripXYZ[i*3+2]=1.0;} // all dead
+    var TN=14,trail=new Float32Array(TN*3),trailLife=1.3,ltX=0.5,ltY=0.5;
+    for(var j=0;j<TN;j++){trail[j*3+2]=1.0;} // all dead
+    var mx=0.5,my=0.5,tmx=0.5,tmy=0.5,lastX=0.5,lastY=0.5,life=2.0;
+    function spawn(x,y,str){var slot=-1,oldest=-1;for(var i=0;i<N;i++){if(ripXYZ[i*3+2]>=1.0){slot=i;break;}if(oldest<0||ripXYZ[i*3+2]>ripXYZ[oldest*3+2])oldest=i;}
+      if(slot<0)slot=oldest;ripXYZ[slot*3]=x;ripXYZ[slot*3+1]=y;ripXYZ[slot*3+2]=0.0;ripStr[slot]=str;}
+    function spawnTrail(x,y){var s=-1,o=-1;for(var k=0;k<TN;k++){if(trail[k*3+2]>=1.0){s=k;break;}if(o<0||trail[k*3+2]>trail[o*3+2])o=k;}if(s<0)s=o;trail[s*3]=x;trail[s*3+1]=y;trail[s*3+2]=0.0;}
+    var HZN=0.6;  // horizon — must match the shader (distinct from canvas height H)
+    if(!REDUCE){
+      addEventListener("pointermove",function(e){var x=e.clientX/window.innerWidth,y=1.0-e.clientY/window.innerHeight;tmx=x;tmy=y;
+        var dx=x-lastX,dy=y-lastY,v=Math.sqrt(dx*dx+dy*dy);
+        if(y<HZN){ if(v>0.008){lastX=x;lastY=y;spawn(x,y,Math.min(0.28+v*5.0,0.9));} }
+        else { var tdx=x-ltX,tdy=y-ltY;if(tdx*tdx+tdy*tdy>0.00009){ltX=x;ltY=y;spawnTrail(x,y);} }},{passive:true});
+      addEventListener("pointerdown",function(e){var x=e.clientX/window.innerWidth,y=1.0-e.clientY/window.innerHeight;if(y<HZN){spawn(x,y,1.05);}else{spawnTrail(x,y);}},{passive:true});
+      setInterval(function(){if(!document.hidden && my<HZN)spawn(Math.random(),Math.random()*HZN,0.30);},2600); // ambient ripples only while the cursor is on the lake
+    }
+    var t0=performance.now(),last=t0;
+    function frame(now){
+      var dt=Math.min((now-last)/1000,0.05);last=now;
+      if(document.hidden){requestAnimationFrame(frame);return;}
+      if((window.scrollY||window.pageYOffset||0) > window.innerHeight+60){ if(!REDUCE)requestAnimationFrame(frame); return; }  // lake scrolled away -> stop drawing (perf)
+      mx+=(tmx-mx)*0.08;my+=(tmy-my)*0.08;
+      if(!REDUCE){for(var i=0;i<N;i++){if(ripXYZ[i*3+2]<1.0){ripXYZ[i*3+2]=Math.min(ripXYZ[i*3+2]+dt/life,1.0);}}
+        for(var j2=0;j2<TN;j2++){if(trail[j2*3+2]<1.0){trail[j2*3+2]=Math.min(trail[j2*3+2]+dt/trailLife,1.0);}}}
+      gl.uniform1f(U.time,(now-t0)/1000);
+      gl.uniform2f(U.mouse,mx,my);
+      gl.uniform3fv(U.rip,ripXYZ);gl.uniform1fv(U.ripStr,ripStr);gl.uniform3fv(U.trail,trail);
+      gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,cloudTex);gl.uniform1i(U.clouds,0);gl.uniform1f(U.cloudsReady,cloudsReady);
+      gl.drawArrays(gl.TRIANGLES,0,3);
+      if(!REDUCE)requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+    return true;
+  })();
+  if(!fluidOK){ var fc=document.getElementById("fluid"); if(fc)fc.style.display="none"; var ob=document.getElementById("orbs"); if(ob)ob.hidden=false; }
+
+  /* ===== routing diagram ===== */
+  (function(){
+    var svg=document.getElementById("routeSvg"); if(!svg)return;var NS="http://www.w3.org/2000/svg";
+    var hub={x:230,y:66},workers=[{x:64,y:214},{x:168,y:256},{x:292,y:256},{x:396,y:214},{x:118,y:360},{x:230,y:372},{x:342,y:360}];
+    var jc=[PAL.magenta,PAL.purple,PAL.coral,PAL.pink];
+    function el(n,a){var e=document.createElementNS(NS,n);for(var k in a)e.setAttribute(k,a[k]);return e;}
+    var paths=[];
+    workers.forEach(function(w){var mxx=(hub.x+w.x)/2,myy=(hub.y+w.y)/2-26;var p=el("path",{d:"M"+hub.x+","+hub.y+" Q"+mxx+","+myy+" "+w.x+","+w.y,fill:"none",stroke:"rgba(43,34,51,.16)","stroke-width":2});svg.appendChild(p);paths.push(p);});
+    var hg=el("g",{});hg.appendChild(el("rect",{x:hub.x-22,y:hub.y-22,width:44,height:44,rx:12,fill:"#2B2233"}));hg.appendChild(el("circle",{cx:hub.x,cy:hub.y,r:6,fill:PAL.magenta}));svg.appendChild(hg);
+    var hl=el("text",{x:hub.x,y:hub.y+42,"text-anchor":"middle","font-size":"11","font-family":"ui-monospace,Consolas,monospace",fill:"#6b6076"});hl.textContent="orchestrator";svg.appendChild(hl);
+    var we=workers.map(function(w){var g=el("g",{});var rc=el("rect",{x:w.x-16,y:w.y-16,width:32,height:32,rx:9,fill:PAL.lilac,stroke:"#2B2233","stroke-width":1.3});g.appendChild(rc);g.appendChild(el("circle",{cx:w.x,cy:w.y,r:2.4,fill:"#2B2233"}));svg.appendChild(g);return {rc:rc};});
+    if(REDUCE)return;
+    function fire(i){var path=paths[i],len=path.getTotalLength(),c=jc[i%jc.length];var dot=el("circle",{r:4,fill:c});var halo=el("circle",{r:8,fill:c,opacity:0.22});svg.appendChild(halo);svg.appendChild(dot);var o={t:0};
+      gsap.to(o,{t:1,duration:1.1+Math.random()*0.5,ease:"power1.inOut",onUpdate:function(){var pt=path.getPointAtLength(o.t*len);dot.setAttribute("cx",pt.x);dot.setAttribute("cy",pt.y);halo.setAttribute("cx",pt.x);halo.setAttribute("cy",pt.y);},onComplete:function(){dot.remove();halo.remove();gsap.fromTo(we[i].rc,{fill:PAL.pink},{fill:PAL.lilac,duration:1.0,ease:"power1.out"});}});}
+    var tk=0;gsap.ticker.add(function(){tk++;if(tk%46===0)fire((Math.random()*paths.length)|0);});
+  })();
+
+  /* ===== yield demo ===== */
+  (function(){
+    var c=document.getElementById("yieldCanvas"); if(!c)return;var d=fit(c),ctx=d.ctx,W=d.w,H=d.h,nodes=[],hub,rerouted=false,t=0,hint=document.getElementById("yhint");
+    addEventListener("resize",function(){d=fit(c);W=d.w;H=d.h;layout();});
+    function layout(){nodes=[];for(var i=0;i<5;i++)nodes.push({x:W*(0.2+0.6*i/4),y:H*0.62,st:"work"});hub={x:W*0.5,y:H*0.2};rerouted=false;}
+    layout();
+    function yld(){if(rerouted)return;rerouted=true;nodes[2].st="yield";if(hint)hint.textContent="node yielded in 0.3s \u00b7 work rerouted to a neighbor";
+      setTimeout(function(){if(nodes[3])nodes[3].st="boost";},300);
+      setTimeout(function(){nodes[2].st="work";if(nodes[3])nodes[3].st="work";rerouted=false;if(hint)hint.textContent="move your cursor over the panel";},2600);}
+    c.addEventListener("pointerenter",yld);c.addEventListener("pointermove",yld);
+    (function loop(){t++;ctx.clearRect(0,0,W,H);ctx.strokeStyle="rgba(247,239,233,.16)";ctx.lineWidth=1;
+      nodes.forEach(function(n){ctx.beginPath();ctx.moveTo(hub.x,hub.y);ctx.lineTo(n.x,n.y);ctx.stroke();});
+      ctx.fillStyle="#F7EFE9";rr(ctx,hub.x-8,hub.y-8,16,16,4);ctx.fill();ctx.fillStyle=PAL.magenta;ctx.beginPath();ctx.arc(hub.x,hub.y,2.6,0,6.2832);ctx.fill();
+      nodes.forEach(function(n){var cl=n.st==="yield"?PAL.peach:n.st==="boost"?PAL.coral:PAL.lilac;ctx.fillStyle=cl;ctx.strokeStyle="rgba(247,239,233,.4)";ctx.lineWidth=1;rr(ctx,n.x-9,n.y-9,18,18,4);ctx.fill();ctx.stroke();
+        if(n.st==="work"||n.st==="boost"){var pu=REDUCE?0.6:(0.5+Math.sin(t*0.08)*0.3);ctx.fillStyle="rgba(217,143,192,"+pu+")";ctx.beginPath();ctx.arc(n.x,n.y,2,0,6.2832);ctx.fill();}});
+      requestAnimationFrame(loop);})();
+  })();
+
+  /* ===== routing cinematic: lake droplets -> energy -> harvested into the compute cloud ===== */
+  (function(){
+    var section=document.getElementById("routing"); if(!section) return;
+    var canvas=section.querySelector(".cinema__canvas");
+    var termEl=section.querySelector(".term");
+    var bodyEl=section.querySelector(".term__body");
+    var numEl=section.querySelector(".term__num");
+    var glowEl=section.querySelector(".cloud__glow");
+    if(!canvas||!termEl||!bodyEl) return;
+
+    var d=fit(canvas),ctx=d.ctx,W=d.w,H=d.h;
+    var cxF=0.5,cyF=0.55,cloudYF=0.42,absorbR=120;
+
+    function measure(){
+      var cr=canvas.getBoundingClientRect(),tr=termEl.getBoundingClientRect();
+      if(cr.width>2&&cr.height>2){
+        cxF=(tr.left+tr.width/2-cr.left)/cr.width;
+        cyF=(tr.top+tr.height/2-cr.top)/cr.height;
+        cloudYF=(tr.top-cr.top)/cr.height-0.07;
+        absorbR=Math.max(46,tr.width*0.32);
+      }
+    }
+    function onResize(){d=fit(canvas);ctx=d.ctx;W=d.w;H=d.h;measure();}
+    measure();addEventListener("resize",onResize,{passive:true});
+
+    function hx(h){return [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];}
+    var COOL=[150,176,232],MID=hx(PAL.magenta),WARM=hx(PAL.coral),PINK=hx(PAL.pink);
+    function mix(a,b,t){return [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];}
+    function colFor(ch){return ch<0.5?mix(COOL,MID,ch/0.5):mix(MID,WARM,(ch-0.5)/0.5);}
+    function rgba(c,a){return "rgba("+(c[0]|0)+","+(c[1]|0)+","+(c[2]|0)+","+a+")";}
+
+    var CAP=110,parts=[],spawnAcc=0,rings=[],reclaimed=0,flash=0,burst=0,progress=0;
+
+    function spawn(){
+      if(parts.length>=CAP) return;
+      parts.push({x:Math.random()*W,y:-8-Math.random()*22,vx:(Math.random()-0.5)*0.5,
+        vy:0.6+Math.random()*0.9,r:2.2+Math.random()*2.0,ch:0,
+        wob:Math.random()*6.283,ws:0.04+Math.random()*0.05,wa:0.3+Math.random()*0.6,ab:0});
+    }
+    function updateNum(){if(numEl)numEl.textContent=reclaimed.toLocaleString("en-US",{minimumFractionDigits:1,maximumFractionDigits:1});}
+
+    /* --- terminal typewriter --- */
+    var SCRIPT=[
+      {t:"$ onecompute route --workload eval-batch-7f3",c:"cmd"},
+      {t:"\u2192 matched 1,284 idle nodes across 3 regions",c:"out"},
+      {t:"\u2713 dispatched 1,284 shards \u00b7 0.31s",c:"ok"},
+      {t:"$ onecompute harvest --reclaim",c:"cmd"},
+      {t:"\u2190 absorbing spare cycles from 1,284 nodes \u2026",c:"harv"},
+      {t:"\u2713 +4.2 PFLOP\u00b7h credited to the grid",c:"ok"},
+      {t:"$ onecompute route --workload synth-data-q2",c:"cmd"},
+      {t:"\u2192 matched 906 idle nodes \u00b7 scheduling \u2026",c:"out"},
+      {t:"\u2713 +2.8 PFLOP\u00b7h credited \u00b7 grid steady",c:"ok"}
+    ];
+    var li=0,ci=0,typeT=0,committed="",phase="type",pauseT=0;
+    function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+    function renderTerm(partial,cls){
+      bodyEl.innerHTML=committed+(partial!=null?'<span class="'+cls+'">'+esc(partial)+'</span>':"")+'<span class="term__cur"></span>';
+    }
+    bodyEl.innerHTML='<span class="term__cur"></span>';
+    function typeStep(dt){
+      if(phase==="type"){
+        typeT+=dt;
+        while(typeT>=0.028&&phase==="type"){
+          typeT-=0.028;var line=SCRIPT[li];ci++;
+          if(ci>=line.t.length){
+            committed+='<span class="'+line.c+'">'+esc(line.t)+'</span>\n';
+            if(line.c==="harv")burst=1.5;
+            li++;ci=0;
+            if(li>=SCRIPT.length){phase="hold";pauseT=1.9;renderTerm(null,null);return;}
+            phase="linepause";pauseT=0.30;renderTerm(null,null);return;
+          }
+          renderTerm(line.t.slice(0,ci),line.c);
+        }
+      } else if(phase==="linepause"){
+        pauseT-=dt;if(pauseT<=0){phase="type";}
+      } else if(phase==="hold"){
+        pauseT-=dt;if(pauseT<=0){committed="";li=0;ci=0;phase="type";renderTerm(null,null);}
+      }
+    }
+
+    /* --- particle sim --- */
+    function step(dt){
+      var f=Math.min(dt*60,3),cx=cxF*W,cy=cyF*H,cloudY=cloudYF*H;
+      var rate=0.12+progress*1.15+burst*1.4;
+      spawnAcc+=rate*f;
+      while(spawnAcc>=1){spawnAcc--;spawn();}
+      if(burst>0)burst=Math.max(0,burst-dt);
+      for(var i=parts.length-1;i>=0;i--){
+        var p=parts[i];
+        if(p.y>H*0.35)p.ch=Math.min(1,p.ch+dt*0.7);
+        p.wob+=p.ws*f;
+        var charged=p.ch>0.12||p.y>cloudY;
+        if(charged){
+          var dx=cx-p.x,dy=cy-p.y,dist=Math.sqrt(dx*dx+dy*dy)+0.001,nx=dx/dist,ny=dy/dist;
+          var pull=(0.05+progress*0.20)*(1+55/dist)*f*0.5;
+          p.vx+=nx*pull;p.vy+=ny*pull;
+          p.vx+=-ny*pull*0.36;p.vy+=nx*pull*0.36;
+          var dmp=Math.pow(0.96,f);p.vx*=dmp;p.vy*=dmp;
+        } else {
+          p.vy+=0.02*f;p.vx+=Math.cos(p.wob)*0.01*f;
+        }
+        p.x+=p.vx*f+Math.cos(p.wob)*p.wa*0.15*f;
+        p.y+=p.vy*f;
+        var dd=Math.sqrt((cx-p.x)*(cx-p.x)+(cy-p.y)*(cy-p.y));
+        if(p.ab>0||dd<absorbR){
+          p.ab+=dt*3.0;p.r*=Math.pow(0.86,f);
+          if(p.ab>=1||p.r<0.5){
+            parts.splice(i,1);
+            reclaimed+=0.02+Math.random()*0.05;
+            rings.push({r:absorbR,a:0.5});
+            flash=Math.min(1,flash+0.32);
+            updateNum();continue;
+          }
+        }
+        if(p.y>H+30||p.x<-44||p.x>W+44){parts.splice(i,1);}
+      }
+      for(var r=rings.length-1;r>=0;r--){var rg=rings[r];rg.r+=240*dt;rg.a-=dt*0.8;if(rg.a<=0)rings.splice(r,1);}
+      flash=Math.max(0,flash-dt*1.6);
+      if(glowEl)glowEl.style.opacity=(0.22+flash*0.62).toFixed(3);
+    }
+    function draw(){
+      ctx.clearRect(0,0,W,H);var cx=cxF*W,cy=cyF*H,i,p;
+      ctx.globalCompositeOperation="lighter";
+      for(i=0;i<rings.length;i++){var rg=rings[i];ctx.beginPath();ctx.arc(cx,cy,rg.r,0,6.283);
+        ctx.strokeStyle=rgba(PINK,Math.max(0,rg.a));ctx.lineWidth=2;ctx.stroke();}
+      for(i=0;i<parts.length;i++){p=parts[i];if(p.ch<=0.06)continue;
+        var c=colFor(p.ch),al=p.ab>0?(1-p.ab):1,gr=p.r*(2.4+p.ch*2.6);
+        var g=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,gr);
+        g.addColorStop(0,rgba(c,0.5*al*(0.35+p.ch*0.65)));g.addColorStop(1,rgba(c,0));
+        ctx.fillStyle=g;ctx.beginPath();ctx.arc(p.x,p.y,gr,0,6.283);ctx.fill();}
+      ctx.globalCompositeOperation="source-over";
+      for(i=0;i<parts.length;i++){p=parts[i];var cc=colFor(p.ch),a2=p.ab>0?(1-p.ab):1;
+        ctx.strokeStyle=rgba(cc,0.22*a2);ctx.lineWidth=p.r*0.85;
+        ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x-p.vx*3.2,p.y-p.vy*3.2);ctx.stroke();
+        ctx.fillStyle=rgba(cc,0.95*a2);ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,6.283);ctx.fill();
+        ctx.fillStyle="rgba(255,255,255,"+(0.5*a2)+")";ctx.beginPath();ctx.arc(p.x-p.r*0.3,p.y-p.r*0.3,p.r*0.34,0,6.283);ctx.fill();}
+    }
+
+    /* --- reduced motion: one static composed frame, no rAF, no scrub --- */
+    if(REDUCE){
+      for(var k=0;k<SCRIPT.length;k++)committed+='<span class="'+SCRIPT[k].c+'">'+esc(SCRIPT[k].t)+'</span>\n';
+      bodyEl.innerHTML=committed;reclaimed=128.6;updateNum();
+      if(glowEl)glowEl.style.opacity="0.46";
+      var cx0=cxF*W,cy0=cyF*H;ctx.clearRect(0,0,W,H);
+      for(var s=0;s<48;s++){
+        var ang=(s/48)*6.283+Math.random()*0.4,rad=absorbR*1.35+Math.random()*Math.min(W,H)*0.34;
+        var px=cx0+Math.cos(ang)*rad,py=cy0+Math.sin(ang)*rad*0.82-12;
+        var chg=Math.max(0.4,1-rad/(Math.min(W,H)*0.5)),c2=colFor(chg),rr2=2.2+Math.random()*2.2;
+        ctx.globalCompositeOperation="lighter";var gr2=rr2*4,g2=ctx.createRadialGradient(px,py,0,px,py,gr2);
+        g2.addColorStop(0,rgba(c2,0.5));g2.addColorStop(1,rgba(c2,0));
+        ctx.fillStyle=g2;ctx.beginPath();ctx.arc(px,py,gr2,0,6.283);ctx.fill();
+        ctx.globalCompositeOperation="source-over";
+        ctx.fillStyle=rgba(c2,0.95);ctx.beginPath();ctx.arc(px,py,rr2,0,6.283);ctx.fill();
+      }
+      return;
+    }
+
+    /* --- progress: ScrollTrigger if present, else scroll fallback (degrade gracefully) --- */
+    if(window.gsap&&window.ScrollTrigger){
+      ScrollTrigger.create({trigger:section,start:"top top",end:"bottom bottom",
+        onUpdate:function(self){progress=self.progress;}});
+    } else {
+      var upd=function(){var rr3=section.getBoundingClientRect(),tot=rr3.height-window.innerHeight;
+        progress=tot>0?Math.max(0,Math.min(1,(-rr3.top)/tot)):0;};
+      addEventListener("scroll",upd,{passive:true});upd();
+    }
+
+    /* --- rAF loop, gated by IntersectionObserver (off-screen => stopped) --- */
+    var running=false,rafId=0,last=0;
+    function frame(now){
+      if(!running)return;
+      var dt=Math.min((now-last)/1000,0.05);last=now;
+      if(!document.hidden){step(dt);typeStep(dt);draw();}
+      rafId=requestAnimationFrame(frame);
+    }
+    function start(){if(running)return;running=true;last=performance.now();measure();rafId=requestAnimationFrame(frame);}
+    function stop(){running=false;if(rafId)cancelAnimationFrame(rafId);rafId=0;}
+    if("IntersectionObserver" in window){
+      new IntersectionObserver(function(es){es.forEach(function(e){e.isIntersecting?start():stop();});},{threshold:0}).observe(section);
+    } else { start(); }
+  })();
+
+
+
+  /* ===== GSAP scroll reveals + count-ups + bars ===== */
+  if(window.gsap&&window.ScrollTrigger){
+    gsap.registerPlugin(ScrollTrigger);
+    document.querySelectorAll(".reveal").forEach(function(e){ScrollTrigger.create({trigger:e,start:"top 88%",once:true,onEnter:function(){e.classList.add("in");}});});
+    document.querySelectorAll("[data-count]").forEach(function(e){var end=parseFloat(e.getAttribute("data-count")),pre=e.getAttribute("data-prefix")||"",suf=e.getAttribute("data-suffix")||"",o={v:0};
+      ScrollTrigger.create({trigger:e,start:"top 92%",once:true,onEnter:function(){if(REDUCE){e.textContent=pre+end+suf;return;}gsap.to(o,{v:end,duration:1.8,ease:"power2.out",onUpdate:function(){e.textContent=pre+Math.round(o.v).toLocaleString("en-US")+suf;}});}});});
+    document.querySelectorAll(".bar__fill").forEach(function(e){var w=e.getAttribute("data-w")/100;ScrollTrigger.create({trigger:e,start:"top 94%",once:true,onEnter:function(){e.style.transform="scaleX("+w+")";}});});
+  } else {
+    document.querySelectorAll(".reveal").forEach(function(e){e.classList.add("in");});
+    document.querySelectorAll("[data-count]").forEach(function(e){e.textContent=(e.getAttribute("data-prefix")||"")+e.getAttribute("data-count")+(e.getAttribute("data-suffix")||"");});
+    document.querySelectorAll(".bar__fill").forEach(function(e){e.style.transform="scaleX("+(e.getAttribute("data-w")/100)+")";});
+  }
+
+  /* ===== custom cursor: smooth follow, tighten on click, grow on interactive ===== */
+  (function(){
+    if(!(window.matchMedia && matchMedia("(hover:hover) and (pointer:fine)").matches)) return;
+    var cur=document.getElementById("cursor"); if(!cur) return;
+    document.body.classList.add("has-cursor");
+    var x=innerWidth/2,y=innerHeight/2,tx=x,ty=y;
+    addEventListener("pointermove",function(e){tx=e.clientX;ty=e.clientY;},{passive:true});
+    addEventListener("pointerdown",function(){cur.classList.add("down");},{passive:true});
+    addEventListener("pointerup",function(){cur.classList.remove("down");},{passive:true});
+    document.querySelectorAll("a,button,.feat,.step,[data-cursor]").forEach(function(el){
+      el.addEventListener("pointerenter",function(){cur.classList.add("hover");});
+      el.addEventListener("pointerleave",function(){cur.classList.remove("hover");});
+    });
+    (function loop(){ var k=REDUCE?1:0.2; x+=(tx-x)*k; y+=(ty-y)*k; cur.style.transform="translate("+x.toFixed(2)+"px,"+y.toFixed(2)+"px)"; requestAnimationFrame(loop); })();
+  })();
+
+  /* ===== cursor-reactive headline letters + magnetic buttons + hero entrance ===== */
+  (function(){
+    var fine = window.matchMedia && matchMedia("(hover:hover) and (pointer:fine)").matches;
+    var els=document.querySelectorAll(".hero h1, .head h2, .ceiling .big");
+    function splitEl(el){
+      [].slice.call(el.childNodes).forEach(function(node){
+        if(node.nodeType===3){
+          var frag=document.createDocumentFragment();
+          node.textContent.split("").forEach(function(c){
+            if(c===" "){frag.appendChild(document.createTextNode(" "));return;}
+            var s=document.createElement("span");s.className="ch";s.textContent=c;frag.appendChild(s);
+          });
+          el.replaceChild(frag,node);
+        } else if(node.nodeType===1 && node.tagName!=="BR"){ node.classList.add("ch"); }
+      });
+    }
+    els.forEach(splitEl);
+    var letters=[];
+    els.forEach(function(el){ [].forEach.call(el.querySelectorAll(".ch"),function(ch){ letters.push({el:ch,px:0,py:0,cy:0,cs:1}); }); });
+    function measure(){ var sx=scrollX, sy=scrollY; letters.forEach(function(L){ var r=L.el.getBoundingClientRect(); L.px=r.left+r.width/2+sx; L.py=r.top+r.height/2+sy; }); }
+    setTimeout(measure,80); addEventListener("resize",measure);
+    var mxp=-9999,myp=-9999;
+    addEventListener("pointermove",function(e){mxp=e.clientX;myp=e.clientY;},{passive:true});
+    addEventListener("pointerleave",function(){mxp=-9999;myp=-9999;});
+    var R=135;
+    if(fine && !REDUCE){
+      setTimeout(function(){
+        (function loop(){ var sx=scrollX, sy=scrollY, vh=innerHeight;
+          for(var i=0;i<letters.length;i++){ var L=letters[i]; var vy=L.py-sy;
+            var ty,ts;
+            if(vy<-90||vy>vh+90){ ty=0; ts=1; }
+            else { var vx=L.px-sx, dx=mxp-vx, dy=myp-vy, dist=Math.sqrt(dx*dx+dy*dy), tt=dist<R?(1-dist/R):0; ty=-tt*15; ts=1+tt*0.22; }
+            L.cy+=(ty-L.cy)*0.18; L.cs+=(ts-L.cs)*0.18;
+            if(Math.abs(L.cy)>0.05||Math.abs(L.cs-1)>0.002){ L.el.style.transform="translate3d(0,"+L.cy.toFixed(2)+"px,0) scale("+L.cs.toFixed(3)+")"; }
+            else { L.el.style.transform=""; }
+          }
+          requestAnimationFrame(loop);
+        })();
+      },1150);
+    }
+    if(window.gsap && !REDUCE){ var h=document.querySelector(".hero h1"); if(h){ gsap.from(h.querySelectorAll(".ch"),{yPercent:135,opacity:0,duration:0.92,ease:"power3.out",stagger:0.018,onComplete:measure}); } }
+    if(fine && !REDUCE){
+      document.querySelectorAll(".btn").forEach(function(b){
+        b.addEventListener("pointermove",function(e){ var r=b.getBoundingClientRect(); b.style.transform="translate("+((e.clientX-(r.left+r.width/2))*0.25).toFixed(1)+"px,"+((e.clientY-(r.top+r.height/2))*0.4).toFixed(1)+"px)"; });
+        b.addEventListener("pointerleave",function(){ b.style.transform=""; });
+      });
+    }
+  })();
+
+  var nav=document.getElementById("nav");addEventListener("scroll",function(){nav.classList.toggle("scrolled",window.scrollY>16);},{passive:true});
+  var cb=document.getElementById("consoleBtn");if(cb)cb.addEventListener("click",function(ev){ev.preventDefault();window.location.href="/";});
+})();
+</script>
+</body>
+</html>
