@@ -88,7 +88,7 @@ def _banner_lines(host: str, port: int, db_path: str, scheme: str = "http") -> l
     if addrs:
         for ip in addrs:
             out.append(f"  Dashboard:  {scheme}://{ip}:{port}/")
-            out.append(f"  Worker:     python -m worker --url {scheme}://{ip}:{port}")
+            out.append(f"  Worker:     uv run python -m worker --url {scheme}://{ip}:{port}")
         # Prefer the routed/primary NIC for the reachability hint over the
         # (sorted) first address, which may be a virtual/VPN interface.
         primary = primary_lan_ipv4() or addrs[0]
@@ -101,7 +101,7 @@ def _banner_lines(host: str, port: int, db_path: str, scheme: str = "http") -> l
         # No usable LAN IP detected — fall back to local-only guidance.
         out += [
             f"  Dashboard:  {scheme}://127.0.0.1:{port}/",
-            f"  Worker:     python -m worker --url {scheme}://127.0.0.1:{port}",
+            f"  Worker:     uv run python -m worker --url {scheme}://127.0.0.1:{port}",
             "",
             "  No LAN IPv4 detected; showing loopback. If this host is multi-homed",
             f"  or on a VPN, point workers at the reachable interface IP on port {port}.",

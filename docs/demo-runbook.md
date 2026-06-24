@@ -27,11 +27,14 @@ There are two ways to run it:
 ## A) Real fleet — 2 laptops + 1 dev box, side by side
 
 All three machines need the repo checked out and `uv` available. Commands use the project
-`uv` (`C:\Users\<you>\.local\bin\uv.exe`); `uv run` puts `src` on the path.
+`uv` (`C:\Users\<you>\.local\bin\uv.exe`). **Run `uv sync` once per machine first** — it
+installs NightShift into the project venv, so `uv run python -m orchestrator` and
+`uv run python -m worker` work from any checkout (no `PYTHONPATH` needed).
 
 ### A1. Dev box — start the orchestrator (with the credential gate ON)
 
 ```powershell
+uv sync                 # one-time: installs NightShift + deps into .venv
 uv run python -m orchestrator --require-approval
 ```
 
@@ -40,7 +43,7 @@ This binds `0.0.0.0:8080` and prints, for each LAN IP, the **dashboard URL** and
 
 ```
   Dashboard:  http://10.0.8.72:8080/
-  Worker:     python -m worker --url http://10.0.8.72:8080
+  Worker:     uv run python -m worker --url http://10.0.8.72:8080
   ...
   Credential gate: ON — workers join PENDING and need dashboard approval (device code).
 ```
