@@ -545,30 +545,27 @@ void main(){
   float water=step(uv.y,H);             // 1 = water pixel, 0 = sky pixel
   float mWater=step(u_mouse.y,H);       // 1 = cursor is over the lake
 
-  vec2 disp=vec2(0.0); float energy=0.0; float ringGlow=0.0;
+  vec2 disp=vec2(0.0); float shine=0.0;
   for(int i=0;i<10;i++){
     float age=u_rip[i].z;
     if(age>=1.0) continue;
     vec2 rp=vec2(u_rip[i].x*u_aspect,u_rip[i].y);
     vec2 d=auv-rp; float dist=length(d);
-    float depthR=clamp((H-u_rip[i].y)/H,0.0,1.0);    // near ripples read a touch larger (perspective)
-    float front=age*mix(0.34,0.62,depthR);            // leading edge expands outward over the ripple's life
-    float w=front-dist;                               // >0 inside the expanding front
-    float inFront=smoothstep(0.0,0.025,w);            // confine the ripple inside its leading edge
-    float rings=sin(w*78.0 - age*4.0);                // CONCENTRIC ring train travelling outward
-    float envel=exp(-clamp(w,0.0,1.0)*5.0)*inFront;   // brightest at the front, fading inward
-    float wave=rings*envel;                           // signed ripple height (multiple rings)
+    float depthR=clamp((H-u_rip[i].y)/H,0.0,1.0);     // near ripples read a touch larger (perspective)
+    float front=age*mix(0.30,0.55,depthR);            // a SHINE ring expands outward from where the cursor moved
+    float w=front-dist;
+    float wf=w*22.0;  float ring =exp(-wf*wf);         // soft concentric shine ring riding the front
+    float wf2=(w+0.05)*22.0; float ring2=exp(-wf2*wf2)*0.5;   // a gentle trailing ring
     float str=u_ripStr[i]*(1.0-age)*(1.0-age);        // smooth ease-out over the life
-    disp += normalize(d+vec2(1e-4))*wave*str*0.12;    // rings refract the mirror reflection
-    ringGlow += max(wave,0.0)*str*1.05;               // bright crests catch the dawn light
-    energy += abs(wave)*str*0.55;                     // rings pick up the colourful water
+    shine += (ring+ring2)*str;                        // the cursor changes the SHINE of the water in a ring around it
+    disp  += normalize(d+vec2(1e-4))*(ring-ring2)*str*0.018;  // a whisper of reflection-bend
   }
   vec2 mp=vec2(u_mouse.x*u_aspect,u_mouse.y);
   float md=length(auv-mp);
   float mm=md*9.0;
   float blob=exp(-mm*mm);
   // the cursor no longer drags a standing ripple; ripples ORIGINATE where the mouse moves (spawned in JS)
-  disp*=water; energy*=water; ringGlow*=water;     // render ripples only in the water
+  disp*=water; shine*=water;     // the shine ripple only affects the water
 
   // cloud-push trail: the cursor pushes a soft poof in the cloud texture; it reforms as the trail ages out
   float carve=0.0; vec2 cloudPush=vec2(0.0);
@@ -586,24 +583,21 @@ void main(){
   cloudPush += normalize(auv-mp+vec2(1e-4))*blob*(1.0-mWater);
   carve = clamp((carve*1.15 + blob*0.85*(1.0-mWater))*(1.0-water), 0.0, 1.0);   // poof strength, sky-only
 
-  // water reflects the sky; a PERSPECTIVE wave field makes the lake recede into the screen:
-  // broad, defined swells near the viewer (bottom) -> small, tight, compressed waves toward the horizon
+  // REAL water: the lake is a mirror of the dawn sky, broken by fine crisp ripples (Fresnel + glitter)
   vec2 suv = uv;
-  float wspec=0.0, wshade=0.0;
+  float wspec=0.0, fresnel=0.0, depth=0.0;
   if(water>0.5){
-    float depth=clamp((H-uv.y)/H,0.0,1.0);             // 0 at the horizon -> 1 at the bottom (nearest)
-    float amp=mix(0.0014,0.0125,depth*depth);          // wave size grows toward the viewer
-    float fy =mix(155.0,24.0,depth);                   // far = many tight crests, near = broad swells
-    float px =uv.x*mix(2.6,7.0,depth);
-    float wv = sin(uv.y*fy + px + t*1.7);
-    wv      += sin(uv.y*fy*0.52 - px*0.7 + t*1.15)*0.6;
-    wv      += (fbm(vec2(uv.x*u_aspect*mix(2.0,5.5,depth), uv.y*mix(7.0,22.0,depth)) + vec2(t*0.18,t*0.55))-0.5)*0.9;
-    suv = vec2(uv.x, 2.0*H - uv.y);
-    suv += disp;                                       // spawned ripples only (no cursor-follow)
-    suv.x += wv*amp*1.7;
-    suv.y += wv*amp*0.75;
-    wspec = pow(clamp(wv*0.5+0.5,0.0,1.0),7.0)*mix(0.22,1.0,depth);   // crest glints, brighter near
-    wshade= clamp(-wv,0.0,1.0)*mix(0.06,0.22,depth);                   // trough shading -> visible texture
+    depth=clamp((H-uv.y)/H,0.0,1.0);                   // 0 at the horizon -> 1 nearest the viewer
+    suv = vec2(uv.x, 2.0*H - uv.y);                    // mirror the sky into the lake
+    vec2 rc=vec2(uv.x*u_aspect, uv.y);
+    float r1=fbm(rc*mix(14.0,40.0,depth) + vec2(t*0.05, t*0.13));   // fine, high-frequency ripples (hyper-defined)
+    float r2=fbm(rc*mix(28.0,80.0,depth) - vec2(t*0.04, t*0.09));
+    vec2 ripN=vec2(r1-0.5, r2-0.5);                    // fine surface-normal that breaks up the reflection
+    float rAmp=mix(0.0016,0.010,depth*depth);
+    suv += ripN*rAmp + disp;                           // distort the mirror with fine ripples + the cursor whisper
+    fresnel=mix(0.42,0.94,pow(1.0-depth,1.6));         // grazing near the horizon => strong mirror; steep near you => see in
+    float g=clamp(0.5+(ripN.x+ripN.y)*3.2,0.0,1.0);
+    wspec=g*g*g*g*mix(0.3,1.0,depth);                  // sharp specular sun-glitter on the wave normals
   }
 
   // base colorful field (sky + reflected sky); NO global ripple on the sky
@@ -612,30 +606,23 @@ void main(){
   float w2=fbm(q*1.7 + w1*1.2 + vec2(-t*0.02,t*0.03));
   float field=fbm(q + w2*0.9 + vec2(t*0.014,0.0));
   field=field*0.7 + w2*0.3;
-  float tt=field + energy*0.20;
+  float tt=field;
   vec3 col=ramp(tt);
 
   // sky lifts cooler toward the top
   float skyG=smoothstep(H,1.0,uv.y);
   col=mix(col, mix(col, vec3(0.80,0.73,0.83), 0.42), skyG*(1.0-water));
 
-  // surface ripple: a thin bright specular crest rides the expanding ring (real water, no rainbow/paint).
-  // The reflection-bend comes from `disp` above (suv += disp); here we only catch the dawn light on the crest.
-  if(ringGlow>0.001){
-    float crest=clamp(ringGlow,0.0,1.0);
-    crest=crest*crest*(3.0-2.0*crest);             // soft shoulder keeps the glint thin, like a real wave catching light
-    col=mix(col, vec3(0.995,0.965,0.94), clamp(crest*0.6,0.0,0.6)*water);
-  }
+  // (the cursor's shine ripple is applied in the realistic water finish below, via 'shine')
 
   // pastel clouds: a Higgsfield-generated cumulus cloudscape sampled as a TEXTURE (no procedural lattice/rectangles).
   // drifts slowly left; the cursor pushes a soft poof that reforms; the lake catches a faint reflection.
   if(u_cloudsReady>0.5){
-    vec2 cuv = vec2(suv.x*1.12 + t*0.006 + cloudPush.x*0.07*(1.0-water),
+    vec2 cuv = vec2(suv.x*1.0 + t*0.006 + cloudPush.x*0.07*(1.0-water),
                     (suv.y - H)/(1.0 - H) + cloudPush.y*0.07*(1.0-water));
     vec3 cloudTex = texture2D(u_clouds, cuv).rgb;
     col = mix(col, cloudTex, (1.0-water)*0.94*(1.0-carve*0.92));       // sky band = the cloudscape; cursor poof parts it
-    float cl = dot(cloudTex, vec3(0.299,0.587,0.114));                 // bright cloud pixels
-    col = mix(col, cloudTex, water*smoothstep(0.66,0.86,cl)*0.26);     // faint cloud reflection on the lake
+    col = mix(col, cloudTex, water*fresnel*0.72);                      // the LAKE MIRRORS the sky + clouds (Fresnel-weighted)
   }
 
   // distant land on the far left & right of the horizon (soft muted hills)
@@ -644,12 +631,20 @@ void main(){
   float land=smoothstep(H+landH,H+landH-0.004,uv.y)*step(H-0.02,uv.y);
   col=mix(col, vec3(0.56,0.60,0.55), clamp(land,0.0,1.0)*0.5);   // muted green-grey distant hills
 
-  // water tint + bright surface line at the shoreline
-  col=mix(col, vec3(0.74,0.62,0.67), 0.40*water);   // warm muted rose reflection
-  col=mix(col, col*0.84, water*smoothstep(H,0.0,uv.y)*0.42);   // deeper water reads darker
-  col=mix(col, col*0.82, wshade*water);             // wave troughs -> the water reads textured
-  col=mix(col, vec3(0.995,0.965,0.94), wspec*0.55*water);   // bright dawn glints ride the crests
-  col=mix(col, vec3(0.99,0.97,0.98), smoothstep(H-0.012,H,uv.y)*step(uv.y,H+0.012)*0.5);
+  // realistic water finish: cool desaturated body, depth, sharp glints, and the cursor shine ring
+  col=mix(col, vec3(0.60,0.59,0.70), (1.0-fresnel)*water*0.30);            // water body shows (cool, desaturated) where less mirror-like
+  col=mix(col, col*0.82, water*depth*0.26);                                // deeper / nearer water reads darker
+  col=mix(col, vec3(0.995,0.975,0.95), clamp(wspec*0.5,0.0,0.5)*water);    // sharp specular sun-glitter
+  col=mix(col, vec3(0.99,0.965,0.95), clamp(shine*0.7,0.0,0.55)*water);    // CURSOR SHINE RIPPLE: changes the water's shine in a ring
+  col=mix(col, vec3(0.99,0.97,0.98), smoothstep(H-0.012,H,uv.y)*step(uv.y,H+0.012)*0.5);   // bright shoreline
+
+  // clouds are FRONT-MOST: their soft bases dip a little over the lake just below the horizon
+  if(u_cloudsReady>0.5){
+    vec2 ouv=vec2(uv.x*1.0 + t*0.006, (uv.y-(H-0.20))/(1.0-(H-0.20)));
+    vec3 lowC=texture2D(u_clouds, ouv).rgb;
+    float lm=smoothstep(0.66,0.86, dot(lowC,vec3(0.299,0.587,0.114)));
+    col=mix(col, lowC, lm*smoothstep(H-0.20,H,uv.y)*water*0.72);
+  }
 
   // horizon glow
   float hbx=(uv.y-H)*34.0; float hb=exp(-hbx*hbx);
