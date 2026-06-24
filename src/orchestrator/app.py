@@ -9,11 +9,13 @@ from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import HTMLResponse
 
 from contracts import (
+    LAUNCHABLE_KINDS,
     Capability,
     FleetState,
     HeartbeatRequest,
     HeartbeatResponse,
     JobAssignment,
+    JobDetail,
     JobManifest,
     JobView,
     RegisterResponse,
@@ -23,6 +25,9 @@ from contracts import (
     SubmitRequest,
     SubmitResponse,
     WorkerView,
+    WorkloadLaunchRequest,
+    WorkloadLaunchResponse,
+    WorkloadView,
     sha256_hex,
 )
 from dashboard.paths import INDEX_HTML
@@ -46,6 +51,46 @@ def _make_device_code() -> str:
     chars = [_DEVICE_CODE_ALPHABET[int(raw[i : i + 2], 16) % len(_DEVICE_CODE_ALPHABET)]
              for i in range(0, 12, 2)]
     return f"{''.join(chars[:4])}-{''.join(chars[4:6])}"
+
+
+def _job_detail(row: sqlite3.Row) -> JobDetail:
+    """Build a dashboard JobDetail (incl. parsed output) from a jobs-table row."""
+    output = json.loads(row["result_json"]) if row["result_json"] else None
+    return JobDetail(
+        job_id=row["job_id"],
+        kind=row["kind"],
+        state=row["state"],
+        assigned_worker=row["assigned_worker"],
+        units=row["units"],
+        workload_id=row["workload_id"],
+        output=output,
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _build_workload_jobs(kind: str, n_tiles: int, params: dict) -> list[dict]:
+    """Build the split SubmitRequest dicts for a launchable workload kind.
+
+    Lazy imports keep the orchestrator import-light and avoid pulling the workload builders
+    (and their optional PIL/numpy deps) unless POST /workloads is actually used. The hardcoded
+    fleet split lives in the builders (one tile per machine via workloads.partition)."""
+    if kind == "fractal":
+        from workloads.fractal import build_fractal_jobs
+        return build_fractal_jobs(n_tiles=n_tiles, **params)
+    if kind == "optimize":
+        from workloads.optimize import build_optimize_jobs
+        return build_optimize_jobs(n_tiles=n_tiles, **params)
+    if kind == "ai.synth":
+        from workloads.synth import build_synth_jobs
+        return build_synth_jobs(n_tiles=n_tiles, **params)
+    if kind == "ai.batch_infer":
+        from workloads.ai_batch import build_prompt_jobs
+        return build_prompt_jobs(**params)  # slices by slice_size, not n_tiles
+    if kind == "data.transform":
+        from workloads.cpu_fanout import generate_jobs
+        return generate_jobs(n_jobs=n_tiles, **params)
+    raise ValueError(f"unknown or non-launchable workload kind: {kind!r}")
 
 
 def _lease_deadline() -> str:
@@ -399,6 +444,58 @@ def create_app(db_path: str = ":memory:", signer=None, require_approval: bool = 
             "SELECT COALESCE(SUM(credits), 0) AS credits FROM ledger"
         ).fetchone()["credits"]
         return FleetState(workers=workers, jobs=jobs, total_credits=float(total_credits))
+
+    @app.get("/jobs/{job_id}", response_model=JobDetail)
+    def job_detail(job_id: str) -> JobDetail:
+        """Full job record incl. its output — the dashboard reads this to show a job's result.
+        Defined after /jobs/next so the literal route still wins for the long-poll."""
+        row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        return _job_detail(row)
+
+    @app.post("/workloads", response_model=WorkloadLaunchResponse)
+    def launch_workload(req: WorkloadLaunchRequest) -> WorkloadLaunchResponse:
+        """Launch a whole workload across the fleet in one call: build the hardcoded split
+        (one tile per machine) and enqueue every tile tagged with a shared workload_id."""
+        if req.kind not in LAUNCHABLE_KINDS:
+            raise HTTPException(
+                status_code=400, detail=f"kind must be one of {list(LAUNCHABLE_KINDS)}"
+            )
+        try:
+            specs = _build_workload_jobs(req.kind, req.n_tiles, req.params)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=f"could not build workload: {exc}") from exc
+        workload_id = uuid4().hex
+        job_ids: list[str] = []
+        for spec in specs:
+            try:
+                sub = SubmitRequest(**spec)
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"invalid job spec: {exc}") from exc
+            jid = submit_job(conn, sub, workload_id=workload_id)
+            job_ids.append(jid)
+            _emit(conn, "submitted", job_id=jid, detail=req.kind)
+        return WorkloadLaunchResponse(workload_id=workload_id, kind=req.kind, job_ids=job_ids)
+
+    @app.get("/workloads/{workload_id}", response_model=WorkloadView)
+    def workload_detail(workload_id: str) -> WorkloadView:
+        """All jobs (with outputs) for a launched workload — the dashboard results panel."""
+        rows = conn.execute(
+            "SELECT * FROM jobs WHERE workload_id = ? ORDER BY created_at ASC, job_id ASC",
+            (workload_id,),
+        ).fetchall()
+        if not rows:
+            raise HTTPException(status_code=404, detail="workload not found")
+        jobs = [_job_detail(row) for row in rows]
+        completed = sum(1 for row in rows if row["state"] == "completed")
+        return WorkloadView(
+            workload_id=workload_id,
+            kind=rows[0]["kind"],
+            total=len(rows),
+            completed=completed,
+            jobs=jobs,
+        )
 
     @app.get("/events")
     def events(since: int = 0) -> dict:

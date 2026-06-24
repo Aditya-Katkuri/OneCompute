@@ -13,7 +13,9 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def submit_job(conn: sqlite3.Connection, req: SubmitRequest) -> str:
+def submit_job(
+    conn: sqlite3.Connection, req: SubmitRequest, workload_id: str | None = None
+) -> str:
     if req.units <= 0:
         raise ValueError("units must be positive")
     job_id = uuid4().hex
@@ -29,8 +31,9 @@ def submit_job(conn: sqlite3.Connection, req: SubmitRequest) -> str:
         conn.execute(
             """
             INSERT INTO jobs (
-                job_id, kind, manifest_json, input_json, state, units, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?)
+                job_id, kind, manifest_json, input_json, state, units, workload_id,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)
             """,
             (
                 job_id,
@@ -38,6 +41,7 @@ def submit_job(conn: sqlite3.Connection, req: SubmitRequest) -> str:
                 json.dumps(manifest.model_dump(mode="json"), separators=(",", ":")),
                 json.dumps(req.input, separators=(",", ":")),
                 req.units,
+                workload_id,
                 now,
                 now,
             ),
