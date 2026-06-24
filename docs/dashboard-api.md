@@ -93,7 +93,7 @@ Launch one across the fleet in a single call:
 
 | kind | per-job `output` | suggested visual |
 |---|---|---|
-| `fractal` | `{ width, height, row_start, row_end, max_iter, rows: [[int per pixel], …] }` | draw to a `<canvas>`: place each row at `y = row_start + i`, color each escape count (`>= max_iter` → black, else a ramp). Redraw as tiles complete → image fills in band-by-band. |
+| `fractal` | `{ width, row_start, row_end, max_iter, rows: [[int per pixel], …] }` (image `height` is the launch param, not echoed in output) | draw to a `<canvas>`: place each row at `y = row_start + i`, color each escape count (`>= max_iter` → black, else a ramp). Redraw as tiles complete → image fills in band-by-band. |
 | `optimize` | `{ best_score, best_params: [float…], best_index, evaluated }` | reduce to the global best (max `best_score`); show the winning machine + score; a small bar of per-tile scores. |
 | `ai.batch_infer` | `{ results: [{ prompt, completion, tokens }], backend }` | a list of prompt → completion cards; tag the `backend`. |
 | `ai.synth` | `{ rows: [{ name, role, team, summary }, …], backend }` | a table of the merged rows across all tiles. |
