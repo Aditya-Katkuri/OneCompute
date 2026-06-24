@@ -234,24 +234,23 @@
   .cinema__stage{position:sticky;top:0;height:100vh;width:100vw;margin-left:calc(50% - 50vw);
     overflow:hidden;display:block;
     background:
-      linear-gradient(180deg, rgba(159,134,201,.20) 0%, rgba(201,184,240,.10) 12%, rgba(247,239,233,0) 30%),
+      linear-gradient(180deg, #d6c2d2 0%, rgba(214,194,210,0.6) 7%, rgba(214,194,210,0.22) 17%, rgba(247,239,233,0) 32%),
       radial-gradient(150% 120% at 50% 118%, var(--paper) 0%, var(--cream) 64%)}
   .cinema__canvas{position:absolute;inset:0;width:100%;height:100%;z-index:1;display:block}
   .cinema__copy{position:absolute;left:clamp(22px,5vw,90px);top:clamp(84px,12vh,128px);z-index:4;max-width:30ch;pointer-events:none}
   .cinema__copy h2{font-size:clamp(28px,4.6vw,58px);color:var(--plum);margin-top:14px;text-shadow:0 1px 26px rgba(247,239,233,.7)}
 
   .cloud{position:absolute;left:50%;top:55%;transform:translate(-50%,-50%);
-    width:min(540px,88vw);height:min(360px,52vh);z-index:2;display:grid;place-items:center}
-  .cloud::before{content:"";position:absolute;inset:-16% -10%;z-index:0;
-    border-radius:50% 50% 48% 52%/56% 56% 46% 44%;
+    width:min(660px,95vw);height:min(400px,56vh);z-index:2;display:grid;place-items:center}
+  .cloud::before{content:"";position:absolute;inset:-26% -18%;z-index:0;
+    /* the SAME pastel cumulus texture as the hero sky above the lake, feathered into a soft cloud */
     background:
-      radial-gradient(38% 42% at 24% 60%, #ffffff 0%, rgba(255,255,255,0) 70%),
-      radial-gradient(40% 46% at 44% 36%, var(--blush) 0%, rgba(248,204,221,0) 72%),
-      radial-gradient(46% 52% at 64% 34%, var(--lilac) 0%, rgba(201,184,240,0) 72%),
-      radial-gradient(40% 46% at 80% 58%, var(--peach) 0%, rgba(248,211,188,0) 74%),
-      radial-gradient(60% 60% at 50% 74%, #ffffff 0%, rgba(255,255,255,0) 74%),
-      radial-gradient(72% 70% at 50% 50%, rgba(255,255,255,.94) 0%, rgba(255,255,255,.55) 44%, rgba(255,255,255,0) 72%);
-    filter:blur(18px);opacity:.97}
+      radial-gradient(44% 46% at 50% 50%, rgba(255,255,255,.55) 0%, rgba(255,255,255,0) 68%),
+      url("textures/clouds.jpg") 50% 66%/180% auto no-repeat;
+    border-radius:46% 54% 50% 50%/60% 62% 42% 40%;
+    -webkit-mask:radial-gradient(58% 56% at 50% 50%, #000 34%, rgba(0,0,0,0) 76%);
+            mask:radial-gradient(58% 56% at 50% 50%, #000 34%, rgba(0,0,0,0) 76%);
+    filter:blur(3px) saturate(1.06) brightness(1.05);opacity:.97}
   .cloud__glow{position:absolute;inset:-30% -18%;z-index:1;border-radius:50%;pointer-events:none;
     background:radial-gradient(50% 50% at 50% 48%, rgba(242,181,212,.78) 0%, rgba(232,163,140,.34) 38%, rgba(232,163,140,0) 70%);
     filter:blur(22px);opacity:.22;mix-blend-mode:screen;will-change:opacity}
@@ -335,7 +334,7 @@
       <canvas class="cinema__canvas" aria-hidden="true"></canvas>
       <div class="cinema__copy">
         <span class="eyebrow">Routing &middot; reclaiming</span>
-        <h2>Spare cycles, gathered like rain.</h2>
+        <h2>Spare cycles, gathered like rain into a lake of compute.</h2>
       </div>
       <div class="cloud">
         <div class="cloud__glow" aria-hidden="true"></div>
@@ -509,12 +508,13 @@ uniform vec2 u_res;
 uniform float u_time;
 uniform float u_aspect;
 uniform float u_reduce;
-uniform vec2 u_mouse;       // smoothed mouse in UV (y up)
-uniform vec3 u_rip[10];     // x,y = UV pos, z = age 0..1 (>=1 dead)
-uniform float u_ripStr[10];
-uniform vec3 u_trail[14];   // cursor cloud-push trail (x,y, age 0..1)
+uniform sampler2D u_fx;     // cursor EFFECT FIELD (ping-pong sim): R=ripple wave height, G=velocity, B=cloud-tear heat — lives wherever the cursor has been
+uniform vec2 u_fxTexel;     // 1 / field-resolution (for the gradient -> surface normal)
+uniform float u_fxReady;    // 1 when the field sim is active (0 => no cursor effect, the scene still renders)
 uniform sampler2D u_clouds;  // Higgsfield-generated pastel cumulus cloudscape
 uniform float u_cloudsReady; // 1 once the cloud texture has loaded
+uniform sampler2D u_waterNorm; // Higgsfield-derived seamless water normal map (realistic ripple normals)
+uniform float u_waterNormReady; // 1 once the water normal map has loaded (else fall back to fbm ripples)
 
 float hash(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
 float vnoise(vec2 p){ vec2 i=floor(p),f=fract(p);
@@ -537,51 +537,42 @@ vec3 ramp(float t){
   return c;
 }
 
+float warpV(float y){            // PERSPECTIVE remap: a true 1/(1-b*n) projection — ripples stay ~full-size near the wall, then shrink HARD + travel much slower toward the horizon (water only; identity in the sky so clouds are unaffected)
+  if(y>=0.6) return y;
+  float n=y/0.6;
+  return 0.18947*(1.0/(1.0-0.76*n)-1.0);
+}
+
 void main(){
   vec2 uv=vUv;
   vec2 auv=vec2(uv.x*u_aspect,uv.y);
   float t = u_reduce>0.5 ? 12.0 : u_time;
   float H=0.6;                          // horizon: a big lake fills the lower 60%
   float water=step(uv.y,H);             // 1 = water pixel, 0 = sky pixel
-  float mWater=step(u_mouse.y,H);       // 1 = cursor is over the lake
 
-  vec2 disp=vec2(0.0); float shine=0.0;
-  for(int i=0;i<10;i++){
-    float age=u_rip[i].z;
-    if(age>=1.0) continue;
-    vec2 rp=vec2(u_rip[i].x*u_aspect,u_rip[i].y);
-    vec2 d=auv-rp; float dist=length(d);
-    float depthR=clamp((H-u_rip[i].y)/H,0.0,1.0);     // near ripples read a touch larger (perspective)
-    float front=age*mix(0.30,0.55,depthR);            // a SHINE ring expands outward from where the cursor moved
-    float w=front-dist;
-    float wf=w*22.0;  float ring =exp(-wf*wf);         // soft concentric shine ring riding the front
-    float wf2=(w+0.05)*22.0; float ring2=exp(-wf2*wf2)*0.5;   // a gentle trailing ring
-    float str=u_ripStr[i]*(1.0-age)*(1.0-age);        // smooth ease-out over the life
-    shine += (ring+ring2)*str;                        // the cursor changes the SHINE of the water in a ring around it
-    disp  += normalize(d+vec2(1e-4))*(ring-ring2)*str*0.018;  // a whisper of reflection-bend
-  }
-  vec2 mp=vec2(u_mouse.x*u_aspect,u_mouse.y);
-  float md=length(auv-mp);
-  float mm=md*9.0;
-  float blob=exp(-mm*mm);
-  // the cursor no longer drags a standing ripple; ripples ORIGINATE where the mouse moves (spawned in JS)
-  disp*=water; shine*=water;     // the shine ripple only affects the water
-
-  // cloud-push trail: the cursor pushes a soft poof in the cloud texture; it reforms as the trail ages out
+  // CURSOR EFFECT FIELD: a ping-pong sim paints the cursor's influence into a texture that lives wherever the
+  // cursor has been and fades over time (no "trail" of discrete points). R = propagating ripple wave on the lake,
+  // B = soft cloud-tear heat in the sky. We read the field + its gradient (the surface normal) right here.
+  vec2 rippleN=vec2(0.0); float shine=0.0;
   float carve=0.0; vec2 cloudPush=vec2(0.0);
-  for(int j=0;j<14;j++){
-    float tage=u_trail[j].z;
-    if(tage>=1.0) continue;
-    vec2 tp=vec2(u_trail[j].x*u_aspect,u_trail[j].y);
-    vec2 td=auv-tp; float tdist=length(td);
-    float kk=tdist*13.0; float fall=exp(-kk*kk);
-    float w=(1.0-tage)*fall;
-    carve += w;
-    vec2 nrm=normalize(td+vec2(1e-4));
-    cloudPush += nrm*w + vec2(-nrm.y,nrm.x)*w*0.45;  // push aside + swirl => clouds curl apart, then reform
+  if(u_fxReady>0.5){
+    vec2 fuv=vec2(uv.x, warpV(uv.y));             // PERSPECTIVE: compress the wave toward the horizon (small far, large near the wall); identity in the sky
+    vec4 fxC=texture2D(u_fx, fuv);
+    float hL=texture2D(u_fx, fuv-vec2(u_fxTexel.x,0.0)).r;
+    float hR=texture2D(u_fx, fuv+vec2(u_fxTexel.x,0.0)).r;
+    float hD=texture2D(u_fx, fuv-vec2(0.0,u_fxTexel.y)).r;
+    float hU=texture2D(u_fx, fuv+vec2(0.0,u_fxTexel.y)).r;
+    rippleN = vec2(hR-hL, hU-hD)*12.0;            // wave-height gradient -> tilts the mirror's surface normal
+    shine   = clamp(abs(fxC.r)*2.0, 0.0, 1.0);    // the wave crests catch the light
+    float bL=texture2D(u_fx, fuv-vec2(u_fxTexel.x,0.0)).b;
+    float bR=texture2D(u_fx, fuv+vec2(u_fxTexel.x,0.0)).b;
+    float bD=texture2D(u_fx, fuv-vec2(0.0,u_fxTexel.y)).b;
+    float bU=texture2D(u_fx, fuv+vec2(0.0,u_fxTexel.y)).b;
+    carve     = clamp(fxC.b, 0.0, 1.0);           // how torn-open the cloud is here (soft, heals as the field decays)
+    cloudPush = vec2(bR-bL, bU-bD)*2.5;           // shove the clouds away from the hole (heat gradient)
   }
-  cloudPush += normalize(auv-mp+vec2(1e-4))*blob*(1.0-mWater);
-  carve = clamp((carve*1.15 + blob*0.85*(1.0-mWater))*(1.0-water), 0.0, 1.0);   // poof strength, sky-only
+  rippleN*=water; shine*=water;                   // the wave only ripples the lake
+  carve*=(1.0-water); cloudPush*=(1.0-water);     // the tear only opens the sky
 
   // REAL water: the lake is a mirror of the dawn sky, broken by fine crisp ripples (Fresnel + glitter)
   vec2 suv = uv;
@@ -589,15 +580,25 @@ void main(){
   if(water>0.5){
     depth=clamp((H-uv.y)/H,0.0,1.0);                   // 0 at the horizon -> 1 nearest the viewer
     suv = vec2(uv.x, 2.0*H - uv.y);                    // mirror the sky into the lake
-    vec2 rc=vec2(uv.x*u_aspect, uv.y);
-    float r1=fbm(rc*mix(14.0,40.0,depth) + vec2(t*0.05, t*0.13));   // fine, high-frequency ripples (hyper-defined)
-    float r2=fbm(rc*mix(28.0,80.0,depth) - vec2(t*0.04, t*0.09));
+    float pdist=min(0.85/(depth*0.92+0.05), 9.0);      // PERSPECTIVE distance to the water point: grows steeply toward the horizon
+    vec2 pw=vec2((uv.x-0.5)*u_aspect, 1.0)*pdist;      // project the ripples onto the lake plane -> they compress HARD toward the horizon (real depth)
+    float r1=fbm(pw*1.7 + vec2(t*0.05, t*0.13));       // fine crisp ripples, now correctly foreshortened: large near you, tiny at the far shore
+    float r2=fbm(pw*3.4 - vec2(t*0.04, t*0.09));
     vec2 ripN=vec2(r1-0.5, r2-0.5);                    // fine surface-normal that breaks up the reflection
+    if(u_waterNormReady>0.5){                          // photoreal Higgsfield-derived water normals augment the fbm ripples
+      vec2 nuv=pw*0.5;                                 // the photoreal normal map rides the same perspective plane
+      vec2 nA=texture2D(u_waterNorm, nuv + vec2(t*0.020, t*0.034)).xy*2.0-1.0;
+      vec2 nB=texture2D(u_waterNorm, nuv*1.9 - vec2(t*0.015, t*0.026)).xy*2.0-1.0;
+      ripN += (nA + nB*0.6)*0.6;                       // real ripple normals -> richer, non-uniform reflection break-up
+    }
     float rAmp=mix(0.0016,0.010,depth*depth);
-    suv += ripN*rAmp + disp;                           // distort the mirror with fine ripples + the cursor whisper
+    suv += ripN*rAmp + clamp(rippleN*0.020*mix(0.45,1.0,depth), -0.06, 0.06);   // distort the mirror with fine ripples + the cursor's ripple wave (fainter toward the far shore)
     fresnel=mix(0.42,0.94,pow(1.0-depth,1.6));         // grazing near the horizon => strong mirror; steep near you => see in
     float g=clamp(0.5+(ripN.x+ripN.y)*3.2,0.0,1.0);
-    wspec=g*g*g*g*mix(0.3,1.0,depth);                  // sharp specular sun-glitter on the wave normals
+    wspec=pow(g,6.0)*mix(0.28,1.0,depth);              // crisper, sharper sun-glitter concentrated nearer the viewer
+    float sun=(1.0-depth); sun=sun*sun*sun;            // a luminous reflective sheen along the far shore (dawn light catching the lake)
+    wspec += sun*(0.30+0.70*g)*0.5;                    // ...rippled so it sparkles into a sun-path rather than a flat band
+    wspec += clamp(length(rippleN)*0.12, 0.0, 0.6)*mix(0.4,1.0,depth);   // the cursor's ripple throws an extra glint along its crests
   }
 
   // base colorful field (sky + reflected sky); NO global ripple on the sky
@@ -621,7 +622,8 @@ void main(){
     vec2 cuv = vec2(suv.x*1.0 + t*0.006 + cloudPush.x*0.07*(1.0-water),
                     (suv.y - H)/(1.0 - H) + cloudPush.y*0.07*(1.0-water));
     vec3 cloudTex = texture2D(u_clouds, cuv).rgb;
-    col = mix(col, cloudTex, (1.0-water)*0.94*(1.0-carve*0.92));       // sky band = the cloudscape; cursor poof parts it
+    col = mix(col, cloudTex, (1.0-water)*0.94*(1.0-carve));            // sky band = the cloudscape; the poof fully parts the clouds...
+    col = mix(col, vec3(0.76,0.81,0.93), carve*0.55*(1.0-water));      // ...revealing the cooler sky-blue in the gap between them
     col = mix(col, cloudTex, water*fresnel*0.72);                      // the LAKE MIRRORS the sky + clouds (Fresnel-weighted)
   }
 
@@ -635,7 +637,7 @@ void main(){
   col=mix(col, vec3(0.60,0.59,0.70), (1.0-fresnel)*water*0.30);            // water body shows (cool, desaturated) where less mirror-like
   col=mix(col, col*0.82, water*depth*0.26);                                // deeper / nearer water reads darker
   col=mix(col, vec3(0.995,0.975,0.95), clamp(wspec*0.5,0.0,0.5)*water);    // sharp specular sun-glitter
-  col=mix(col, vec3(0.99,0.965,0.95), clamp(shine*0.7,0.0,0.55)*water);    // CURSOR SHINE RIPPLE: changes the water's shine in a ring
+  col=mix(col, vec3(0.995,0.975,0.96), clamp(shine*0.32,0.0,0.6)*water);    // CURSOR WAKE: the reflection ripple crests brighten the water (slightly brighter)
   col=mix(col, vec3(0.99,0.97,0.98), smoothstep(H-0.012,H,uv.y)*step(uv.y,H+0.012)*0.5);   // bright shoreline
 
   // clouds are FRONT-MOST: their soft bases dip a little over the lake just below the horizon
@@ -655,6 +657,49 @@ void main(){
 }
 </script>
 
+<script id="simfrag" type="x-shader/x-fragment">
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+varying vec2 vUv;
+uniform sampler2D u_prev;     // previous field state (ping-pong)
+uniform vec2 u_texel;         // 1 / field-resolution
+uniform vec2 u_p0;            // cursor position last sim step (uv, y-up)
+uniform vec2 u_p1;            // cursor position this sim step (uv, y-up)
+uniform float u_active;       // 1 when the cursor moved this frame (stamp), else 0
+uniform float u_over;         // 1 = cursor over the lake (stamp ripple), 0 = over the sky (stamp cloud heat)
+uniform float u_saspect;      // field aspect, so the stamp is circular in screen space
+uniform float u_radius;       // stamp radius (uv)
+float segDist(vec2 p, vec2 a, vec2 b){           // distance to the cursor's path segment -> a continuous stroke, no gaps on fast moves
+  vec2 pa=p-a, ba=b-a;
+  float h=clamp(dot(pa,ba)/max(dot(ba,ba),1e-6),0.0,1.0);
+  return length(pa-ba*h);
+}
+void main(){
+  vec2 uv=vUv;
+  vec4 s=texture2D(u_prev, uv);
+  float h=s.r, vel=s.g, heat=s.b;
+  float avg=0.25*( texture2D(u_prev, uv+vec2(u_texel.x,0.0)).r
+                 + texture2D(u_prev, uv-vec2(u_texel.x,0.0)).r
+                 + texture2D(u_prev, uv+vec2(0.0,u_texel.y)).r
+                 + texture2D(u_prev, uv-vec2(0.0,u_texel.y)).r );
+  float cN=clamp(uv.y/0.6, 0.0, 1.0);     // 0 near the wall, 1 toward the horizon (uv is the perspective-warped field axis)
+  float C=mix(0.62, 0.24, cN);            // SLOWER overall + progressively slower toward the horizon (compounds with the read-warp -> strong depth)
+  vel += (avg - h)*C;          // wave: accelerate toward the neighbourhood average
+  vel *= 0.992;                // damping -> the ripples gradually fade
+  h   += vel;
+  heat*= 0.996;                // the cloud tear heals (refills) over time — MUCH slower so the poof lingers far longer before filling back in
+  vec2 pAsp=vec2(uv.x*u_saspect, uv.y);
+  float d=segDist(pAsp, vec2(u_p0.x*u_saspect,u_p0.y), vec2(u_p1.x*u_saspect,u_p1.y));
+  float stamp=(1.0 - smoothstep(0.0, u_radius, d))*u_active;
+  h    += stamp*0.14*u_over;             // drop a ripple where the cursor is on the water
+  heat  = max(heat, stamp*(1.0-u_over)); // tear the cloud where the cursor is in the sky
+  h=clamp(h,-1.0,1.0); vel=clamp(vel,-1.0,1.0); heat=clamp(heat,0.0,1.0);
+  gl_FragColor=vec4(h, vel, heat, 1.0);
+}
+</script>
 <script src="vendor/gsap/gsap.min.js"></script>
 <script src="vendor/gsap/ScrollTrigger.min.js"></script>
 <script>
@@ -687,11 +732,55 @@ void main(){
     var loc=gl.getAttribLocation(prog,"p");gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
     var U={res:gl.getUniformLocation(prog,"u_res"),time:gl.getUniformLocation(prog,"u_time"),
       aspect:gl.getUniformLocation(prog,"u_aspect"),reduce:gl.getUniformLocation(prog,"u_reduce"),
-      mouse:gl.getUniformLocation(prog,"u_mouse"),rip:gl.getUniformLocation(prog,"u_rip"),ripStr:gl.getUniformLocation(prog,"u_ripStr"),trail:gl.getUniformLocation(prog,"u_trail"),clouds:gl.getUniformLocation(prog,"u_clouds"),cloudsReady:gl.getUniformLocation(prog,"u_cloudsReady")};
+      clouds:gl.getUniformLocation(prog,"u_clouds"),cloudsReady:gl.getUniformLocation(prog,"u_cloudsReady"),waterNorm:gl.getUniformLocation(prog,"u_waterNorm"),waterNormReady:gl.getUniformLocation(prog,"u_waterNormReady"),
+      fx:gl.getUniformLocation(prog,"u_fx"),fxTexel:gl.getUniformLocation(prog,"u_fxTexel"),fxReady:gl.getUniformLocation(prog,"u_fxReady")};
     var SCALE=0.58; // render below native res; the field is soft so it stays crisp enough + fast
     var W=1,H=1,aspect=1;
+
+    // ===== cursor EFFECT FIELD: a ping-pong wave+heat sim. The interaction "lives" in this texture — painted
+    //       wherever the cursor goes and fading over time — instead of a discrete "trail" of points. =====
+    var simEnabled=false, simProg=null, simU=null, simLoc=0, fxType=null, fxFilter=gl.NEAREST,
+        fxTex=[null,null], fxFBO=[null,null], cur=0, FW=2, FH=2;
+    (function setupSim(){
+      if(REDUCE) return;                                  // reduced motion: no live effect
+      var eF=gl.getExtension("OES_texture_float"), eFL=gl.getExtension("OES_texture_float_linear");
+      var eHF=gl.getExtension("OES_texture_half_float"), eHFL=gl.getExtension("OES_texture_half_float_linear");
+      if(eF){ fxType=gl.FLOAT; fxFilter=eFL?gl.LINEAR:gl.NEAREST; }
+      else if(eHF){ fxType=eHF.HALF_FLOAT_OES; fxFilter=eHFL?gl.LINEAR:gl.NEAREST; }
+      else return;                                        // no float render target -> leave the effect off (the scene still renders)
+      var sEl=document.getElementById("simfrag"); if(!sEl) return;
+      var sfs=sh(gl.FRAGMENT_SHADER, sEl.textContent); if(!sfs) return;
+      var sp=gl.createProgram(); gl.attachShader(sp,vs); gl.attachShader(sp,sfs); gl.linkProgram(sp);
+      if(!gl.getProgramParameter(sp,gl.LINK_STATUS)){ console.warn(gl.getProgramInfoLog(sp)); return; }
+      simProg=sp; simLoc=gl.getAttribLocation(sp,"p");
+      simU={prev:gl.getUniformLocation(sp,"u_prev"),texel:gl.getUniformLocation(sp,"u_texel"),
+            p0:gl.getUniformLocation(sp,"u_p0"),p1:gl.getUniformLocation(sp,"u_p1"),
+            active:gl.getUniformLocation(sp,"u_active"),over:gl.getUniformLocation(sp,"u_over"),
+            saspect:gl.getUniformLocation(sp,"u_saspect"),radius:gl.getUniformLocation(sp,"u_radius")};
+      simEnabled=true;
+    })();
+    function allocField(){
+      if(!simEnabled) return;
+      FH=200; FW=Math.max(2, Math.round(FH*aspect));      // field is full-screen aspect (square texels -> circular ripples), decoupled from screen res
+      for(var k=0;k<2;k++){
+        if(!fxTex[k]) fxTex[k]=gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D,fxTex[k]);
+        gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,FW,FH,0,gl.RGBA,fxType,null);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,fxFilter);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,fxFilter);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+        if(!fxFBO[k]) fxFBO[k]=gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER,fxFBO[k]);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,fxTex[k],0);
+        if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE){ simEnabled=false; }
+        gl.clearColor(0.0,0.0,0.0,1.0); gl.clear(gl.COLOR_BUFFER_BIT);
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.bindTexture(gl.TEXTURE_2D,null); gl.useProgram(prog);
+    }
+
     function resize(){var dw=window.innerWidth,dh=window.innerHeight;W=Math.max(1,Math.round(dw*DPRc*SCALE));H=Math.max(1,Math.round(dh*DPRc*SCALE));
-      canvas.width=W;canvas.height=H;gl.viewport(0,0,W,H);aspect=dw/dh;gl.uniform2f(U.res,W,H);gl.uniform1f(U.aspect,aspect);}
+      canvas.width=W;canvas.height=H;gl.viewport(0,0,W,H);aspect=dw/dh;gl.uniform2f(U.res,W,H);gl.uniform1f(U.aspect,aspect);allocField();}
     resize();addEventListener("resize",resize);
     gl.uniform1f(U.reduce,REDUCE?1.0:0.0);
 
@@ -710,36 +799,74 @@ void main(){
       im.onerror=function(){cloudsReady=0;};
       im.src="textures/clouds.jpg";})();
 
-    // ripple pool (10), mouse smoothing
-    var N=10,ripXYZ=new Float32Array(N*3),ripStr=new Float32Array(N);
-    for(var i=0;i<N;i++){ripXYZ[i*3+2]=1.0;} // all dead
-    var TN=14,trail=new Float32Array(TN*3),trailLife=1.3,ltX=0.5,ltY=0.5;
-    for(var j=0;j<TN;j++){trail[j*3+2]=1.0;} // all dead
-    var mx=0.5,my=0.5,tmx=0.5,tmy=0.5,lastX=0.5,lastY=0.5,life=2.0;
-    function spawn(x,y,str){var slot=-1,oldest=-1;for(var i=0;i<N;i++){if(ripXYZ[i*3+2]>=1.0){slot=i;break;}if(oldest<0||ripXYZ[i*3+2]>ripXYZ[oldest*3+2])oldest=i;}
-      if(slot<0)slot=oldest;ripXYZ[slot*3]=x;ripXYZ[slot*3+1]=y;ripXYZ[slot*3+2]=0.0;ripStr[slot]=str;}
-    function spawnTrail(x,y){var s=-1,o=-1;for(var k=0;k<TN;k++){if(trail[k*3+2]>=1.0){s=k;break;}if(o<0||trail[k*3+2]>trail[o*3+2])o=k;}if(s<0)s=o;trail[s*3]=x;trail[s*3+1]=y;trail[s*3+2]=0.0;}
-    var HZN=0.6;  // horizon — must match the shader (distinct from canvas height H)
+    // Higgsfield-derived seamless water NORMAL map -> realistic ripple normals on the lake (unit 1; gated, fallback = fbm)
+    var waterNormTex=gl.createTexture(), waterNormReady=0;
+    gl.bindTexture(gl.TEXTURE_2D,waterNormTex);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,1,1,0,gl.RGB,gl.UNSIGNED_BYTE,new Uint8Array([128,128,255]));
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);
+    (function(){var im=new Image();
+      im.onload=function(){gl.bindTexture(gl.TEXTURE_2D,waterNormTex);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+        gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,im);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+        waterNormReady=1;};
+      im.onerror=function(){waterNormReady=0;};
+      im.src="textures/water-normal.jpg";})();
+
+    // cursor position drives the field stamp (no pool, no trail bookkeeping)
+    var HZN=0.6;  // horizon — must match the shader
+    var pCurX=0.5,pCurY=0.5,pPrevX=0.5,pPrevY=0.5,active=0.0,overW=1.0,tLastMove=0;
     if(!REDUCE){
-      addEventListener("pointermove",function(e){var x=e.clientX/window.innerWidth,y=1.0-e.clientY/window.innerHeight;tmx=x;tmy=y;
-        var dx=x-lastX,dy=y-lastY,v=Math.sqrt(dx*dx+dy*dy);
-        if(y<HZN){ if(v>0.008){lastX=x;lastY=y;spawn(x,y,Math.min(0.28+v*5.0,0.9));} }
-        else { var tdx=x-ltX,tdy=y-ltY;if(tdx*tdx+tdy*tdy>0.00009){ltX=x;ltY=y;spawnTrail(x,y);} }},{passive:true});
-      addEventListener("pointerdown",function(e){var x=e.clientX/window.innerWidth,y=1.0-e.clientY/window.innerHeight;if(y<HZN){spawn(x,y,1.05);}else{spawnTrail(x,y);}},{passive:true});
-      setInterval(function(){if(!document.hidden && my<HZN)spawn(Math.random(),Math.random()*HZN,0.30);},2600); // ambient ripples only while the cursor is on the lake
+      addEventListener("pointermove",function(e){
+        var x=e.clientX/window.innerWidth, y=1.0-e.clientY/window.innerHeight;
+        var nowT=performance.now(), gp=nowT-tLastMove; tLastMove=nowT;
+        if(gp>120.0){ pPrevX=x; pPrevY=y; }       // resumed after a pause / window re-entry: collapse the segment to a point (no streak)
+        pCurX=x; pCurY=y; active=1.0; overW=(y<HZN)?1.0:0.0;
+      },{passive:true});
+      addEventListener("pointerdown",function(e){
+        var x=e.clientX/window.innerWidth, y=1.0-e.clientY/window.innerHeight;
+        pPrevX=x; pPrevY=y; pCurX=x; pCurY=y; active=1.0; overW=(y<HZN)?1.0:0.0;
+      },{passive:true});
     }
-    var t0=performance.now(),last=t0;
+    function warpV(y){ if(y>=0.6) return y; var n=y/0.6; return 0.18947*(1.0/(1.0-0.76*n)-1.0); }   // matches the shader's perspective remap (cursor near the horizon => much smaller, slower ripple)
+    var t0=performance.now();
     function frame(now){
-      var dt=Math.min((now-last)/1000,0.05);last=now;
-      if(document.hidden){requestAnimationFrame(frame);return;}
-      if((window.scrollY||window.pageYOffset||0) > window.innerHeight+60){ if(!REDUCE)requestAnimationFrame(frame); return; }  // lake scrolled away -> stop drawing (perf)
-      mx+=(tmx-mx)*0.08;my+=(tmy-my)*0.08;
-      if(!REDUCE){for(var i=0;i<N;i++){if(ripXYZ[i*3+2]<1.0){ripXYZ[i*3+2]=Math.min(ripXYZ[i*3+2]+dt/life,1.0);}}
-        for(var j2=0;j2<TN;j2++){if(trail[j2*3+2]<1.0){trail[j2*3+2]=Math.min(trail[j2*3+2]+dt/trailLife,1.0);}}}
+      if(document.hidden){pPrevX=pCurX;pPrevY=pCurY;active=0.0;requestAnimationFrame(frame);return;}
+      if((window.scrollY||window.pageYOffset||0) > window.innerHeight+60){ pPrevX=pCurX;pPrevY=pCurY;active=0.0; if(!REDUCE)requestAnimationFrame(frame); return; }  // lake scrolled away -> stop drawing (perf); reset the segment so it can't streak on scroll-back
+      // ---- sim pass: paint + propagate the cursor field (ping-pong), then it decays ----
+      if(simEnabled){
+        gl.useProgram(simProg);
+        gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+        gl.enableVertexAttribArray(simLoc);gl.vertexAttribPointer(simLoc,2,gl.FLOAT,false,0,0);
+        gl.uniform2f(simU.texel,1.0/FW,1.0/FH);
+        gl.uniform1f(simU.saspect,aspect);
+        gl.uniform1f(simU.radius,0.045);
+        gl.uniform2f(simU.p0,pPrevX,warpV(pPrevY));
+        gl.uniform2f(simU.p1,pCurX,warpV(pCurY));
+        gl.uniform1f(simU.over,overW);
+        for(var sIt=0;sIt<2;sIt++){
+          var nxt=1-cur;
+          gl.bindFramebuffer(gl.FRAMEBUFFER,fxFBO[nxt]);
+          gl.viewport(0,0,FW,FH);
+          gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,fxTex[cur]);gl.uniform1i(simU.prev,0);
+          gl.uniform1f(simU.active, sIt===0?active:0.0);   // stamp once per frame, then a pure-propagation step
+          gl.drawArrays(gl.TRIANGLES,0,3);
+          cur=nxt;
+        }
+        pPrevX=pCurX;pPrevY=pCurY;active=0.0;
+        gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+      }
+      // ---- main pass: render the scene, reading the field for the cursor ripple + cloud tear ----
+      gl.useProgram(prog);
+      gl.viewport(0,0,W,H);
+      gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+      gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
       gl.uniform1f(U.time,(now-t0)/1000);
-      gl.uniform2f(U.mouse,mx,my);
-      gl.uniform3fv(U.rip,ripXYZ);gl.uniform1fv(U.ripStr,ripStr);gl.uniform3fv(U.trail,trail);
       gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,cloudTex);gl.uniform1i(U.clouds,0);gl.uniform1f(U.cloudsReady,cloudsReady);
+      gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,waterNormTex);gl.uniform1i(U.waterNorm,1);gl.uniform1f(U.waterNormReady,waterNormReady);
+      if(simEnabled){ gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,fxTex[cur]);gl.uniform1i(U.fx,2);gl.uniform2f(U.fxTexel,1.0/FW,1.0/FH);gl.uniform1f(U.fxReady,1.0); }
+      else { gl.uniform1f(U.fxReady,0.0); }
       gl.drawArrays(gl.TRIANGLES,0,3);
       if(!REDUCE)requestAnimationFrame(frame);
     }
@@ -794,7 +921,7 @@ void main(){
     if(!canvas||!termEl||!bodyEl) return;
 
     var d=fit(canvas),ctx=d.ctx,W=d.w,H=d.h;
-    var cxF=0.5,cyF=0.55,cloudYF=0.42,absorbR=120;
+    var cxF=0.5,cyF=0.55,cloudYF=0.42,absorbR=120,termHalfF=0.12;
 
     function measure(){
       var cr=canvas.getBoundingClientRect(),tr=termEl.getBoundingClientRect();
@@ -802,6 +929,7 @@ void main(){
         cxF=(tr.left+tr.width/2-cr.left)/cr.width;
         cyF=(tr.top+tr.height/2-cr.top)/cr.height;
         cloudYF=(tr.top-cr.top)/cr.height-0.07;
+        termHalfF=(tr.height/2)/cr.height;
         absorbR=Math.max(46,tr.width*0.32);
       }
     }
@@ -814,7 +942,7 @@ void main(){
     function colFor(ch){return ch<0.5?mix(COOL,MID,ch/0.5):mix(MID,WARM,(ch-0.5)/0.5);}
     function rgba(c,a){return "rgba("+(c[0]|0)+","+(c[1]|0)+","+(c[2]|0)+","+a+")";}
 
-    var CAP=110,parts=[],spawnAcc=0,rings=[],reclaimed=0,flash=0,burst=0,progress=0;
+    var CAP=110,parts=[],spawnAcc=0,rings=[],reclaimed=0,flash=0,burst=0,progress=0,lakeFill=0.12,slosh=[],simT=0;
 
     function spawn(){
       if(parts.length>=CAP) return;
@@ -863,45 +991,70 @@ void main(){
       }
     }
 
-    /* --- particle sim --- */
+    /* --- particle sim: rain pulled into a growing lake of compute below the terminal --- */
+    function lakeTop(){
+      var lbY=H,tBaseY=(cyF+termHalfF)*H,mRise=Math.max(H*0.10,lbY-tBaseY-H*0.04);
+      return lbY-lakeFill*mRise;
+    }
     function step(dt){
-      var f=Math.min(dt*60,3),cx=cxF*W,cy=cyF*H,cloudY=cloudYF*H;
+      simT+=dt;
+      var f=Math.min(dt*60,3),cx=cxF*W,cloudY=cloudYF*H,ltY=lakeTop();
       var rate=0.12+progress*1.15+burst*1.4;
       spawnAcc+=rate*f;
       while(spawnAcc>=1){spawnAcc--;spawn();}
       if(burst>0)burst=Math.max(0,burst-dt);
       for(var i=parts.length-1;i>=0;i--){
         var p=parts[i];
-        if(p.y>H*0.35)p.ch=Math.min(1,p.ch+dt*0.7);
+        if(p.y>H*0.32)p.ch=Math.min(1,p.ch+dt*0.7);
         p.wob+=p.ws*f;
         var charged=p.ch>0.12||p.y>cloudY;
         if(charged){
-          var dx=cx-p.x,dy=cy-p.y,dist=Math.sqrt(dx*dx+dy*dy)+0.001,nx=dx/dist,ny=dy/dist;
+          var dx=cx-p.x,dy=ltY-p.y,dist=Math.sqrt(dx*dx+dy*dy)+0.001,nx=dx/dist,ny=dy/dist;
           var pull=(0.05+progress*0.20)*(1+55/dist)*f*0.5;
           p.vx+=nx*pull;p.vy+=ny*pull;
-          p.vx+=-ny*pull*0.36;p.vy+=nx*pull*0.36;
+          p.vx+=-ny*pull*0.30;p.vy+=nx*pull*0.30;     // gentle swirl as they converge under the terminal
+          p.vy+=0.012*f;                               // a little gravity so they sink into the lake
           var dmp=Math.pow(0.96,f);p.vx*=dmp;p.vy*=dmp;
         } else {
           p.vy+=0.02*f;p.vx+=Math.cos(p.wob)*0.01*f;
         }
         p.x+=p.vx*f+Math.cos(p.wob)*p.wa*0.15*f;
         p.y+=p.vy*f;
-        var dd=Math.sqrt((cx-p.x)*(cx-p.x)+(cy-p.y)*(cy-p.y));
-        if(p.ab>0||dd<absorbR){
-          p.ab+=dt*3.0;p.r*=Math.pow(0.86,f);
-          if(p.ab>=1||p.r<0.5){
+        var atLake=p.y>=ltY-4&&p.x>-20&&p.x<W+20;       // reached the lake surface => absorbed
+        if(p.ab>0||atLake){
+          p.ab+=dt*3.4;p.r*=Math.pow(0.86,f);
+          if(p.ab>=1||p.r<0.5||p.y>ltY+10){
             parts.splice(i,1);
             reclaimed+=0.02+Math.random()*0.05;
-            rings.push({r:absorbR,a:0.5});
-            flash=Math.min(1,flash+0.32);
+            lakeFill=Math.min(1,lakeFill+0.0022);       // the lake grows as compute is reclaimed
+            slosh.push({x:Math.max(8,Math.min(W-8,p.x)),t:0});
+            flash=Math.min(1,flash+0.18);
             updateNum();continue;
           }
         }
         if(p.y>H+30||p.x<-44||p.x>W+44){parts.splice(i,1);}
       }
-      for(var r=rings.length-1;r>=0;r--){var rg=rings[r];rg.r+=240*dt;rg.a-=dt*0.8;if(rg.a<=0)rings.splice(r,1);}
+      for(var sI=slosh.length-1;sI>=0;sI--){slosh[sI].t+=dt;if(slosh[sI].t>1.2)slosh.splice(sI,1);}
       flash=Math.max(0,flash-dt*1.6);
       if(glowEl)glowEl.style.opacity=(0.22+flash*0.62).toFixed(3);
+    }
+
+    function drawLake(){
+      var ltY=lakeTop(),sx,wy;
+      ctx.beginPath();ctx.moveTo(0,H);ctx.lineTo(0,ltY);
+      for(sx=0;sx<=W;sx+=16){wy=ltY+Math.sin(sx*0.026+simT*1.7)*3.0+Math.sin(sx*0.011-simT*1.2)*2.2;ctx.lineTo(sx,wy);}
+      ctx.lineTo(W,ltY);ctx.lineTo(W,H);ctx.closePath();
+      var lg=ctx.createLinearGradient(0,ltY,0,H);
+      lg.addColorStop(0,rgba(MID,0.50));lg.addColorStop(0.45,"rgba(159,134,201,0.46)");lg.addColorStop(1,"rgba(43,34,51,0.50)");
+      ctx.fillStyle=lg;ctx.fill();
+      ctx.strokeStyle="rgba(255,251,247,0.55)";ctx.lineWidth=1.5;ctx.beginPath();
+      for(sx=0;sx<=W;sx+=16){wy=ltY+Math.sin(sx*0.026+simT*1.7)*3.0+Math.sin(sx*0.011-simT*1.2)*2.2;if(sx===0)ctx.moveTo(sx,wy);else ctx.lineTo(sx,wy);}
+      ctx.stroke();
+      ctx.globalCompositeOperation="lighter";
+      for(var i=0;i<slosh.length;i++){var sl=slosh[i],srad=sl.t*120,sa=Math.max(0,0.5*(1-sl.t/1.2));
+        ctx.strokeStyle=rgba(PINK,sa);ctx.lineWidth=1.5;ctx.beginPath();
+        ctx.ellipse(sl.x,ltY,srad,Math.max(2,srad*0.26),0,0,6.283);ctx.stroke();}
+      ctx.globalCompositeOperation="source-over";
     }
     function draw(){
       ctx.clearRect(0,0,W,H);var cx=cxF*W,cy=cyF*H,i,p;
@@ -919,6 +1072,7 @@ void main(){
         ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x-p.vx*3.2,p.y-p.vy*3.2);ctx.stroke();
         ctx.fillStyle=rgba(cc,0.95*a2);ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,6.283);ctx.fill();
         ctx.fillStyle="rgba(255,255,255,"+(0.5*a2)+")";ctx.beginPath();ctx.arc(p.x-p.r*0.3,p.y-p.r*0.3,p.r*0.34,0,6.283);ctx.fill();}
+      drawLake();
     }
 
     /* --- reduced motion: one static composed frame, no rAF, no scrub --- */
@@ -926,6 +1080,7 @@ void main(){
       for(var k=0;k<SCRIPT.length;k++)committed+='<span class="'+SCRIPT[k].c+'">'+esc(SCRIPT[k].t)+'</span>\n';
       bodyEl.innerHTML=committed;reclaimed=128.6;updateNum();
       if(glowEl)glowEl.style.opacity="0.46";
+      lakeFill=0.5;
       var cx0=cxF*W,cy0=cyF*H;ctx.clearRect(0,0,W,H);
       for(var s=0;s<48;s++){
         var ang=(s/48)*6.283+Math.random()*0.4,rad=absorbR*1.35+Math.random()*Math.min(W,H)*0.34;
@@ -937,6 +1092,7 @@ void main(){
         ctx.globalCompositeOperation="source-over";
         ctx.fillStyle=rgba(c2,0.95);ctx.beginPath();ctx.arc(px,py,rr2,0,6.283);ctx.fill();
       }
+      drawLake();
       return;
     }
 
