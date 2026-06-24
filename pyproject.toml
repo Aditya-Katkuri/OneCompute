@@ -39,10 +39,29 @@ dev = [
     "ruff>=0.5",
 ]
 
-[tool.uv]
-# NightShift has no installable package yet (no src/ layout); treat it as an
-# application project so `uv sync` only installs dependencies.
-package = false
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# NightShift ships several top-level packages under src/. Installing the project
+# (editable, via `uv sync`) puts them on the path so the documented entry points
+# — `python -m orchestrator` and `python -m worker` — run from any checkout
+# without setting PYTHONPATH.
+[tool.hatch.build.targets.wheel]
+packages = [
+    "src/contracts",
+    "src/dashboard",
+    "src/isolation",
+    "src/jobkit",
+    "src/orchestrator",
+    "src/trust",
+    "src/worker",
+    "src/workloads",
+]
+
+# The dashboard is served as a single self-contained HTML file; ship it with the package.
+[tool.hatch.build.targets.wheel.force-include]
+"src/dashboard/index.html" = "dashboard/index.html"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

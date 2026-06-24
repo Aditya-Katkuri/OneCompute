@@ -238,7 +238,7 @@
     /* Inline throughput sparkline – fills the hero with honest motion */
     .spark-wrap { margin-top: 18px; }
     .spark {
-      width: 100%; height: 56px; display: block;
+      width: 100%; height: 64px; display: block;
       overflow: visible;
     }
     .spark-line {
@@ -249,6 +249,8 @@
       stroke-linecap: round;
       vector-effect: non-scaling-stroke;
     }
+    .spark-area { fill: var(--accent); opacity: 0.10; stroke: none; }
+    .spark-dot { fill: var(--accent); stroke: var(--surface); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
     .spark-cap {
       display: block;
       margin-top: 8px;
@@ -280,24 +282,27 @@
     .ceiling .divider { height: 1px; background: var(--border); }
     .ceiling .note { color: var(--text-soft); font-size: 12px; }
 
-    /* ---------- Stat cards ---------- */
-    .stats {
+    /* ---------- Fleet-at-a-glance stat bar (one panel, 3 symmetric columns) ---------- */
+    .statbar {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 16px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       margin-bottom: 20px;
+      padding: 0;
+      overflow: hidden;
     }
-    .stat { padding: 18px 20px; transition: transform 240ms var(--ease), box-shadow 240ms var(--ease), border-color 240ms var(--ease); }
-    .stat:hover { transform: translateY(-3px); border-color: var(--border-strong); box-shadow: 0 1px 2px rgba(15,23,42,0.05), 0 18px 38px rgba(15,23,42,0.10); }
-    .stat .value {
-      margin-top: 10px;
+    .statbar-item { padding: 20px 24px; transition: background 240ms var(--ease); }
+    .statbar-item + .statbar-item { border-left: 1px solid var(--border); }
+    .statbar-item:hover { background: color-mix(in srgb, var(--accent) 3%, var(--surface)); }
+    .statbar-item .value {
+      margin-top: 9px;
       font-size: clamp(30px, 3.4vw, 40px);
-      font-weight: 800;
+      font-weight: 850;
       letter-spacing: -0.03em;
       font-variant-numeric: tabular-nums;
+      line-height: 1;
     }
-    .stat .value.accent { color: var(--accent); }
-    .stat .sub { margin-top: 6px; color: var(--text-soft); font-size: 12.5px; }
+    .statbar-item .value.accent { color: var(--accent); }
+    .statbar-item .sub { margin-top: 7px; color: var(--text-soft); font-size: 12.5px; }
 
     /* ---------- Layout: tiles + aside ---------- */
     .layout {
@@ -608,6 +613,84 @@
     .usage-legend .lc { background: var(--accent); }
     .usage-legend .lg { background: var(--accent-2); }
 
+    /* ---------- Connect-a-device onboarding ---------- */
+    .connect { margin: 2px 0 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-soft); overflow: hidden; }
+    .connect[open] { border-color: color-mix(in srgb, var(--accent) 30%, var(--border)); }
+    .connect-summary {
+      list-style: none; cursor: pointer; user-select: none;
+      display: flex; align-items: center; gap: 9px;
+      padding: 11px 14px; font-size: 13.5px; font-weight: 800; color: var(--text);
+    }
+    .connect-summary::-webkit-details-marker { display: none; }
+    .connect-summary .connect-ic {
+      display: grid; place-items: center; width: 22px; height: 22px; flex: none;
+      border-radius: 7px; background: var(--accent); color: #fff; font-size: 15px; font-weight: 700; line-height: 1;
+    }
+    .connect-summary .connect-chev { margin-left: auto; color: var(--text-soft); transition: transform 220ms var(--ease); }
+    .connect[open] .connect-summary .connect-chev { transform: rotate(180deg); }
+    .connect-body { padding: 2px 14px 15px; display: grid; gap: 11px; }
+    .connect-lead { color: var(--text-muted); font-size: 13px; }
+    .connect-cmd {
+      display: flex; align-items: stretch; gap: 8px;
+      border: 1px solid var(--border-strong); border-radius: 9px; background: var(--surface); overflow: hidden;
+    }
+    .connect-cmd code {
+      flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap;
+      font-family: Consolas, "Cascadia Mono", monospace; font-size: 13px; color: var(--text);
+      padding: 10px 12px; line-height: 1.4;
+    }
+    .connect-copy {
+      flex: none; appearance: none; cursor: pointer; border: none; border-left: 1px solid var(--border);
+      padding: 0 14px; font: inherit; font-size: 12.5px; font-weight: 800; color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 7%, var(--surface)); transition: background 160ms var(--ease);
+    }
+    .connect-copy:hover { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+    .connect-steps { margin: 2px 0 0; padding-left: 20px; display: grid; gap: 5px; color: var(--text-muted); font-size: 12.5px; line-height: 1.5; }
+    .connect-steps b { color: var(--text); font-weight: 800; }
+    .connect-note { color: var(--text-soft); font-size: 11.5px; }
+    /* Onboarding empty state */
+    .empty.onboard { text-align: left; border-style: solid; padding: 16px 18px; }
+    .empty.onboard b { color: var(--text); }
+
+    /* ---------- Live fleet harvest (2.5D utilization terrain) ---------- */
+    .harvest { margin-bottom: 20px; }
+    .harvest-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    .harvest-head .h-left { display: grid; gap: 3px; max-width: 60ch; }
+    .harvest .section-title { margin-bottom: 2px; }
+    .harvest-sub { color: var(--text-muted); font-size: 13px; line-height: 1.45; }
+    .harvest-side { display: grid; gap: 9px; justify-items: end; }
+    .harvest-agg { font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; text-align: right; }
+    .harvest-agg b { color: var(--accent); font-weight: 800; }
+    .harvest-agg .pk { color: var(--accent-2); font-weight: 700; }
+    .harvest-legend { display: flex; gap: 15px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--text-soft); }
+    .harvest-legend .lk { display: inline-flex; align-items: center; gap: 7px; }
+    .harvest-legend .sw { width: 16px; height: 9px; border-radius: 3px; }
+    .harvest-legend .sw.strain { width: 44px; background: linear-gradient(90deg, #c9b8f0, #d98fc0 45%, #e8a38c 72%, #d4503a); }
+    .harvest-legend .sw.mesh { width: 16px; height: 11px; border-radius: 2px; background:
+      linear-gradient(rgba(43,34,51,0.32), rgba(43,34,51,0.32)) 0 0/100% 1px no-repeat,
+      linear-gradient(rgba(43,34,51,0.32), rgba(43,34,51,0.32)) 0 50%/100% 1px no-repeat,
+      linear-gradient(rgba(43,34,51,0.32), rgba(43,34,51,0.32)) 0 100%/100% 1px no-repeat,
+      linear-gradient(rgba(43,34,51,0.32), rgba(43,34,51,0.32)) 0 0/1px 100% no-repeat,
+      linear-gradient(rgba(43,34,51,0.32), rgba(43,34,51,0.32)) 50% 0/1px 100% no-repeat,
+      linear-gradient(rgba(43,34,51,0.32), rgba(43,34,51,0.32)) 100% 0/1px 100% no-repeat; }
+    .harvest-legend .drag { padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; }
+    .harvest-stage { position: relative; width: 100%; height: clamp(280px, 33vw, 392px); margin-top: 12px; }
+    .harvest-stage canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; border-radius: 12px; }
+    .harvest-stage canvas:active { cursor: grabbing; }
+    .harvest-hover {
+      position: absolute; left: 0; top: 0; pointer-events: none;
+      padding: 6px 10px; border-radius: 10px;
+      background: var(--surface-solid); border: 1px solid var(--border-strong);
+      box-shadow: var(--shadow-soft);
+      font-size: 12px; color: var(--text); white-space: nowrap; font-variant-numeric: tabular-nums;
+      opacity: 0; transform: translate(-50%, -134%); transition: opacity 120ms var(--ease);
+    }
+    .harvest-hover.on { opacity: 1; }
+    .harvest-hover .hid { font-family: Consolas, "Cascadia Mono", monospace; font-weight: 700; }
+    .harvest-hover .hcpu { color: var(--accent); font-weight: 800; }
+    .harvest-hover .hgpu { color: var(--accent-2); font-weight: 800; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
     /* ---------- Workload launcher ---------- */
     .launch { margin-bottom: 20px; }
     .launch-lead { margin: 0 0 14px; color: var(--text-muted); font-size: 13.5px; }
@@ -680,11 +763,13 @@
     /* ---------- Responsive ---------- */
     @media (max-width: 1080px) {
       .hero { grid-template-columns: 1fr; }
-      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .layout { grid-template-columns: 1fr; }
     }
+    @media (max-width: 720px) {
+      .statbar { grid-template-columns: 1fr; }
+      .statbar-item + .statbar-item { border-left: none; border-top: 1px solid var(--border); }
+    }
     @media (max-width: 560px) {
-      .stats { grid-template-columns: 1fr; }
       .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       header { flex-direction: column; align-items: flex-start; }
     }
@@ -739,26 +824,14 @@
       <div class="card hero-main">
         <p class="label">Useful work harvested</p>
         <div id="creditsHero" class="hero-figure" aria-live="polite">0</div>
-        <p class="hero-sub">Credits earned across the fleet for verified, accepted work.</p>
+        <p class="hero-sub">Credits earned across the fleet for verified, accepted work. GPU work earns 5×, CPU 1×.</p>
         <div class="spark-wrap">
-          <svg id="spark" class="spark" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true">
-            <polyline id="sparkLine" class="spark-line" points="0,26 100,26"></polyline>
+          <svg id="spark" class="spark" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true">
+            <polygon id="sparkArea" class="spark-area" points=""></polygon>
+            <polyline id="sparkLine" class="spark-line" points="0,30 100,30"></polyline>
+            <circle id="sparkDot" class="spark-dot" cx="100" cy="30" r="2.4"></circle>
           </svg>
-          <span class="spark-cap">Throughput trend: credits per minute over the session</span>
-        </div>
-        <div class="hero-meta">
-          <div>
-            <div class="label">Jobs completed</div>
-            <strong id="completedMeta">0</strong>
-          </div>
-          <div>
-            <div class="label">Live throughput</div>
-            <strong id="throughputMeta">–</strong>
-          </div>
-          <div>
-            <div class="label">Fleet online</div>
-            <strong id="fleetMeta">0 workers</strong>
-          </div>
+          <span class="spark-cap">Throughput trend: credits per minute this session</span>
         </div>
       </div>
 
@@ -777,28 +850,46 @@
       </div>
     </section>
 
-    <!-- ===== Stat cards ===== -->
-    <section class="stats" aria-label="Key metrics">
-      <div class="card stat">
-        <div class="label">Completed jobs</div>
-        <div id="completed" class="value">0</div>
-        <div id="completedSub" class="sub">Waiting for completions</div>
+    <!-- ===== Fleet at a glance (consolidated — each metric appears once) ===== -->
+    <section class="statbar card" aria-label="Fleet at a glance">
+      <div class="statbar-item">
+        <div class="label">Jobs completed</div>
+        <div id="statJobs" class="value accent">0</div>
+        <div id="statJobsSub" class="sub">Verified &amp; accepted this session</div>
       </div>
-      <div class="card stat">
-        <div class="label">Speedup vs 1 machine</div>
-        <div id="speedup" class="value accent">–</div>
-        <div class="sub">Fleet wall-clock vs single-machine baseline</div>
+      <div class="statbar-item">
+        <div class="label">Jobs / sec</div>
+        <div id="statRate" class="value">–</div>
+        <div class="sub">Live completion rate across the fleet</div>
       </div>
-      <div class="card stat">
-        <div class="label">Fleet</div>
-        <div id="workers" class="value">0</div>
-        <div id="fleetSub" class="sub">0 busy · 0 GPU-capable</div>
+      <div class="statbar-item">
+        <div class="label">Fleet online</div>
+        <div id="statFleet" class="value">0</div>
+        <div id="statFleetSub" class="sub">0 busy · 0 GPU-capable</div>
       </div>
-      <div class="card stat">
-        <div class="label">Total credits</div>
-        <div id="credits" class="value">0</div>
-        <div class="sub">GPU work earns 5× · CPU earns 1×</div>
+    </section>
+
+    <!-- ===== Live fleet harvest (2.5D utilization terrain) ===== -->
+    <section class="harvest card card-pad" aria-label="Live fleet compute harvest">
+      <div class="harvest-head">
+        <div class="h-left">
+          <h2 class="section-title">Fleet load spectrum</h2>
+          <p class="harvest-sub">A live 3D distribution of fleet load: depth &amp; colour are the <b>load level</b> (idle → saturated), height is <b>how many machines</b> sit at that load, over the last ~20&nbsp;seconds. A tall cool ridge low on the axis is idle headroom; the mass climbs and warms as work fans out, splits into two ridges when load is imbalanced, and drops back the instant a worker yields.</p>
+        </div>
+        <div class="harvest-side">
+          <div class="harvest-agg" id="harvestAgg">Waiting for the fleet…</div>
+          <div class="harvest-legend">
+            <span class="lk"><span class="sw strain"></span>idle → saturated</span>
+            <span class="lk"><span class="sw mesh"></span>height = # machines</span>
+            <span class="lk drag">drag to rotate</span>
+          </div>
+        </div>
       </div>
+      <div class="harvest-stage">
+        <canvas id="harvestCanvas" role="img" aria-label="Three-dimensional terrain of live per-device CPU and GPU utilization across the fleet over time"></canvas>
+        <div class="harvest-hover" id="harvestHover" aria-hidden="true"></div>
+      </div>
+      <p class="sr-only" id="harvestAria" aria-live="polite"></p>
     </section>
 
     <!-- ===== Launch a workload across the fleet ===== -->
@@ -820,6 +911,26 @@
     <section class="layout">
       <div class="card card-pad">
         <h2 class="section-title">Worker fleet</h2>
+        <details class="connect" id="connectPanel">
+          <summary class="connect-summary">
+            <span class="connect-ic" aria-hidden="true">+</span>
+            Connect a device
+            <svg class="connect-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+          </summary>
+          <div class="connect-body">
+            <p class="connect-lead">In the OneCompute repo on any laptop or dev box on the same network, run <code>uv sync</code> once, then run this to join the fleet:</p>
+            <div class="connect-cmd">
+              <code id="connectCmd">uv run python -m worker --url …</code>
+              <button type="button" class="connect-copy" id="connectCopy">Copy</button>
+            </div>
+            <ol class="connect-steps">
+              <li>Run the command on the machine you want to contribute.</li>
+              <li>It appears below as <b>Pending</b> with a short device code.</li>
+              <li>Click <b>Approve</b> on its tile, and it starts harvesting work.</li>
+            </ol>
+            <p class="connect-note">Approval is required only when the orchestrator runs with <code>--require-approval</code>; otherwise devices join active automatically.</p>
+          </div>
+        </details>
         <div class="legend" aria-hidden="false">
           <span class="key"><span class="swatch idle"></span>Idle</span>
           <span class="key"><span class="swatch busy"></span>Busy</span>
@@ -828,7 +939,7 @@
           <span class="key"><span class="swatch blacklisted"></span>Blacklisted</span>
         </div>
         <div id="tiles" class="tiles" aria-live="polite">
-          <div class="empty">No workers registered yet.</div>
+          <div class="empty onboard">No devices yet. <b>Connect a device</b> above to bring a machine into the fleet.</div>
         </div>
       </div>
 
@@ -886,22 +997,22 @@
     const completedJobIds = new Set();
     let completedAtPageOpen = null;
     const sparkHistory = [];
+    let lastWorkers = [];          // latest /state workers, for the harvest terrain
+    let harvestOnData = null;      // set by the harvest renderer; called each poll
 
     const el = (id) => document.getElementById(id);
     const E = {
       statusPill: el("statusPill"), statusText: el("statusText"),
-      creditsHero: el("creditsHero"), completedMeta: el("completedMeta"),
-      throughputMeta: el("throughputMeta"), fleetMeta: el("fleetMeta"),
+      creditsHero: el("creditsHero"),
       measuredFigure: el("measuredFigure"),
-      completed: el("completed"), completedSub: el("completedSub"),
-      speedup: el("speedup"), workers: el("workers"), fleetSub: el("fleetSub"),
-      credits: el("credits"),
+      statJobs: el("statJobs"), statRate: el("statRate"),
+      statFleet: el("statFleet"), statFleetSub: el("statFleetSub"),
       tiles: el("tiles"),
       speedupBig: el("speedupBig"),
       ghostText: el("ghostText"), fleetText: el("fleetText"),
       ghostBar: el("ghostBar"), fleetBar: el("fleetBar"),
       events: el("events"),
-      sparkLine: el("sparkLine"),
+      sparkLine: el("sparkLine"), sparkArea: el("sparkArea"), sparkDot: el("sparkDot"),
       workloads: el("workloads"),
       launchGrid: el("launchGrid"),
       launchHint: el("launchHint"),
@@ -1079,7 +1190,8 @@
           for (const t of tileEls.values()) tweens.delete(t._refs.credits);
           tileEls.clear();
         }
-        E.tiles.innerHTML = '<div class="empty">No workers registered yet.</div>';
+        E.tiles.innerHTML = '<div class="empty onboard">No devices yet. <b>Connect a device</b> above to bring a machine into the fleet.</div>';
+        if (connectPanel) connectPanel.open = true; // surface onboarding when the fleet is empty
         return;
       }
       if (E.tiles.querySelector(".empty")) E.tiles.innerHTML = "";
@@ -1204,19 +1316,24 @@
       if (sparkHistory.length > SPARK_SAMPLES) sparkHistory.shift();
 
       const n = sparkHistory.length;
-      const W = 100, H = 28, pad = 3;
+      const W = 100, H = 32, pad = 4;
       if (n < 2) {
         E.sparkLine.setAttribute("points", `0,${H - pad} ${W},${H - pad}`);
+        if (E.sparkArea) E.sparkArea.setAttribute("points", "");
+        if (E.sparkDot) { E.sparkDot.setAttribute("cx", W); E.sparkDot.setAttribute("cy", H - pad); }
         return;
       }
       const max = Math.max(...sparkHistory, 0.0001);
       const span = H - pad * 2;
-      const pts = sparkHistory.map((v, i) => {
+      const xy = sparkHistory.map((v, i) => {
         const x = (i / (n - 1)) * W;
         const y = H - pad - (v / max) * span;
-        return `${x.toFixed(2)},${y.toFixed(2)}`;
-      }).join(" ");
+        return [x, y];
+      });
+      const pts = xy.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(" ");
       E.sparkLine.setAttribute("points", pts);
+      if (E.sparkArea) E.sparkArea.setAttribute("points", `0,${H} ${pts} ${W},${H}`);
+      if (E.sparkDot) { const last = xy[xy.length - 1]; E.sparkDot.setAttribute("cx", last[0].toFixed(2)); E.sparkDot.setAttribute("cy", last[1].toFixed(2)); }
     }
 
     // ---- Ghost-bar race ----
@@ -1230,9 +1347,7 @@
       E.ghostBar.style.transform = `scaleX(${Math.min(1, ghost / max)})`;
       E.fleetBar.style.transform = `scaleX(${Math.min(1, elapsed / max)})`;
       const speedup = sessionCompleted ? ghost / Math.max(elapsed, 0.1) : null;
-      const speedupText = speedup ? `${fmt1(speedup)}×` : "–";
-      E.speedup.textContent = speedupText;
-      E.speedupBig.textContent = speedupText;
+      E.speedupBig.textContent = speedup ? `${fmt1(speedup)}×` : "–";
     }
 
     function renderState(state) {
@@ -1254,9 +1369,7 @@
       const elapsed = firstSeenAt === null ? 0 : Math.max((performance.now() - firstSeenAt) / 1000, 0.1);
 
       tweenTo(E.creditsHero, state.total_credits, fmtInt);
-      tweenTo(E.credits, state.total_credits, fmtInt);
-      tweenTo(E.completed, completedJobs, fmtInt);
-      E.completedMeta.textContent = fmtInt(completedJobs);
+      tweenTo(E.statJobs, completedJobs, fmtInt);
 
       const perMin = elapsed > 0 ? (state.total_credits || 0) / (elapsed / 60) : 0;
       E.measuredFigure.textContent = `${fmt1(perMin)} credits/min`;
@@ -1264,18 +1377,16 @@
 
       const hasRate = completedJobs > 0 && elapsed > 0;
       const rate = hasRate ? sessionCompleted / elapsed : 0;
-      E.throughputMeta.textContent = hasRate ? `${fmt1(rate)} jobs/s` : "–";
-      E.completedSub.textContent = hasRate
-        ? `${fmt1(rate)} jobs/sec observed this session`
-        : "Waiting for completions";
+      E.statRate.textContent = hasRate ? fmt1(rate) : "–";
 
-      E.workers.textContent = fmtInt(workers.length);
-      E.fleetMeta.textContent = `${workers.length} worker${workers.length === 1 ? "" : "s"}`;
-      E.fleetSub.textContent = `${busyWorkers} busy · ${gpuWorkers} GPU-capable`;
+      E.statFleet.textContent = fmtInt(workers.length);
+      E.statFleetSub.textContent = `${busyWorkers} busy · ${gpuWorkers} GPU-capable`;
 
       renderTiles(workers);
       renderWorkloads(jobs);
       renderRace(completedJobs);
+      lastWorkers = workers;
+      if (harvestOnData) harvestOnData();
     }
 
     // ---- Events ----
@@ -1521,7 +1632,7 @@
           <div class="res-prog-num"><span class="rc">0</span>/<span class="rt">0</span> tiles</div>
         </div>
         <div class="res-prog"><div class="res-prog-fill"></div></div>
-        <div class="res-body"><div class="res-running">Queued — fanning out to the fleet…</div></div>`;
+        <div class="res-body"><div class="res-running">Queued, fanning out to the fleet…</div></div>`;
       E.resultsGrid.prepend(card);
       const panel = {
         el: card, kind: entry.kind, entry,
@@ -1639,6 +1750,324 @@
       "ai.batch_infer": renderAIInfer, "ai.synth": renderSynth,
       generic: (p, wl) => { p.body.innerHTML = `<div class="res-running">${wl.completed}/${wl.total} tiles complete</div>`; },
     };
+
+    // ===================== Live Fleet Harvest — dependency-free 2.5D terrain =====================
+    // Renders one ridge per device (depth = device, X = time, height = CPU%), reading the same
+    // rolling usageHistory the tile sparklines use. GPU shown as a dashed overlay ridgeline.
+    (function harvest() {
+      const canvas = document.getElementById("harvestCanvas");
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      const hoverEl = document.getElementById("harvestHover");
+      const aggEl = document.getElementById("harvestAgg");
+      const ariaEl = document.getElementById("harvestAria");
+      const DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+      const css = getComputedStyle(document.documentElement);
+      const tok = (n, fb) => (css.getPropertyValue(n).trim() || fb);
+      const GRAD = ["#9f86c9", "#d98fc0", "#e8a38c"]; // mauve -> magenta -> coral
+      const COL = {
+        ink: tok("--text", "#2b2233"), soft: tok("--text-soft", "#6b6076"),
+        accent: tok("--accent", "#b23d80"), accent2: tok("--accent-2", "#6d4fa6"),
+        idle: tok("--idle", "#15814a"), busy: tok("--busy", "#3f5bd4"),
+        yield: tok("--yield", "#a05f08"), danger: tok("--danger", "#c0392b"),
+      };
+      const STATE_COL = { idle: COL.idle, busy: COL.busy, yielded: COL.yield, pending: COL.accent, blacklisted: COL.danger };
+
+      // geometry / camera
+      const HS = 96, TIME_SPAN = 560, T_SHOW = 40;
+      const U = 16, DEPTH_SPAN = 300, BW = 0.085;   // load-axis bins, depth span, KDE bandwidth
+      const PITCH = 0.46, FOV = 940, CAMZ = 560;
+      let W = 0, H = 0, cx = 0, baseY = 0;
+      let yaw = -0.42, autoT = 0, userYaw = -0.42, userActive = false, userIdle = 0, dragging = false, lastPX = 0;
+      let hoverLane = -1, mouse = null;
+      let lanes = []; // per-frame screen geometry for hit-testing
+
+      function resize() {
+        const r = canvas.getBoundingClientRect();
+        W = Math.max(320, r.width); H = Math.max(220, r.height);
+        canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+        ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+        cx = W / 2; baseY = H * 0.60;
+        if (reduceMotion) draw();
+      }
+
+      const lerp = (a, b, t) => a + (b - a) * t;
+      function rgb(h) { h = h.replace("#", ""); return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]; }
+      function mix(a, b, t) { const x = rgb(a), y = rgb(b); return `${Math.round(lerp(x[0], y[0], t))},${Math.round(lerp(x[1], y[1], t))},${Math.round(lerp(x[2], y[2], t))}`; }
+      function heightRGB(t) { return t < 0.5 ? mix(GRAD[0], GRAD[1], t / 0.5) : mix(GRAD[1], GRAD[2], (t - 0.5) / 0.5); }
+      void heightRGB;
+
+      // Compute strain = blended CPU+GPU load (0..1). Honest operator "how hard is it working" index.
+      function strainOf(cpu, gpu, hasGpu) {
+        const c = Math.max(0, Math.min(100, cpu || 0)) / 100;
+        if (hasGpu && gpu != null) { const g = Math.max(0, Math.min(100, gpu)) / 100; return Math.max(0, Math.min(1, 0.5 * c + 0.5 * g)); }
+        return c;
+      }
+      // calm -> hot strain colormap (lilac -> magenta -> coral -> hot red), brand-aligned.
+      const rgbA = (h) => { h = h.replace("#", ""); return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]; };
+      const STRAIN_STOPS = [[0, rgbA("#c9b8f0")], [0.45, rgbA("#d98fc0")], [0.72, rgbA("#e8a38c")], [1, rgbA("#d4503a")]];
+      function strainRamp(t) {
+        t = Math.max(0, Math.min(1, t));
+        for (let k = 0; k < STRAIN_STOPS.length - 1; k++) {
+          const [a, ca] = STRAIN_STOPS[k], [b, cb] = STRAIN_STOPS[k + 1];
+          if (t <= b) { const f = (t - a) / ((b - a) || 1); return [lerp(ca[0], cb[0], f), lerp(ca[1], cb[1], f), lerp(ca[2], cb[2], f)]; }
+        }
+        return STRAIN_STOPS[STRAIN_STOPS.length - 1][1].slice();
+      }
+      const shadeCss = (c, b, a) => `rgba(${Math.round(Math.min(255, c[0] * b))},${Math.round(Math.min(255, c[1] * b))},${Math.round(Math.min(255, c[2] * b))},${a == null ? 1 : a})`;
+
+      function project(x, y, z) {
+        const cyaw = Math.cos(yaw), syaw = Math.sin(yaw);
+        const x1 = x * cyaw - z * syaw, z1 = x * syaw + z * cyaw;
+        const cp = Math.cos(PITCH), sp = Math.sin(PITCH);
+        const y2 = y * cp - z1 * sp, z2 = y * sp + z1 * cp;
+        const s = FOV / (FOV + z2 + CAMZ);
+        return { x: x1 * s, y: -y2 * s, depth: z2, s };
+      }
+
+      // Build the displayable fleet: stable order, each with its rolling samples.
+      function fleet() {
+        const ws = (lastWorkers || []).slice(0, 14);
+        return ws.map((w) => {
+          const hist = (usageHistory.get(w.worker_id) || []);
+          const last = hist.slice(-T_SHOW);
+          return {
+            id: w.worker_id, hasGpu: !!w.has_gpu,
+            state: (typeof workerState === "function" ? workerState(w) : (w.busy ? "busy" : "idle")),
+            cpu: Number.isFinite(w.cpu_pct) ? w.cpu_pct : 0,
+            gpu: w.gpu_pct == null ? null : w.gpu_pct,
+            samples: last,
+          };
+        });
+      }
+
+      function xForAge(k, total) { // k = 0 newest .. total-1 oldest -> right..left
+        const denom = Math.max(1, (total || T_SHOW) - 1);
+        return TIME_SPAN / 2 - (k / denom) * TIME_SPAN;
+      }
+      void xForAge;
+
+      function draw() {
+        ctx.clearRect(0, 0, W, H);
+        const F = fleet().filter((d) => d.state !== "pending" && d.state !== "blacklisted");
+        const n = F.length;
+        lanes = [];
+        if (!n) {
+          ctx.fillStyle = COL.soft; ctx.font = "13px " + tok("--sans", "sans-serif");
+          ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          ctx.fillText("No active devices reporting yet.", W / 2, H / 2);
+          return;
+        }
+
+        // ---- time axis (shared columns, newest at right) ----
+        const K = Math.min(T_SHOW, Math.max(2, F.reduce((mx, d) => Math.max(mx, d.samples.length), 2)));
+        const dk = Math.max(1, K - 1);
+        const xCol = (j) => TIME_SPAN / 2 - (((K - 1) - j) / dk) * TIME_SPAN;
+        const loadAt = (d, j) => {
+          const m = d.samples.length; if (!m) return 0;
+          let idx = j - (K - m); idx = idx < 0 ? 0 : (idx >= m ? m - 1 : idx);
+          return strainOf(d.samples[idx].cpu, d.samples[idx].gpu, d.hasGpu); // 0..1 load
+        };
+
+        // ---- load axis (continuous 0..1) + device-density field (Gaussian KDE over devices) ----
+        const uCenter = (u) => u / (U - 1);
+        const zUtil = (u) => (uCenter(u) - 0.5) * DEPTH_SPAN; // low load front, high load back
+        const dens = []; let dmax = 0.001;
+        for (let u = 0; u < U; u++) {
+          dens[u] = []; const c = uCenter(u);
+          for (let j = 0; j < K; j++) {
+            let s = 0;
+            for (let i = 0; i < n; i++) { const t = (loadAt(F[i], j) - c) / BW; s += Math.exp(-0.5 * t * t); }
+            dens[u][j] = s; if (s > dmax) dmax = s;
+          }
+        }
+
+        // ---- pass 1: project grid + axis refs, accumulate bbox ----
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        const track = (p) => { if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x; if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y; };
+        const ppt = [], wpt = [];
+        for (let u = 0; u < U; u++) {
+          ppt[u] = []; wpt[u] = []; const z = zUtil(u);
+          for (let j = 0; j < K; j++) {
+            const x = xCol(j), y = (dens[u][j] / dmax) * HS;
+            wpt[u][j] = { x, y, z };
+            const p = project(x, y, z); ppt[u][j] = p; track(p);
+          }
+        }
+        const corners = [project(-TIME_SPAN / 2, 0, zUtil(0)), project(TIME_SPAN / 2, 0, zUtil(0)), project(TIME_SPAN / 2, 0, zUtil(U - 1)), project(-TIME_SPAN / 2, 0, zUtil(U - 1))];
+        corners.forEach(track);
+        const lx = -TIME_SPAN / 2 - 22;
+        const loadTicks = [0, 0.25, 0.5, 0.75, 1].map((c) => ({ c, p: project(lx, 0, (c - 0.5) * DEPTH_SPAN) }));
+        loadTicks.forEach((t) => track(t.p));
+
+        // ---- fit transform ----
+        const pad = 56;
+        const bw = (maxX - minX) || 1, bh = (maxY - minY) || 1;
+        const fit = Math.min((W - pad * 2) / bw, (H - pad * 1.25) / bh);
+        const tx = (W - bw * fit) / 2 - minX * fit, ty = (H - bh * fit) / 2 - minY * fit;
+        const M = (p) => ({ x: tx + p.x * fit, y: ty + p.y * fit });
+
+        // ---- base plane + load-axis labels ----
+        ctx.lineWidth = 1; ctx.strokeStyle = "rgba(43,34,51,0.10)";
+        const c0 = M(corners[0]); ctx.beginPath(); ctx.moveTo(c0.x, c0.y);
+        for (let k = 1; k < 4; k++) { const c = M(corners[k]); ctx.lineTo(c.x, c.y); }
+        ctx.closePath(); ctx.stroke();
+        ctx.font = "10px " + tok("--sans", "sans-serif"); ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillStyle = COL.soft;
+        for (const t of loadTicks) {
+          const o = M(t.p), inb = M(project(TIME_SPAN / 2, 0, (t.c - 0.5) * DEPTH_SPAN));
+          ctx.strokeStyle = "rgba(43,34,51,0.09)";
+          ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(inb.x, inb.y); ctx.stroke();
+          ctx.fillText(`${t.c * 100 | 0}%`, o.x - 4, o.y);
+        }
+        ctx.save(); ctx.textAlign = "center"; ctx.font = "10px " + tok("--sans", "sans-serif"); ctx.fillStyle = COL.soft;
+        const capP = M(project(lx - 30, 0, 0)); ctx.translate(capP.x, capP.y); ctx.rotate(-Math.PI / 2); ctx.fillText("load level", 0, 0); ctx.restore();
+
+        // ---- surface: depth-sorted, lambert-shaded quads (colour = load level, height = device density) ----
+        const light = [-0.32, 0.93, 0.4];
+        { const L = Math.hypot(light[0], light[1], light[2]); light[0] /= L; light[1] /= L; light[2] /= L; }
+        const quads = [];
+        for (let u = 0; u < U - 1; u++) {
+          const col = strainRamp((u + 0.5) / (U - 1));
+          for (let j = 0; j < K - 1; j++) {
+            const w00 = wpt[u][j], w10 = wpt[u + 1][j], w01 = wpt[u][j + 1];
+            const ax = w10.x - w00.x, ay = w10.y - w00.y, az = w10.z - w00.z;
+            const bx = w01.x - w00.x, by = w01.y - w00.y, bz = w01.z - w00.z;
+            let nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
+            const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+            if (ny < 0) { nx = -nx; ny = -ny; nz = -nz; }
+            const lit = 0.62 + 0.5 * Math.max(0, nx * light[0] + ny * light[1] + nz * light[2]);
+            const depth = (ppt[u][j].depth + ppt[u + 1][j].depth + ppt[u][j + 1].depth + ppt[u + 1][j + 1].depth) / 4;
+            quads.push({ pts: [M(ppt[u][j]), M(ppt[u + 1][j]), M(ppt[u + 1][j + 1]), M(ppt[u][j + 1])], fill: shadeCss(col, lit, 0.95), depth });
+          }
+        }
+        quads.sort((a, b) => b.depth - a.depth);
+        ctx.lineJoin = "round";
+        for (const q of quads) {
+          ctx.beginPath(); ctx.moveTo(q.pts[0].x, q.pts[0].y);
+          for (let k = 1; k < 4; k++) ctx.lineTo(q.pts[k].x, q.pts[k].y);
+          ctx.closePath(); ctx.fillStyle = q.fill; ctx.fill();
+          ctx.lineWidth = 0.6; ctx.strokeStyle = q.fill; ctx.stroke();
+        }
+
+        // ---- wireframe overlay ----
+        ctx.strokeStyle = "rgba(43,34,51,0.26)";
+        const uStep = Math.max(1, Math.round((U - 1) / 8));
+        for (let u = 0; u < U; u += uStep) {                // iso-load lines (constant load, along time)
+          ctx.globalAlpha = hoverLane === u ? 0.72 : 0.34; ctx.lineWidth = hoverLane === u ? 1.6 : 1;
+          ctx.beginPath(); const p0 = M(ppt[u][0]); ctx.moveTo(p0.x, p0.y);
+          for (let j = 1; j < K; j++) { const p = M(ppt[u][j]); ctx.lineTo(p.x, p.y); }
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 0.22; ctx.lineWidth = 1;
+        const jStep = Math.max(1, Math.round((K - 1) / 10));
+        for (let j = 0; j < K; j += jStep) {                // time lines (constant time, across load)
+          ctx.beginPath(); const p0 = M(ppt[0][j]); ctx.moveTo(p0.x, p0.y);
+          for (let u = 1; u < U; u++) { const p = M(ppt[u][j]); ctx.lineTo(p.x, p.y); }
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+
+        // ---- hover targets: the newest-time ridge of each load band ----
+        for (let u = 0; u < U; u++) {
+          const head = M(ppt[u][K - 1]);
+          lanes.push({ u, x: head.x, y: head.y, util: uCenter(u) * 100, dens: dens[u][K - 1] });
+        }
+
+        // ---- "now" caption at the front-right ----
+        ctx.textAlign = "right"; ctx.textBaseline = "alphabetic"; ctx.fillStyle = COL.soft; ctx.font = "10px " + tok("--sans", "sans-serif");
+        const nowP = M(project(TIME_SPAN / 2, 0, zUtil(0)));
+        ctx.fillText("now →", nowP.x - 2, nowP.y + 15);
+      }
+
+      // ---- aggregate readout + a11y summary (called each /state poll) ----
+      function updateData() {
+        const F = fleet().filter((d) => d.state !== "pending" && d.state !== "blacklisted");
+        if (!F.length) { aggEl.textContent = "Waiting for the fleet…"; if (ariaEl) ariaEl.textContent = ""; return; }
+        const loads = F.map((d) => strainOf(d.cpu, d.gpu, d.hasGpu) * 100);
+        const idle = loads.filter((v) => v < 15).length;
+        const busy = loads.filter((v) => v >= 40).length;
+        const sat = loads.filter((v) => v >= 85).length;
+        const hottest = Math.round(Math.max(...loads));
+        const satTxt = sat ? ` · <span class="pk">${sat} saturated</span>` : "";
+        aggEl.innerHTML = `<b>${busy} busy</b> · ${idle} idle · hottest ${hottest}%${satTxt} · ${F.length} active`;
+        if (ariaEl) ariaEl.textContent = `Fleet load spectrum: ${busy} busy, ${idle} idle of ${F.length} active devices; hottest ${hottest}%${sat ? `; ${sat} saturated` : ""}.`;
+        if (reduceMotion) draw();
+      }
+      harvestOnData = updateData;
+
+      // ---- interaction: drag to rotate, hover to inspect ----
+      canvas.addEventListener("pointerdown", (e) => { dragging = true; userActive = true; userIdle = 0; lastPX = e.clientX; userYaw = yaw; canvas.setPointerCapture(e.pointerId); });
+      canvas.addEventListener("pointermove", (e) => {
+        const r = canvas.getBoundingClientRect();
+        mouse = { x: e.clientX - r.left, y: e.clientY - r.top };
+        if (dragging) { userYaw += (e.clientX - lastPX) * 0.006; lastPX = e.clientX; userActive = true; userIdle = 0; }
+        hitTest();
+        if (reduceMotion) draw();
+      });
+      const endDrag = () => { dragging = false; };
+      canvas.addEventListener("pointerup", endDrag);
+      canvas.addEventListener("pointercancel", endDrag);
+      canvas.addEventListener("pointerleave", () => { mouse = null; hoverLane = -1; hoverEl.classList.remove("on"); if (reduceMotion) draw(); });
+
+      function hitTest() {
+        if (!mouse || !lanes.length) { hoverLane = -1; hoverEl.classList.remove("on"); return; }
+        let best = -1, bestD = 30, bestLane = null;
+        for (const r of lanes) {
+          const dx = r.x - mouse.x, dy = r.y - mouse.y, dd = Math.hypot(dx, dy);
+          if (dd < bestD) { bestD = dd; best = r.u; bestLane = r; }
+        }
+        hoverLane = best;
+        if (bestLane) {
+          const d = Math.round(bestLane.dens);
+          hoverEl.innerHTML = `<span class="hcpu">${Math.round(bestLane.util)}% load</span> · ≈${d} device${d === 1 ? "" : "s"}`;
+          hoverEl.style.left = bestLane.x + "px";
+          hoverEl.style.top = bestLane.y + "px";
+          hoverEl.classList.add("on");
+        } else hoverEl.classList.remove("on");
+      }
+
+      // ---- run loop ----
+      let raf = 0, last = 0;
+      function frame(t) {
+        const dt = Math.min(0.05, last ? (t - last) / 1000 : 0); last = t;
+        if (userActive) { yaw = userYaw; userIdle += dt; if (userIdle > 8) { userActive = false; autoT = Math.asin(Math.max(-1, Math.min(1, (yaw + 0.42) / 0.5))) || 0; } }
+        else { autoT += dt * 0.2; yaw = -0.42 + Math.sin(autoT) * 0.5; }
+        if (mouse) hitTest();
+        draw();
+        raf = requestAnimationFrame(frame);
+      }
+
+      const ro = new ResizeObserver(resize);
+      ro.observe(canvas.parentElement);
+      resize();
+      if (reduceMotion) { yaw = -0.5; draw(); }
+      else raf = requestAnimationFrame(frame);
+    })();
+
+    // ---- Connect-a-device onboarding: real worker command from this origin + copy ----
+    const connectPanel = document.getElementById("connectPanel");
+    (function initConnect() {
+      const cmdEl = document.getElementById("connectCmd");
+      const copyBtn = document.getElementById("connectCopy");
+      if (!cmdEl) return;
+      const cmd = `uv run python -m worker --url ${location.origin}`;
+      cmdEl.textContent = cmd;
+      if (copyBtn) copyBtn.addEventListener("click", async () => {
+        let ok = false;
+        try { await navigator.clipboard.writeText(cmd); ok = true; }
+        catch {
+          try { // fallback for non-secure-context (plain http on a LAN)
+            const ta = document.createElement("textarea");
+            ta.value = cmd; ta.style.position = "fixed"; ta.style.opacity = "0";
+            document.body.appendChild(ta); ta.select(); ok = document.execCommand("copy"); ta.remove();
+          } catch { ok = false; }
+        }
+        copyBtn.textContent = ok ? "Copied ✓" : "Select & copy";
+        if (!ok) { const r = document.createRange(); r.selectNodeContents(cmdEl); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+        setTimeout(() => { copyBtn.textContent = "Copy"; }, 1600);
+      });
+    })();
 
     poll();
     setInterval(poll, POLL_MS);
