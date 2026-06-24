@@ -254,8 +254,11 @@ sampler metrics + reference match + review.*
 |---|---|
 | `docs/design-harness.md` | **this file** — the design doctrine, standards, gate, and QA loop |
 | `docs/design-toolkit.md` | what's installed (skills/CLIs/GSAP) and the exact commands to invoke |
+| `docs/website/PRODUCT.md` + `docs/website/DESIGN.md` | impeccable **brand-register** context for the marketing website (`src/website/`). Read these when designing the website. |
+| `docs/PRODUCT.md` + `docs/DESIGN.md` | impeccable **product-register** context for the dashboard / Fleet Console (`src/dashboard/`). |
 | `docs/harness.md` | how the agent org runs (G0–G3 gates this design loop nests into) |
 | `docs/idea.md` | canonical product intent the design must keep aligning to |
 | `.github/copilot-instructions.md` | shared engineering doctrine (auto-loaded) |
+| `.github/skills/impeccable/` + `.github/hooks/` | project-installed impeccable skill + design-detector hook (`/impeccable <cmd>`) |
 | session `files/sample-shader.mjs` | the headless QA sampler for the WebGL lake |
 | session `files/design-system.md` | the live OneCompute token plan (palette + type + motion) |

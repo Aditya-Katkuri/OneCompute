@@ -234,7 +234,7 @@
   .cinema__stage{position:sticky;top:0;height:100vh;width:100vw;margin-left:calc(50% - 50vw);
     overflow:hidden;display:block;
     background:
-      linear-gradient(180deg, #d6c2d2 0%, rgba(214,194,210,0.6) 7%, rgba(214,194,210,0.22) 17%, rgba(247,239,233,0) 32%),
+      linear-gradient(180deg, #f6eee9 0%, rgba(246,238,233,0.55) 9%, rgba(246,238,233,0) 26%),
       radial-gradient(150% 120% at 50% 118%, var(--paper) 0%, var(--cream) 64%)}
   .cinema__canvas{position:absolute;inset:0;width:100%;height:100%;z-index:1;display:block}
   .cinema__copy{position:absolute;left:clamp(22px,5vw,90px);top:clamp(84px,12vh,128px);z-index:4;max-width:30ch;pointer-events:none}
@@ -688,7 +688,7 @@ void main(){
   float cN=clamp(uv.y/0.6, 0.0, 1.0);     // 0 near the wall, 1 toward the horizon (uv is the perspective-warped field axis)
   float C=mix(0.62, 0.24, cN);            // SLOWER overall + progressively slower toward the horizon (compounds with the read-warp -> strong depth)
   vel += (avg - h)*C;          // wave: accelerate toward the neighbourhood average
-  vel *= 0.992;                // damping -> the ripples gradually fade
+  vel *= 0.984;                // damping -> the ripples gradually fade (matches the previous 2-substep fade now that we run 1 substep)
   h   += vel;
   heat*= 0.996;                // the cloud tear heals (refills) over time — MUCH slower so the poof lingers far longer before filling back in
   vec2 pAsp=vec2(uv.x*u_saspect, uv.y);
@@ -845,7 +845,7 @@ void main(){
         gl.uniform2f(simU.p0,pPrevX,warpV(pPrevY));
         gl.uniform2f(simU.p1,pCurX,warpV(pCurY));
         gl.uniform1f(simU.over,overW);
-        for(var sIt=0;sIt<2;sIt++){
+        for(var sIt=0;sIt<1;sIt++){   // 1 sim step/frame => ripples propagate even slower (50% of the 2-step rate); damping compensated so lifetime is unchanged
           var nxt=1-cur;
           gl.bindFramebuffer(gl.FRAMEBUFFER,fxFBO[nxt]);
           gl.viewport(0,0,FW,FH);
