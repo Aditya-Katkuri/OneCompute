@@ -2,11 +2,13 @@
 
 from contracts.hashing import canonical_bytes, sha256_hex
 from contracts.models import (
+    LAUNCHABLE_KINDS,
     Capability,
     FleetState,
     HeartbeatRequest,
     HeartbeatResponse,
     JobAssignment,
+    JobDetail,
     JobKind,
     JobManifest,
     JobState,
@@ -24,13 +26,21 @@ from contracts.models import (
     SubmitRequest,
     SubmitResponse,
     WorkerView,
+    WorkloadLaunchRequest,
+    WorkloadLaunchResponse,
+    WorkloadView,
 )
 
 __all__ = [
     "canonical_bytes",
     "sha256_hex",
+    "LAUNCHABLE_KINDS",
     "Capability",
     "FleetState",
+    "JobDetail",
+    "WorkloadLaunchRequest",
+    "WorkloadLaunchResponse",
+    "WorkloadView",
     "HeartbeatRequest",
     "HeartbeatResponse",
     "JobAssignment",

@@ -49,17 +49,25 @@ flowchart TB
 
 **Five moving parts:**
 
-1. **Worker agent** — Python process on each opt-in PC. Detects idleness, advertises capability, pulls signed jobs, runs them in a sandbox, returns results, yields instantly when the human returns.
-2. **Orchestrator** — FastAPI app on the dev box. Control plane + scheduler + verifier + ledger + dashboard. One process for the PoC.
+1. **Worker agent** — Python process on each opt-in PC. Detects idleness, advertises capability, pulls signed jobs, runs them in a sandbox, returns results, yields instantly when the human returns. When the fleet runs gated, it first **joins via a device-code approval** (shows a short code, waits until an admin approves it in the dashboard) and then streams live per-device usage (~1s).
+2. **Orchestrator** — FastAPI app on the dev box. Control plane + scheduler + verifier + ledger + dashboard. One process for the PoC. It also exposes a **dashboard-facing API** (approve a worker, launch a whole workload across the fleet in one call, read a workload/job's output, list the launch catalog) — see §4.1 and [`dashboard-api.md`](./dashboard-api.md).
 3. **Job/manifest model** — the signed contract between submitter and worker.
 4. **Sandbox runtime** — Windows Sandbox + Job Objects isolating each job on the worker.
 5. **Rewards/metering service** — turns verified work into points.
+
+> **Demo workloads.** The PoC fans **four hardcoded example workloads** across the fleet — two non-AI (`fractal`, `optimize`) and two AI (`ai.batch_infer`, `ai.synth`) — with a **hardcoded split (one tile per machine)**; the dynamic governor (§3.2) is deliberately set aside for the demo. Fully documented in [`workloads.md`](./workloads.md) (and §6).
 
 ---
 
 ## 3. The worker agent
 
 The agent is the hard, interesting part. It runs as a normal user-session process (see the session-0 gotcha in §3.2).
+
+### 3.0 Joining the fleet (device-code approval) & live usage
+
+When the orchestrator runs gated (`python -m orchestrator --require-approval`), the agent **joins before it works**: `/register` returns `approved=false` plus a short, human-readable `device_code` (e.g. `WX7Q-12`). The agent prints the code and blocks in `wait_for_approval()` — heartbeating on its normal cadence — until an admin clicks **Approve** in the dashboard (`POST /workers/{id}/approve`). `GET /jobs/next` returns 204 for an unapproved worker, so no work leaks before admission. This is additive: the default (non-gated) flow auto-approves and is unchanged.
+
+Once joined, a **daemon heartbeat streams live per-device usage** (`cpu_pct` / `gpu_pct` / `free_ram_gb`) every ~1s (`--usage-interval`, floored at 0.25s) so the dashboard's per-machine usage graph stays current even between jobs. It's pure telemetry: it never carries a `current_job_id`, so it can't perturb leasing. `GET /state` exposes these for the dashboard.
 
 ### 3.1 Capability advertisement
 On startup and registration the agent reports a **resource dict** (the abstraction borrowed from [Ray's logical-resource model](https://docs.ray.io/en/latest/ray-core/scheduling/resources.html), *not* the framework):
@@ -139,10 +147,15 @@ Workers **phone home** — no inbound listener, traverses corporate proxies:
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /register` | Worker announces capability dict; gets a worker token. |
-| `GET /jobs/next?worker_id=…` | **Long-poll** (~60s). Returns a signed manifest when a matching job exists, else 204. |
-| `POST /heartbeat` | ~5s liveness + current idle/util state; renews lease. |
+| `POST /register` | Worker announces capability dict; gets a worker token (+ a `device_code` and `approved=false` when the fleet is gated). |
+| `GET /jobs/next?worker_id=…` | **Long-poll** (~60s). Returns a signed manifest when a matching job exists, else 204. **Gated:** returns 204 while the worker is unapproved (or blacklisted). |
+| `POST /heartbeat` | ~5s liveness + current idle/util state (+ live cpu/gpu/free-RAM usage); renews lease; reports current `approved` state. |
+| `POST /workers/{id}/approve` | **Dashboard admits a pending worker** (clears its device code) — the credential/onboarding gate. |
 | `POST /results/{job_id}` | Result artifact + proof hash. |
+| `POST /workloads` | **Dashboard launch:** `{kind, n_tiles, params}` → builds the hardcoded fleet split and enqueues every tile under a shared `workload_id` → `{workload_id, job_ids}`. |
+| `GET /workloads/{id}` | A launched workload's per-tile status + outputs (the results panel). |
+| `GET /workloads/catalog` | The launchable example workloads (kind, label, category, default params) so a UI renders launch buttons without hardcoding. |
+| `GET /jobs/{id}` | A single job's full record incl. its parsed output. |
 | `GET /` | Dashboard (SSE/websocket for live updates). |
 
 Pattern from the [Temporal worker model](https://docs.temporal.io/develop/worker-performance) (outbound long-poll). **Liveness = heartbeat → lease → reaper:** heartbeat ~5s, lease ~20–30s, requeue on expiry, jobs idempotent.
@@ -172,7 +185,7 @@ A job is a **signed manifest** + input payload. The manifest is the trust contra
 ```jsonc
 {
   "job_id": "uuid",
-  "kind": "ai.batch_infer | eval | data.transform | render | challenge",
+  "kind": "ai.batch_infer | eval | data.transform | render | challenge | fractal | optimize | ai.synth",
   "code_ref": "oci://… or script hash",   // what to run
   "code_sha256": "…",
   "input_sha256": "…",
@@ -184,21 +197,24 @@ A job is a **signed manifest** + input payload. The manifest is the trust contra
 ```
 
 - **Signed with [Sigstore cosign](https://github.com/sigstore/cosign)** (signs arbitrary artifacts; keyless OIDC maps to corporate SSO). The worker verifies signature + `code_sha256` + `input_sha256` **before** executing — a compromised orchestrator or MITM cannot inject runnable code ([BOINC code-signing pattern](https://github.com/BOINC/boinc/wiki/SecurityIssues)).
+- **Workload grouping.** Jobs launched together via `POST /workloads` (the fleet tiles of one workload) share a `workload_id` column so the dashboard can read them back as a unit (`GET /workloads/{id}`).
 - **Tamper-evident audit log** (Rekor-style append-only) of who-submitted-what-ran-where — the non-repudiation property an enterprise security review demands.
 
 ---
 
 ## 6. Workload adapters
 
-The same fabric carries different job kinds via small adapters:
+The same fabric carries different job kinds via small adapters. The PoC ships **four example workloads** fanned across the fleet via a **hardcoded split — one tile per machine** (`src/workloads/partition.py`, `even_ranges`/`weighted_ranges`); the dynamic governor is set aside for the demo. Two are non-AI and two are AI, to show range. Full per-workload detail (inputs, outputs, aggregation, preemptibility) lives in [`workloads.md`](./workloads.md) — not duplicated here.
 
-| Job kind | Runtime on worker | PoC demo use |
-|---|---|---|
-| `ai.batch_infer` | Local model server — [`llama.cpp` `llama-server`](https://github.com/ggml-org/llama.cpp/blob/master/tools/rpc/README.md) (CPU+GPU) or single-node vLLM; **each worker handles a slice of the prompt set** | The AI job: fan a batch of prompts/evals across the fleet. |
-| `eval` | Scoring script over model outputs | Eval/benchmark fan-out. |
-| `data.transform` | Plain sandboxed subprocess (Python/CLI) | The non-AI CPU job: parallel ETL/data chunks. |
-| `render` | CLI renderer under `vGPU` | The non-AI GPU job. |
-| `challenge` | Same as a real job, known answer | Verification + anti-gaming. |
+| Job kind | AI? | Runtime on worker | PoC demo use |
+|---|---|---|---|
+| `fractal` | no | **Pure-stdlib** executor — runs inside the Docker sandbox | Non-AI CPU job: Mandelbrot tiles reassembled into one PNG. |
+| `optimize` | no | **Pure-stdlib** executor — runs inside the Docker sandbox | Non-AI CPU job: distributed param-sweep; global best wins. |
+| `ai.batch_infer` | yes | Real **anthropic/openai SDK** — routes **host-side** | The AI job: each worker scores a slice of the prompt set. |
+| `ai.synth` | yes | Real **anthropic/openai SDK** — routes **host-side** | AI job: each worker generates a slice of synthetic data, merged. |
+| `challenge` | no | Same as a real job, known answer | Verification + anti-gaming (§4.3). |
+
+> **Why the AI kinds run host-side.** The non-AI executors are pure stdlib so they run **inside** the `python:3.12-slim` Docker sandbox, which gets **no API key** (`isolation/runner.py` forwards provider keys host-side only). So `worker/agent.py` routes any `ai.*` kind to the on-host Job-Object path where the real SDK + key are available; **without a key the AI kinds use a disclosed deterministic fallback**, so they always run. (`eval` / `data.transform` / `render` remain as adapter kinds; the four above are the ones the demo actually fans out.)
 
 > **Deliberately NOT in the PoC:** sharding one model across machines (llama.cpp RPC / exo / Petals). Those transports are "fragile and insecure… never run on an open network" — they're a scripted **roadmap** showcase on an isolated network, not the demo path.
 
@@ -250,13 +266,16 @@ sequenceDiagram
 | **Code/data integrity** | cosign-signed manifests, hash-verify before run | full SLSA-style provenance |
 | **Result trust** | challenge tasks + adaptive replication + fuzzy comparators | formal verifiable compute |
 | **Confidentiality** | data minimization, no-persistence | **TEE / confidential compute** (needs datacenter GPUs — consumer RTX/NPU have no GPU TEE) |
-| **Auditability** | append-only audit log | Rekor transparency log |
+| **Onboarding / admission** | **device-code dashboard-approval gate** (`--require-approval`): a joining worker is PENDING with a short code until an admin approves it; gets no work until then | Intune/SSO-driven enrollment + per-worker certs |
+| **Auditability** | append-only audit log (incl. an `approved` event) | Rekor transparency log |
 
 > **The enterprise-acceptance gate (highest risk).** Sustained CPU/GPU bursts are the literal signature of [cryptojacking](https://www.cisa.gov/news-events/news/defending-against-illicit-cryptocurrency-mining-activity); Purview DLP can silently block a job's data egress. The agent must be **code-signed, Intune-deployed, Defender/AV allow-listed, and route I/O through sanctioned channels** — designed to **pass, not bypass**. Internal scope shrinks attack surface and makes actions attributable; it does **not** let us skip controls. ([Purview endpoint DLP](https://learn.microsoft.com/en-us/purview/endpoint-dlp-learn-about))
 
 ---
 
 ## 10. PoC build plan (suggested order)
+
+> **Current status (branch `katkuri`):** steps 2–9 are implemented and green (144 tests pass), plus the additive dashboard-readiness layer (device-code approval gate, four fanned example workloads, `POST /workloads` launch + read API, live per-device usage stream). The dashboard **front-end UI is owned by the dashboard team** — the backend is integration-ready (see [`dashboard-api.md`](./dashboard-api.md)); we don't ship a finished UI.
 
 1. **Spike the two unknowns first** *(de-risk day 1)*: (a) GPU passthrough into Windows Sandbox on the real demo SKU; (b) plain-HTTPS long-poll reachable across the corporate LAN.
 2. **Orchestrator skeleton** — FastAPI: `register`, `jobs/next` (long-poll), `heartbeat`, `results`; SQLite state; in-process scheduler.
