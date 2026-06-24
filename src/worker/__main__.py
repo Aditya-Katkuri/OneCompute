@@ -20,13 +20,16 @@ except Exception:  # pragma: no cover
     psutil = None
 
 
-def _start_usage_heartbeat(agent: WorkerAgent, period_s: float = 2.0) -> threading.Event:
+def _start_usage_heartbeat(agent: WorkerAgent, period_s: float = 1.0) -> threading.Event:
     """Stream this machine's live CPU/GPU/free-RAM to the orchestrator on a fixed cadence so the
     dashboard fleet view + per-device usage graphs stay current even between jobs.
 
     Pure telemetry: it never sends current_job_id, so it cannot perturb leasing/scheduling. Runs
-    as a daemon thread; returns a stop Event the caller sets on shutdown.
+    as a daemon thread; returns a stop Event the caller sets on shutdown. The cadence is floored
+    at 0.25 s — psutil.cpu_percent measures the delta since the last call, so faster than that
+    gives a noisy/meaningless CPU reading (and just hammers the orchestrator).
     """
+    period_s = max(0.25, period_s)
     stop = threading.Event()
 
     def loop() -> None:
@@ -60,6 +63,13 @@ def main() -> None:
     parser.add_argument("--url", required=True, help="Orchestrator base URL")
     parser.add_argument("--once", action="store_true", help="Run at most one job then exit")
     parser.add_argument("--idle-threshold", type=float, default=60.0, help="Input idle seconds before work")
+    parser.add_argument(
+        "--usage-interval",
+        type=float,
+        default=1.0,
+        help="Seconds between live CPU/GPU/RAM usage heartbeats for the dashboard (default 1.0; "
+             "floored at 0.25 so the CPU reading stays accurate)",
+    )
     parser.add_argument(
         "--governor",
         choices=("adaptive", "idle"),
@@ -105,7 +115,7 @@ def main() -> None:
             agent.wait_for_approval()
 
         # Once we've joined, stream live usage so the dashboard can show this device + its graph.
-        usage_stop = _start_usage_heartbeat(agent)
+        usage_stop = _start_usage_heartbeat(agent, args.usage_interval)
 
         idle_gate = IdleGate(input_idle_threshold_s=args.idle_threshold)
         adaptive = args.governor == "adaptive"

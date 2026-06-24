@@ -43,8 +43,9 @@ its `device_code` + an Approve button calling this endpoint.
 ## 2. Show connected devices + usage graphs
 
 Read the `workers` array from `GET /state`. Each worker carries live **`cpu_pct`**, **`gpu_pct`**
-(`null` on non-GPU machines), and **`free_ram_gb`** — the worker streams these every ~2 s, so a UI
-that keeps a rolling per-`worker_id` history can draw a live usage sparkline/graph per device.
+(`null` on non-GPU machines), and **`free_ram_gb`** — the worker streams these every ~1 s
+(tunable via the worker's `--usage-interval`, floored at 0.25 s), so a UI that keeps a rolling
+per-`worker_id` history can draw a live usage sparkline/graph per device.
 `busy` (has a leased job) and `idle` drive the tile state; `credits` is the reward tally
 (GPU machines earn 5×).
 
