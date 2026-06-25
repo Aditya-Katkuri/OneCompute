@@ -1,0 +1,1389 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OneCompute — the film</title>
+<!--
+  OneCompute / NightShift — self-playing "video" presentation.
+  A fixed 16:9 stage (1920x1080) that scales to fit any screen, plays itself on a GSAP
+  master timeline. SPACE or click = play/pause. No scrolling, no nav. Reuses colin's
+  warm-pastel design system, grain/film/vignette, and vendored GSAP + fonts.
+
+  EDIT THE SHOW: everything is data-driven from the SCENES array near the bottom.
+  ADD VIDEO CLIPS: set a path/URL in the CLIPS map (Satya / Mustafa / Amy / demo). When a
+  clip has a src, the timeline PAUSES, plays the clip full-frame, and resumes when it ends.
+  Empty slots just show a styled placeholder for their scheduled seconds (2:30 timing holds).
+
+  KEYS:  Space play/pause · ←/→ scene · R restart · F fullscreen · H hide HUD (clean capture)
+-->
+<link rel="preload" as="font" type="font/woff2" crossorigin href="vendor/fonts/dm-serif-display-400-italic.woff2">
+<style>
+  /* ---- fonts (vendored; Hanken wired as deterministic fallback to Segoe UI Variable) ---- */
+  @font-face{font-family:"DM Serif Display";font-style:italic;font-weight:400;font-display:swap;src:url(vendor/fonts/dm-serif-display-400-italic.woff2) format("woff2")}
+  @font-face{font-family:"DM Serif Display";font-style:normal;font-weight:400;font-display:swap;src:url(vendor/fonts/dm-serif-display-400.woff2) format("woff2")}
+  @font-face{font-family:"Hanken Grotesk";font-weight:400;font-display:swap;src:url(vendor/fonts/hanken-grotesk-400.woff2) format("woff2")}
+  @font-face{font-family:"Hanken Grotesk";font-weight:500;font-display:swap;src:url(vendor/fonts/hanken-grotesk-500.woff2) format("woff2")}
+  @font-face{font-family:"Hanken Grotesk";font-weight:600;font-display:swap;src:url(vendor/fonts/hanken-grotesk-600.woff2) format("woff2")}
+  @font-face{font-family:"Hanken Grotesk";font-weight:700;font-display:swap;src:url(vendor/fonts/hanken-grotesk-700.woff2) format("woff2")}
+
+  :root{
+    --cream:#F7EFE9; --paper:#F3E7EE;
+    --lilac:#C9B8F0; --purple:#B59FE3; --mauve:#9F86C9;
+    --pink:#F2B5D4; --blush:#F8CCDD; --peach:#F8D3BC; --coral:#E8A38C;
+    --magenta:#D98FC0; --magenta-ink:#b23d80;
+    --plum:#2B2233; --ink:#3A2E45; --muted:#6b6076;
+    --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+    --serif:"DM Serif Display","Iowan Old Style",Georgia,serif;
+    --sans:"Segoe UI Variable Text","Hanken Grotesk","Segoe UI",system-ui,-apple-system,sans-serif;
+    --disp:"Segoe UI Variable Display","Hanken Grotesk","Segoe UI",system-ui,sans-serif;
+    --ease:cubic-bezier(.34,1.56,.64,1);
+    --ease-out:cubic-bezier(.22,1,.36,1);
+    /* per-scene tunable tones (set by bg classes) */
+    --txt:#2B2233; --txt2:#3A2E45; --eye:#6b6076;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:#0b0710;font-family:var(--sans);overflow:hidden;cursor:default}
+
+  /* ---- letterbox wrap + fixed 16:9 stage that scales to fit ---- */
+  #wrap{position:fixed;inset:0;background:#0b0710;overflow:hidden}
+  #stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;overflow:hidden;transform-origin:center center;
+    background:#F7EFE9;transition:background-color .9s var(--ease-out);will-change:transform}
+
+  /* ---- ambient pastel orb field (colin's fallback look, driven per scene) ---- */
+  .orbs{position:absolute;inset:0;z-index:0;overflow:hidden;pointer-events:none}
+  .orb{position:absolute;border-radius:50%;filter:blur(64px);opacity:.85;mix-blend-mode:multiply;
+    transition:background-color .9s var(--ease-out),opacity .9s var(--ease-out)}
+  .o1{width:46%;height:80%;left:-8%;top:-12%;animation:d1 26s var(--ease) infinite alternate}
+  .o2{width:42%;height:74%;right:-6%;top:2%;animation:d2 30s var(--ease) infinite alternate}
+  .o3{width:52%;height:90%;left:18%;bottom:-26%;animation:d3 34s var(--ease) infinite alternate}
+  .o4{width:34%;height:60%;right:8%;bottom:6%;animation:d4 28s var(--ease) infinite alternate}
+  .o5{width:30%;height:54%;left:34%;top:24%;animation:d2 32s var(--ease) infinite alternate}
+  @keyframes d1{to{transform:translate(8%,10%) scale(1.15)}}
+  @keyframes d2{to{transform:translate(-7%,8%) scale(1.1)}}
+  @keyframes d3{to{transform:translate(6%,-9%) scale(1.2)}}
+  @keyframes d4{to{transform:translate(-9%,-7%) scale(1.1)}}
+  /* coral "wake" pulse overlay, faded in only on wake scenes */
+  .wake{position:absolute;inset:0;z-index:1;pointer-events:none;opacity:0;mix-blend-mode:screen;
+    background:radial-gradient(60% 60% at 60% 55%, rgba(217,143,192,.5), rgba(232,163,140,.28) 45%, transparent 72%);
+    transition:opacity 1s var(--ease-out)}
+
+  /* per-scene background palettes */
+  #stage.bg-white{background:#FAF6F2;--txt:#2B2233;--txt2:#3A2E45;--eye:#6b6076}
+  #stage.bg-white .o1{background:var(--lilac)} #stage.bg-white .o2{background:var(--blush)}
+  #stage.bg-white .o3{background:var(--peach)} #stage.bg-white .o4{background:var(--purple)} #stage.bg-white .o5{background:var(--pink)}
+  #stage.bg-white .orb{opacity:.5}
+
+  #stage.bg-calm{background:#F7EFE9;--txt:#2B2233;--txt2:#3A2E45;--eye:#6b6076}
+  #stage.bg-calm .o1{background:var(--lilac)} #stage.bg-calm .o2{background:var(--pink)}
+  #stage.bg-calm .o3{background:var(--peach)} #stage.bg-calm .o4{background:var(--purple)} #stage.bg-calm .o5{background:var(--blush)}
+
+  #stage.bg-coral{background:#F6E6EC;--txt:#2B2233;--txt2:#3A2E45;--eye:#b23d80}
+  #stage.bg-coral .o1{background:var(--magenta)} #stage.bg-coral .o2{background:var(--coral)}
+  #stage.bg-coral .o3{background:var(--peach)} #stage.bg-coral .o4{background:var(--pink)} #stage.bg-coral .o5{background:var(--mauve)}
+  #stage.bg-coral .wake{opacity:1;animation:pulse 4.5s var(--ease) infinite alternate}
+  @keyframes pulse{from{opacity:.55}to{opacity:1}}
+
+  #stage.bg-night{background:#1c1526;--txt:#F7EFE9;--txt2:#E9D9E6;--eye:#c9a9c5}
+  #stage.bg-night .orb{mix-blend-mode:screen;opacity:.55;filter:blur(72px)}
+  #stage.bg-night .o1{background:var(--mauve)} #stage.bg-night .o2{background:var(--magenta)}
+  #stage.bg-night .o3{background:var(--coral)} #stage.bg-night .o4{background:var(--purple)} #stage.bg-night .o5{background:var(--magenta)}
+  /* pure-black opener backdrop: the intro video pushes off to reveal this, then the paper crumples in on it */
+  #stage.bg-black{background:#000;--txt:#F7EFE9;--txt2:#E9D9E6;--eye:#c9a9c5}
+  #stage.bg-black .orb{opacity:0} #stage.bg-black .field{opacity:0} #stage.bg-black .wake{opacity:0}
+
+  /* ---- atmosphere: grain + film + vignette (inside stage so it scales + records) ---- */
+  .grain,.noise,.filmgrain,.vignette{position:absolute;inset:0;pointer-events:none}
+  .grain{z-index:90;opacity:.40;mix-blend-mode:multiply;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.86' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E")}
+  .noise{z-index:90;opacity:.13;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='m'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.5' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23m)'/%3E%3C/svg%3E")}
+  .filmgrain{z-index:91;inset:-30%;width:auto;height:auto;opacity:.07;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23f)' opacity='0.6'/%3E%3C/svg%3E");
+    animation:grainshift .5s steps(6) infinite}
+  @keyframes grainshift{0%{transform:translate(0,0)}20%{transform:translate(-6%,4%)}40%{transform:translate(5%,-7%)}60%{transform:translate(-4%,6%)}80%{transform:translate(7%,-3%)}100%{transform:translate(0,0)}}
+  .vignette{z-index:92;mix-blend-mode:multiply;
+    background:radial-gradient(130% 130% at 50% 46%, transparent 52%, rgba(43,34,51,.26) 100%)}
+
+  /* ---- cinematic "alive" overlays (global grade + grain + vignette; whisper-quiet) ---- */
+  .grade-warm,.grade-teal,.cine-vignette,.leak{position:absolute;inset:0;pointer-events:none}
+  .grade-warm{z-index:87;opacity:.42;mix-blend-mode:soft-light;
+    background:radial-gradient(70% 70% at 50% 42%, rgba(255,224,178,.5), rgba(255,200,150,.16) 55%, transparent 78%)}
+  .grade-teal{z-index:87;opacity:.30;mix-blend-mode:multiply;
+    background:radial-gradient(120% 120% at 50% 50%, transparent 46%, rgba(30,72,82,.5) 100%)}
+  .cine-vignette{z-index:89;mix-blend-mode:multiply;
+    background:radial-gradient(130% 130% at 50% 48%, transparent 55%, rgba(12,8,16,.28) 100%)}
+  .leak{z-index:93;opacity:0;mix-blend-mode:screen;
+    background:linear-gradient(100deg, transparent 30%, rgba(255,210,150,0) 40%, rgba(255,212,152,.55) 50%, rgba(255,184,120,0) 60%, transparent 70%)}
+  .cine-grain{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:94;opacity:.06;mix-blend-mode:overlay}
+
+  /* ---- scenes ---- */
+  .scene{position:absolute;inset:0;z-index:10;display:flex;flex-direction:column;justify-content:center;
+    padding:0 168px;gap:30px;visibility:hidden}
+  .s-eyebrow{font-family:var(--mono);font-size:19px;letter-spacing:.32em;text-transform:uppercase;color:var(--eye);
+    transition:color .9s}
+  .s-head{font-family:var(--disp);font-weight:700;font-size:104px;line-height:.98;letter-spacing:-.028em;
+    color:var(--txt);max-width:23ch;transition:color .9s}
+  .s-head .w{display:inline-block;will-change:transform,opacity}
+  .s-sub{font-family:var(--sans);font-weight:500;font-size:33px;line-height:1.32;color:var(--txt2);max-width:38ch;
+    transition:color .9s}
+  /* style variants */
+  .scene.num .s-head{font-size:230px;letter-spacing:-.04em;line-height:.9}
+  .scene.num .s-head .unit{font-size:.42em;color:var(--magenta-ink);letter-spacing:0}
+  .scene.brand .s-head{font-size:150px;letter-spacing:-.03em}
+  .scene.flow .s-head{font-size:74px;max-width:26ch;line-height:1.06}
+  .scene.montage .s-head{font-size:88px;max-width:24ch}
+  .scene.usecases .s-head{font-size:62px;max-width:24ch;line-height:1.18}
+  .scene .accent{font-family:var(--serif);font-style:italic;color:var(--magenta-ink)}
+
+  /* ===================================================================
+     COLIN DECK DESIGN LANGUAGE — frosted surfaces, stat/step/feat/yield,
+     honest bars, serif focal words, dawn "waking field". DECK scenes only;
+     the opener (paper/clip/converge) is never tagged .deck and is untouched.
+     =================================================================== */
+  :root{ --surface:rgba(243,231,238,.82); --surface-line:rgba(43,34,51,.16);
+    --surface-sh:0 18px 46px -30px rgba(43,34,51,.42), inset 0 1px 0 rgba(255,255,255,.5); }
+
+  /* dawn "waking field": a cheap STATIC mesh-gradient + horizon glow on cream (evokes colin's lake
+     hero — no per-frame fluid sim, pure CSS, scrub-safe). Shown on cream/coral/white deck palettes,
+     hidden at night so the dark opener + dark close stay cinematic. */
+  .field{position:absolute;inset:0;z-index:2;pointer-events:none;opacity:0;mix-blend-mode:multiply;
+    transition:opacity .9s var(--ease-out);
+    background:
+      radial-gradient(70% 42% at 22% 16%, rgba(201,184,240,.42), transparent 60%),
+      radial-gradient(66% 40% at 82% 12%, rgba(242,181,212,.36), transparent 62%),
+      radial-gradient(80% 46% at 60% 2%,  rgba(181,159,227,.30), transparent 60%),
+      radial-gradient(120% 70% at 50% 116%, rgba(232,163,140,.30), rgba(248,211,188,.12) 42%, transparent 70%),
+      linear-gradient(180deg, transparent 54%, rgba(159,134,201,.10) 78%, rgba(159,134,201,.20) 100%)}
+  .field::after{content:"";position:absolute;left:0;right:0;top:54%;height:26%;
+    background:radial-gradient(62% 100% at 50% 0%, rgba(255,236,214,.5), transparent 72%);opacity:.7}
+  .field .drift{position:absolute;inset:-8%;
+    background:
+      radial-gradient(40% 30% at 30% 32%, rgba(248,211,188,.30), transparent 60%),
+      radial-gradient(38% 28% at 72% 42%, rgba(242,181,212,.26), transparent 62%);
+    animation:fielddrift 42s var(--ease) infinite alternate;will-change:transform}
+  @keyframes fielddrift{to{transform:translate(2.5%,1.6%) scale(1.06)}}
+  #stage.bg-calm .field,#stage.bg-white .field,#stage.bg-coral .field{opacity:1}
+  #stage.bg-night .field{opacity:0}
+  @media (prefers-reduced-motion:reduce){ .field .drift{animation:none} }
+
+  /* serif focal word inside any head/sub (mirrors colin's "dawn.") */
+  .s-head .accent,.s-sub .accent,.featcard h3 .accent,.winpanel h2 .accent{
+    font-family:var(--serif);font-style:italic;font-weight:400;color:var(--magenta-ink);letter-spacing:-.01em}
+  #stage.bg-night .accent{color:var(--pink)}
+
+  /* mono eyebrow gains a hairline kicker on deck scenes (colin .kick) */
+  .scene.deck .s-eyebrow{display:inline-flex;align-items:center;gap:18px;width:max-content;max-width:100%}
+  .scene.deck .s-eyebrow::before{content:"";width:64px;height:1px;flex:none;
+    background:linear-gradient(90deg,var(--magenta),transparent)}
+
+  /* frosted card material (the one surface, shared) */
+  .statcard,.stepcard,.featcard,.usetag,.winpanel{
+    background:var(--surface);border:1px solid var(--surface-line);box-shadow:var(--surface-sh);backdrop-filter:blur(6px)}
+
+  /* problem — frosted stat card with count-up grad-num */
+  .scene.a-stat{align-items:flex-start}
+  .statcard{align-self:flex-start;max-width:1240px;padding:60px 74px;border-radius:28px}
+  .statcard .s-eyebrow{margin-bottom:34px;color:var(--eye)}
+  .statcard .figure{font-family:var(--disp);font-weight:700;color:var(--plum);letter-spacing:-.045em;line-height:.86;
+    font-size:212px;font-variant-numeric:tabular-nums}
+  .statcard .figure .unit{font-size:.32em;color:var(--magenta-ink);letter-spacing:.005em;margin-left:.05em}
+  .statcard .cap{margin-top:34px;padding-top:30px;border-top:1px solid var(--surface-line);
+    font-family:var(--sans);font-weight:500;font-size:35px;line-height:1.32;color:var(--txt2);max-width:30ch}
+
+  /* solution — orchestrator step cards (mono number in magenta-ink + h3 + p) */
+  .scene.a-steps{align-items:stretch}
+  .steprow{display:flex;gap:20px;margin-top:8px}
+  .stepcard{flex:1 1 0;padding:34px 30px;border-radius:20px;display:flex;flex-direction:column;gap:10px}
+  .stepcard .n{font-family:var(--mono);font-size:19px;color:var(--magenta-ink);letter-spacing:.14em}
+  .stepcard h3{font-family:var(--disp);font-weight:700;font-size:37px;letter-spacing:-.025em;line-height:1.02;color:var(--txt);margin:6px 0 0}
+  .stepcard p{font-family:var(--sans);font-weight:500;font-size:21px;line-height:1.4;color:var(--txt2)}
+
+  /* safety — security manifest feat cards with mono labels */
+  .scene.a-feat{align-items:flex-start}
+  .featcard{align-self:flex-start;max-width:1240px;padding:56px 66px;border-radius:26px}
+  .featcard .tag{display:inline-flex;align-items:center;font-family:var(--mono);font-size:18px;letter-spacing:.3em;
+    text-transform:uppercase;color:var(--magenta-ink);border:1px solid var(--surface-line);border-radius:999px;padding:11px 22px}
+  .featcard h3{font-family:var(--disp);font-weight:700;font-size:78px;letter-spacing:-.028em;line-height:1.0;color:var(--txt);margin:34px 0 22px;max-width:18ch}
+  .featcard p{font-family:var(--sans);font-weight:500;font-size:34px;line-height:1.32;color:var(--txt2);max-width:32ch}
+
+  /* usecases — editorial grid of frosted tags */
+  .scene.a-grid{align-items:stretch}
+  .usegrid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:10px}
+  .usetag{padding:34px 34px;border-radius:18px;display:flex;align-items:center;gap:20px}
+  .usetag .n{font-family:var(--mono);font-size:17px;color:var(--magenta-ink);letter-spacing:.1em;flex:none}
+  .usetag .t{font-family:var(--disp);font-weight:700;font-size:38px;letter-spacing:-.025em;line-height:1.04;color:var(--txt)}
+
+  /* usecases — honest 1.8 ExaOPS ceiling + bars */
+  .scene.a-bars{align-items:stretch}
+  .honest{display:grid;grid-template-columns:1.04fr 1fr;gap:64px;align-items:center;width:100%}
+  .honest .big{font-family:var(--disp);font-weight:700;font-size:208px;letter-spacing:-.045em;line-height:.84;color:var(--plum);font-variant-numeric:tabular-nums}
+  .honest .big .unit{font-size:.24em;font-family:var(--mono);letter-spacing:.04em;color:var(--magenta-ink)}
+  .honest .cap{margin-top:28px;font-family:var(--sans);font-weight:500;font-size:32px;line-height:1.34;color:var(--txt2);max-width:36ch}
+  .bars{display:flex;flex-direction:column;gap:40px}
+  .bar__top{display:flex;justify-content:space-between;align-items:baseline;gap:18px;margin-bottom:14px;
+    font-family:var(--mono);font-size:20px;color:var(--txt2)}
+  .bar__fig{font-family:var(--disp);font-weight:700;font-size:30px;letter-spacing:-.01em;color:var(--plum)}
+  .bar__track{height:24px;border-radius:999px;background:rgba(43,34,51,.08);border:1px solid var(--surface-line);overflow:hidden}
+  .bar__fill{height:100%;width:100%;border-radius:999px;transform:scaleX(0);transform-origin:left center}
+  .bar__fill.ceil{background:linear-gradient(90deg,var(--lilac),var(--purple))}
+  .bar__fill.meas{background:linear-gradient(90deg,var(--magenta),var(--coral))}
+
+  /* rewards — win-win panel (colin .yield, dark plum on cream) */
+  .scene.a-win{align-items:center}
+  .winpanel{align-self:center;width:100%;max-width:1520px;background:var(--plum);color:var(--cream);
+    border:1px solid var(--plum);border-radius:34px;padding:74px 84px;
+    box-shadow:0 50px 110px -54px rgba(43,34,51,.85), inset 0 1px 0 rgba(255,255,255,.08)}
+  .winpanel .s-eyebrow{color:var(--pink)}
+  .winpanel .s-eyebrow::before{background:linear-gradient(90deg,var(--pink),transparent)}
+  .winpanel h2{font-family:var(--disp);font-weight:700;font-size:80px;letter-spacing:-.03em;line-height:1.0;color:var(--cream);margin:30px 0 0;max-width:19ch}
+  .winpanel .rewards-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:42px}
+  .winpanel .chip{font-family:var(--mono);font-size:22px;letter-spacing:.03em;color:var(--cream);
+    border:1px solid rgba(247,239,233,.26);border-radius:999px;padding:15px 28px}
+
+  /* ---- WebGL paper-crumple opener ---- */
+  #paperfx{position:absolute;inset:0;width:100%;height:100%;z-index:8;opacity:0;transition:opacity .55s var(--ease-out);pointer-events:none}
+  .scene.paper{align-items:center;text-align:center}
+  .scene.paper .s-head{font-family:var(--sans);font-weight:800;font-size:78px;max-width:17ch;line-height:1.08;letter-spacing:-.025em;
+    color:#171009;text-shadow:0 1px 0 rgba(255,255,255,.3),0 8px 26px rgba(0,0,0,.18)}
+  .scene.paper .s-head .w{display:inline-block;will-change:transform,opacity}
+  .s-head .wlogo{display:inline-block}
+  .s-head .wlogo img{height:1.02em;width:auto;vertical-align:-0.22em;filter:drop-shadow(0 2px 7px rgba(0,0,0,.14))}
+
+  /* ---- clip slot ---- */
+  .clipframe{position:absolute;inset:0;width:100%;height:100%;overflow:hidden;z-index:50;
+    background:#000;visibility:hidden}
+  .clipframe video{width:100%;height:100%;object-fit:cover;display:block}
+  .ph{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;text-align:center;padding:40px}
+  .ph .play{width:96px;height:96px;border-radius:50%;display:grid;place-items:center;
+    background:rgba(247,239,233,.1);border:1.5px solid rgba(247,239,233,.5)}
+  .ph .play::after{content:"";border-style:solid;border-width:18px 0 18px 30px;border-color:transparent transparent transparent #F7EFE9;margin-left:6px}
+  .ph .who{font-family:var(--disp);font-weight:700;font-size:46px;color:#F7EFE9;letter-spacing:-.02em}
+  .ph .hint{font-family:var(--mono);font-size:15px;letter-spacing:.12em;color:rgba(247,239,233,.55);text-transform:uppercase}
+  .clipcap{display:none}
+  .clipcap .nm{font-family:var(--disp);font-weight:700;font-size:32px;color:var(--txt);transition:color .9s}
+  .clipcap .stamp{font-family:var(--mono);font-size:16px;letter-spacing:.34em;text-transform:uppercase;color:var(--magenta-ink)}
+  /* ---- full-bleed intro video (pre-roll) that wooshes out to the left ---- */
+  #introvid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:55;background:#000;display:none;
+    transform:translateX(0);transition:transform .5s cubic-bezier(.62,0,.2,1), opacity .5s ease}
+  #introvid.woosh{transform:translateX(-104%);opacity:.12}
+
+  /* ---- HUD ---- */
+  #hud{position:absolute;left:0;right:0;bottom:0;z-index:95;padding:26px 44px 30px;
+    background:linear-gradient(0deg,rgba(11,7,16,.34),transparent);
+    transition:opacity .45s var(--ease-out);font-family:var(--sans)}
+  #hud.hide{opacity:0;pointer-events:none}
+  .hud-row{display:flex;align-items:center;gap:22px;margin-bottom:13px}
+  .hud-btn{width:40px;height:40px;border-radius:50%;border:1.5px solid rgba(247,239,233,.7);background:rgba(43,34,51,.28);
+    backdrop-filter:blur(6px);display:grid;place-items:center;cursor:pointer;flex:none;transition:transform .2s}
+  .hud-btn:hover{transform:scale(1.08)}
+  #pp{position:relative}
+  #pp.play::after{content:"";border-style:solid;border-width:8px 0 8px 13px;border-color:transparent transparent transparent #F7EFE9;margin-left:3px}
+  #pp.pause::before,#pp.pause::after{content:"";position:absolute;width:4px;height:15px;background:#F7EFE9;border-radius:1px}
+  #pp.pause::before{left:13px} #pp.pause::after{right:13px}
+  .chapter{font-family:var(--mono);font-size:14px;letter-spacing:.26em;text-transform:uppercase;color:rgba(247,239,233,.92);
+    text-shadow:0 1px 10px rgba(11,7,16,.5);flex:1}
+  .tnum{font-family:var(--mono);font-size:15px;color:rgba(247,239,233,.92);letter-spacing:.04em;font-variant-numeric:tabular-nums;
+    text-shadow:0 1px 10px rgba(11,7,16,.5);cursor:pointer;user-select:none}
+  /* ---- YouTube-style scrubber: hover-expand bar, chapter segments, red knob ---- */
+  #scrub{position:relative;height:5px;cursor:pointer;touch-action:none}
+  #scrubpad{position:absolute;left:0;right:0;bottom:0;height:18px}              /* invisible hover hit-area above the bar */
+  #chapters{position:absolute;left:0;right:0;bottom:0;height:5px;display:flex;gap:2px;z-index:2}
+  .chap{position:relative;flex:1 1 0;height:5px;display:flex;align-items:flex-end}
+  .chap-rail{position:relative;width:100%;height:5px;border-radius:2px;overflow:hidden;background:rgba(255,255,255,.2);
+    transform:scaleY(.6);transform-origin:bottom;transition:transform .1s cubic-bezier(.4,0,1,1)}
+  #scrub.hovering .chap-rail,#scrub.dragging .chap-rail{transform:scaleY(1);transition:transform .1s cubic-bezier(0,0,.2,1)}
+  #scrub.hovering .chap.hot .chap-rail{transform:scaleY(1.7)}
+  .chap-buf,.chap-hover,.chap-play{position:absolute;inset:0;transform-origin:left}
+  .chap-buf{background:rgba(255,255,255,.4)}
+  .chap-hover{background:rgba(255,255,255,.5);transform:scaleX(0);opacity:0;transition:opacity .12s}
+  #scrub.hovering .chap-hover{opacity:1}
+  .chap-play{background:#f00;transform:scaleX(0)}
+  #knob{position:absolute;bottom:-4px;left:0;width:13px;height:13px;border-radius:50%;background:#f00;z-index:3;pointer-events:none;
+    box-shadow:0 0 2px rgba(0,0,0,.5);transform:translateX(-50%) scale(0);transition:transform .1s cubic-bezier(0,0,.2,1)}
+  #scrub.hovering #knob{transform:translateX(-50%) scale(1)}
+  #scrub.dragging #knob{transform:translateX(-50%) scale(1.3)}
+  /* live hover preview popover (screen-space, follows cursor, clamped to the bar) */
+  #pvw-wrap{position:fixed;z-index:200;width:200px;opacity:0;pointer-events:none;transform:translateY(6px);
+    transition:opacity .12s var(--ease-out),transform .12s var(--ease-out)}
+  #pvw-wrap.on{opacity:1;transform:translateY(0)}
+  #pvw-frame{width:200px;height:112px;border-radius:6px;overflow:hidden;background:#161616;
+    border:1px solid rgba(255,255,255,.16);box-shadow:0 12px 34px -8px rgba(0,0,0,.7)}
+  #pvw{width:200px;height:112px;border:0;display:block;pointer-events:none}
+  #pvw-cap{margin-top:6px;text-align:center;font-family:var(--mono);font-size:12px;color:#fff;
+    text-shadow:0 1px 6px rgba(0,0,0,.85);font-variant-numeric:tabular-nums}
+  #pvw-ch{display:block;font-size:10.5px;color:rgba(255,255,255,.72);letter-spacing:.16em;text-transform:uppercase;margin-bottom:3px}
+  /* preview-iframe mode: render just the film frame, no chrome, cheaper paint */
+  body.preview-mode #hud,body.preview-mode #poster,body.preview-mode .hintkeys{display:none!important}
+  body.preview-mode .grain,body.preview-mode .noise,body.preview-mode .filmgrain,body.preview-mode .vignette{display:none!important}
+
+  /* ---- poster + end card ---- */
+  #poster{position:absolute;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:26px;
+    background:radial-gradient(120% 120% at 50% 40%,#2a2033,#140e1d);cursor:pointer}
+  #poster .brand{font-family:var(--disp);font-weight:700;font-size:96px;letter-spacing:-.03em;color:#F7EFE9}
+  #poster .brand{line-height:1}
+  #poster .brand b{background:linear-gradient(100deg,#B59FE3 0%,#D98FC0 48%,#F0A6C4 82%,#F4B7AE 100%);
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent}
+  #poster .lockup{display:flex;align-items:center;gap:12px}
+  #poster #brandlogo{height:116px;width:auto;display:block;transform:translateY(6px);
+    filter:drop-shadow(0 8px 26px rgba(214,130,170,.40))}
+  #poster .tag{font-family:var(--serif);font-style:italic;font-size:34px;color:#E9D9E6}
+  #poster .go{margin-top:14px;display:flex;align-items:center;gap:14px;font-family:var(--mono);font-size:15px;letter-spacing:.3em;
+    text-transform:uppercase;color:rgba(247,239,233,.7)}
+  #poster .tri{width:0;height:0;border-style:solid;border-width:11px 0 11px 19px;border-color:transparent transparent transparent #F7EFE9}
+  #poster.gone{opacity:0;pointer-events:none;transition:opacity .6s var(--ease-out)}
+  .hintkeys{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:12px;
+    letter-spacing:.18em;color:rgba(247,239,233,.5);z-index:101;transition:opacity .5s var(--ease-out)}
+  #poster.gone ~ .hintkeys{opacity:0;pointer-events:none}
+  @media (prefers-reduced-motion: reduce){ .orb,.wake,.filmgrain{animation:none!important} #stage{transition:none!important} }
+  /* ---- deck master frame (running header + chapter index) on content scenes ---- */
+  #deckframe{position:absolute;left:140px;right:140px;top:60px;bottom:58px;z-index:11;pointer-events:none;
+    font-family:var(--mono);opacity:0;transition:opacity .6s var(--ease-out);--dfc:rgba(43,34,51,.5);--dfl:rgba(43,34,51,.14)}
+  #deckframe.on{opacity:1}
+  #stage.bg-night #deckframe{--dfc:rgba(233,217,230,.55);--dfl:rgba(233,217,230,.18)}
+  .df-top{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;
+    font-size:13px;letter-spacing:.24em;text-transform:uppercase;color:var(--dfc);border-top:1px solid var(--dfl);padding-top:13px}
+  .df-mark b{color:var(--magenta-ink)}
+  .df-foot{position:absolute;bottom:0;left:0;right:0;border-bottom:1px solid var(--dfl)}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <div class="orbs"><span class="orb o1"></span><span class="orb o2"></span><span class="orb o3"></span><span class="orb o4"></span><span class="orb o5"></span></div>
+    <div class="wake"></div>
+    <div class="field"><div class="drift"></div></div>
+    <canvas id="paperfx"></canvas>
+
+    <div id="scenes"></div>
+    <div id="deckframe"><div class="df-top"><span class="df-mark">One<b>Compute</b> · NightShift</span><span id="df-chapter"></span></div><div class="df-foot"></div></div>
+
+    <!-- clip overlay (one reusable element) -->
+    <div class="clipframe" id="clipframe">
+      <video id="clipvideo" playsinline preload="auto"></video>
+      <div class="ph" id="clipph"><div class="play"></div><div class="who" id="clipwho">Clip</div><div class="hint" id="cliphint">set src in CLIPS to play footage</div></div>
+    </div>
+    <div class="clipcap" id="clipcap"><div class="stamp" id="capstamp">On the record</div><div class="nm" id="capname">—</div></div>
+    <video id="introvid" playsinline preload="auto"></video>
+
+    <!-- atmosphere -->
+    <div class="grain"></div><div class="noise"></div><div class="filmgrain"></div><div class="vignette"></div>
+
+    <!-- cinematic "alive" overlay layer (above scenes/paper, below HUD) -->
+    <div class="grade-warm"></div><div class="grade-teal"></div><div class="cine-vignette"></div>
+    <div class="leak"></div>
+    <svg class="cine-grain" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" viewBox="0 0 300 300">
+      <filter id="cineGrainF"><feTurbulence id="grainTurb" type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="1" stitchTiles="stitch"/></filter>
+      <rect width="100%" height="100%" filter="url(#cineGrainF)" opacity="0.6"/>
+    </svg>
+
+    <!-- HUD -->
+    <div id="hud">
+      <div class="hud-row">
+        <div class="hud-btn play" id="pp"></div>
+        <div class="chapter" id="chapter">Opening</div>
+        <div class="tnum" id="tnum">0:00 / 2:30</div>
+      </div>
+      <div id="scrub"><div id="scrubpad"></div><div id="chapters"></div><div id="knob"></div></div>
+    </div>
+
+    <!-- poster -->
+    <div id="poster">
+      <div class="lockup"><img id="brandlogo" src="logo.png" alt=""><div class="brand">One<b>Compute</b></div></div>
+      <div class="tag">Let your compute work when you are not.</div>
+    </div>
+  </div>
+</div>
+
+<script src="vendor/gsap/gsap.min.js"></script>
+<script src="kit/lib/three.r134.min.js"></script>
+<script src="kit/lib/howler.min.js"></script>
+<script>
+/* ======================================================================
+   CLIPS — paste a file path or URL to drop a real clip into a slot.
+   Empty string = elegant placeholder that holds for the scheduled seconds.
+   When a src is set, the timeline PAUSES, plays the clip full-frame, and
+   resumes automatically when the clip ends.
+   ====================================================================== */
+const CLIPS = {
+  "opener-ai":      "ai-montage.mp4",   // the "AI. AI. AI." montage — full-bleed, with sound
+  "sol-yield":      "",                 // e.g. "clips/instant-yield-demo.mp4"
+};
+
+/* ======================================================================
+   SCENES — the whole show. Edit copy/order/durations here (sum ~150s).
+   fields: id, chapter, dur, style, bg, eyebrow, head, sub, clip{who,dur}
+   ====================================================================== */
+const CHAPTERS = {opener:"Opening", problem:"The Problem", turn:"The Turn",
+  solution:"The Solution", safety:"Safety", usecases:"Real Work", rewards:"The Win-Win", close:"The Vision"};
+
+const SCENES = [
+  {id:"opener-hook",    chapter:"opener", dur:8, style:"paperCrumple",      bg:"black", head:"but if there's one bet Microsoft is making for the future…"},
+  {id:"opener-ai",      chapter:"opener", dur:7, style:"clip", bg:"black", clip:{who:"", role:""}},
+  {id:"opener-converge",chapter:"opener", dur:5, style:"riseIn", bg:"coral", head:"One bet. The whole company, all in."},
+
+  {id:"problem-turn",   chapter:"problem", dur:5, style:"riseIn",      bg:"calm", eyebrow:"The reflex", head:"So we build.", accent:"build", sub:"Concrete. Copper. Capital."},
+  {id:"problem-spend",  chapter:"problem", dur:5, style:"statCard", bg:"calm", eyebrow:"2026 AI infrastructure", head:"$725B", sub:"Four hyperscalers. One ~$1T buildout."},
+  {id:"problem-cost",   chapter:"problem", dur:5, style:"statCard", bg:"calm", eyebrow:"Per datacenter", head:"$475M", sub:"Up 167% in a single year."},
+  {id:"problem-power",  chapter:"problem", dur:5, style:"statCard", bg:"calm", eyebrow:"Always-on draw", head:"500 MW", sub:"One facility. The load of a small city."},
+  {id:"problem-water",  chapter:"problem", dur:4, style:"statCard", bg:"calm", eyebrow:"Every single day", head:"300,000 gal", sub:"About 2,600 households."},
+  {id:"problem-verdict",chapter:"problem", dur:4, style:"wordCascade", bg:"calm", head:"Expensive. Slow. Power-hungry.", sub:"There has to be another way.", accentSub:"another way"},
+
+  {id:"turn-pause",     chapter:"turn", dur:4, style:"riseIn",      bg:"white", head:"What if you never had to build it?", accent:"build it"},
+  {id:"turn-reveal",    chapter:"turn", dur:6, style:"riseIn",      bg:"coral", eyebrow:"The turn", head:"You already own a second supercomputer.", accent:"second supercomputer"},
+  {id:"turn-scatter",   chapter:"turn", dur:5, style:"montage",     bg:"coral", head:"Scattered across idle employee PCs.", sub:"Overnight. Between meetings. Mid-chat."},
+  {id:"turn-name",      chapter:"turn", dur:4, style:"brandReveal", bg:"coral", eyebrow:"Engine codename", head:"NightShift", sub:"OneCompute · the private, opt-in idle grid."},
+
+  {id:"sol-harvest",    chapter:"solution", dur:5, style:"riseIn",      bg:"coral", eyebrow:"How it works", head:"Harvest the spare headroom.", accent:"spare headroom", sub:"Continuously. Sized to each machine."},
+  {id:"sol-route",      chapter:"solution", dur:6, style:"stepCards",   bg:"calm",  eyebrow:"The orchestrator", head:"Submit. Match. Fan out. Verify. Pay.", sub:"Requeue anything that drops.",
+    steps:["A signed job enters the queue.","Paired to an idle worker by capability.","The batch spreads across the fleet.","Hidden challenges check every result.","Credits land for verified work."]},
+  {id:"sol-yield",      chapter:"solution", dur:7, style:"clip", bg:"coral", eyebrow:"The money shot", head:"Touch the mouse. Gone in 0.3s.", sub:"A real process-tree kill, not a pause.", clip:{who:"Live instant-yield demo", role:"mouse touch → yield → reroute"}},
+  {id:"sol-fleet",      chapter:"solution", dur:5, style:"riseIn",      bg:"calm",  eyebrow:"One grid", head:"AI and non-AI. Across the fleet.", accent:"the fleet", sub:"CPU and GPU, matched by capability."},
+  {id:"sol-dashboard",  chapter:"solution", dur:4, style:"riseIn",      bg:"coral", eyebrow:"Live", head:"Watch the fleet light up.", accent:"light up", sub:"PFLOP-hours, reclaimed."},
+
+  {id:"safety-headline",chapter:"safety", dur:4, style:"riseIn", bg:"white", eyebrow:"Trust", head:"Safe by construction.", accent:"construction", sub:"Privacy holds in both directions."},
+  {id:"safety-optin",   chapter:"safety", dur:4, style:"featCard", bg:"white", label:"Control", head:"Opt-in. Spare headroom only.", accent:"Spare headroom", sub:"It never competes with the person at the keyboard."},
+  {id:"safety-sandbox", chapter:"safety", dur:5, style:"featCard", bg:"white", label:"Isolation", head:"Sandboxed. No network. No files.", sub:"Inputs and outputs wiped when the job ends."},
+  {id:"safety-signed",  chapter:"safety", dur:5, style:"featCard", bg:"white", label:"Integrity", head:"Every job is Ed25519-signed.", sub:"Flip one byte and the worker refuses."},
+
+  {id:"usecases",       chapter:"usecases", dur:7, style:"useGrid",    bg:"calm", eyebrow:"Real work, today", head:"Batch inference · evals · agents · synthetic data · CI · rendering", sub:"The work that doesn't need a $475M building."},
+  {id:"usecases-honest",chapter:"usecases", dur:5, style:"honestBars", bg:"calm", eyebrow:"The honest number", head:"1.8 ExaOPS", sub:"A ceiling. Always reported beside what we measure."},
+
+  {id:"rewards",        chapter:"rewards", dur:6, style:"winPanel", bg:"coral", eyebrow:"Win-win by construction", head:"The people who lend their machines get paid.", accent:"get paid", sub:"Points. Gift cards. Subscriptions."},
+
+  {id:"close-line",     chapter:"close", dur:7, style:"riseIn",      bg:"night", head:"Let your compute work when you are not.", accent:"when you are not"},
+  {id:"close-logo",     chapter:"close", dur:5, style:"brandReveal", bg:"night", eyebrow:"OneCompute · NightShift", head:"Switch it on tonight."},
+];
+
+/* ======================================================================
+   DOM BUILD — render each scene from data.
+   ====================================================================== */
+const scenesRoot = document.getElementById("scenes");
+const WORD_STYLES = {wordCascade:1, newspaperMontage:1, montage:1, brandReveal:1, usecases:1, flowSteps:1, paperCrumple:1};
+
+function splitWords(text){
+  // split on spaces, keep separators readable; usecases keeps the " · " bullets as words
+  return text.split(/(\s+)/).map(t => t.trim()===""? null : t).filter(Boolean);
+}
+/* wrap a serif-italic focal word inside copy (mirrors colin's "dawn.") */
+function applyAccent(text,accent){
+  if(!text) return text||"";
+  if(!accent) return text;
+  const i=text.indexOf(accent);
+  if(i<0) return text;
+  return text.slice(0,i)+'<span class="accent">'+accent+'</span>'+text.slice(i+accent.length);
+}
+/* split a headline figure into its number and trailing unit ("$725B" -> {$725, B}) */
+function parseFigure(head){
+  const m=String(head).match(/^([^A-Za-z]*[\d.,]+)\s*(.*)$/);
+  if(m) return {num:m[1], unit:m[2]||""};
+  return {num:head, unit:""};
+}
+function buildHeadHTML(scene){
+  if(scene.style==="numberCount"){
+    // wrap unit (letters/symbols after the number) smaller
+    const m = scene.head.match(/^([^A-Za-z]*[\d.,]+)\s*(.*)$/);
+    if(m){ return '<span class="numval">'+m[1]+'</span>'+(m[2]?' <span class="unit">'+m[2]+'</span>':''); }
+    return scene.head;
+  }
+  if(WORD_STYLES[scene.style]){
+    return splitWords(scene.head).map(w=> w==="Microsoft" ? '<span class="w wlogo"><img src="ms-logo.png" alt="Microsoft"></span>' : '<span class="w">'+w+'</span>').join(' ');
+  }
+  return applyAccent(scene.head, scene.accent);
+}
+
+/* colin-component DOM for the redesigned deck archetypes (returns innerHTML for a .scene) */
+const ARCH_CLASS={statCard:"a-stat",stepCards:"a-steps",featCard:"a-feat",useGrid:"a-grid",honestBars:"a-bars",winPanel:"a-win"};
+function buildSceneDOM(scene){
+  const A=scene;
+  const eyebrow = A.eyebrow?'<div class="s-eyebrow">'+A.eyebrow+'</div>':"";
+  if(A.style==="statCard"){
+    const f=parseFigure(A.head);
+    return '<div class="statcard">'+eyebrow+
+      '<div class="figure"><span class="numval">'+f.num+'</span>'+(f.unit?'<span class="unit">'+f.unit+'</span>':'')+'</div>'+
+      (A.sub?'<div class="cap">'+A.sub+'</div>':'')+'</div>';
+  }
+  if(A.style==="stepCards"){
+    const verbs=A.head.split(".").map(s=>s.trim()).filter(Boolean);
+    const desc=A.steps||[];
+    const cells=verbs.map((v,i)=>'<div class="stepcard"><span class="n">'+("0"+(i+1))+'</span><h3>'+v+'</h3><p>'+(desc[i]||"")+'</p></div>').join("");
+    return eyebrow+'<div class="steprow">'+cells+'</div>'+(A.sub?'<div class="s-sub">'+applyAccent(A.sub,A.accentSub)+'</div>':"");
+  }
+  if(A.style==="featCard"){
+    return '<div class="featcard">'+(A.label?'<span class="tag">'+A.label+'</span>':'')+
+      '<h3>'+applyAccent(A.head,A.accent)+'</h3>'+(A.sub?'<p>'+applyAccent(A.sub,A.accentSub)+'</p>':'')+'</div>';
+  }
+  if(A.style==="useGrid"){
+    const items=A.head.split("·").map(s=>s.trim()).filter(Boolean);
+    const cells=items.map((v,i)=>'<div class="usetag"><span class="n">'+("0"+(i+1))+'</span><span class="t">'+v+'</span></div>').join("");
+    return eyebrow+'<div class="usegrid">'+cells+'</div>'+(A.sub?'<div class="s-sub">'+applyAccent(A.sub,A.accentSub)+'</div>':"");
+  }
+  if(A.style==="honestBars"){
+    const f=parseFigure(A.head);
+    const barsHTML=
+      '<div class="bar"><div class="bar__top"><span>Theoretical NPU ceiling, full fleet</span><span class="bar__fig">1.8 ExaOPS</span></div><div class="bar__track"><div class="bar__fill ceil" data-w="100"></div></div></div>'+
+      '<div class="bar"><div class="bar__top"><span>Measured today, live demo fleet</span><span class="bar__fig">honest &amp; real</span></div><div class="bar__track"><div class="bar__fill meas" data-w="34"></div></div></div>';
+    return '<div class="honest"><div class="hcol">'+eyebrow+
+      '<div class="big"><span class="numval">'+f.num+'</span>'+(f.unit?' <span class="unit">'+f.unit+'</span>':'')+'</div>'+
+      (A.sub?'<div class="cap">'+A.sub+'</div>':'')+'</div><div class="bars">'+barsHTML+'</div></div>';
+  }
+  if(A.style==="winPanel"){
+    const chips=(A.sub||"").split(".").map(s=>s.trim()).filter(Boolean);
+    const chipHTML=chips.map(c=>'<span class="chip">'+c+'</span>').join("");
+    return '<div class="winpanel">'+eyebrow+'<h2>'+applyAccent(A.head,A.accent)+'</h2>'+
+      (chips.length?'<div class="rewards-row">'+chipHTML+'</div>':"")+'</div>';
+  }
+  // default editorial layout (eyebrow + head + sub, with optional serif accents)
+  let h=eyebrow;
+  h+='<h2 class="s-head">'+buildHeadHTML(scene)+'</h2>';
+  if(A.sub) h+='<div class="s-sub">'+applyAccent(A.sub,A.accentSub)+'</div>';
+  return h;
+}
+
+SCENES.forEach(scene=>{
+  const el=document.createElement("div");
+  el.className="scene"+(scene.style==="numberCount"?" num":"")+
+    (scene.style==="brandReveal"?" brand":"")+(scene.style==="flowSteps"?" flow":"")+
+    (scene.style==="montage"?" montage":"")+(scene.style==="usecases"?" usecases":"")+
+    (scene.style==="paperCrumple"?" paper":"");
+  if(scene.chapter!=="opener") el.classList.add("deck");
+  if(ARCH_CLASS[scene.style]) el.classList.add(ARCH_CLASS[scene.style]);
+  el.dataset.scene=scene.id;
+  if(scene.style==="clip"){ el.classList.add("clipscene"); }
+  else{ el.innerHTML=buildSceneDOM(scene); }
+  scenesRoot.appendChild(el);
+});
+
+/* ======================================================================
+   ENGINE — assemble the GSAP master timeline (cumulative timing).
+   ====================================================================== */
+const $=s=>document.querySelector(s);
+const stage=$("#stage");
+const clipframe=$("#clipframe"), clipvideo=$("#clipvideo"), clipph=$("#clipph"),
+      clipwho=$("#clipwho"), cliphint=$("#cliphint"), clipcap=$("#clipcap"),
+      capname=$("#capname"), capstamp=$("#capstamp");
+const sceneEl=id=>document.querySelector('.scene[data-scene="'+id+'"]');
+
+gsap.config({nullTargetWarn:false});   // empty NodeLists (eyebrow-less / clip scenes) are expected; silence the noise
+gsap.set(".scene",{autoAlpha:0});
+
+function fmt(t){t=Math.max(0,t||0);const m=Math.floor(t/60),s=Math.floor(t%60);return m+":"+(s<10?"0"+s:s);}
+
+/* ---- scene builders: each returns a gsap timeline IN→HOLD→OUT within scene.dur ---- */
+function riseIn(scene){
+  const root=sceneEl(scene.id);
+  const items=root.querySelectorAll(".s-eyebrow,.s-head,.s-sub");
+  const n=items.length, inDur=.7, inStag=.12, outDur=.5;
+  const outAt=Math.max(inDur+inStag*n, scene.dur-outDur-.05);
+  const tl=gsap.timeline(); gsap.set(root,{autoAlpha:1});
+  tl.fromTo(items,{y:48,autoAlpha:0,filter:"blur(6px)"},
+    {y:0,autoAlpha:1,filter:"blur(0px)",duration:inDur,stagger:inStag,ease:"power3.out"},0)
+    .to(items,{y:-30,autoAlpha:0,duration:outDur,stagger:.05,ease:"power2.in"},outAt);
+  return tl;
+}
+function wordCascade(scene){
+  const root=sceneEl(scene.id);
+  const eye=root.querySelectorAll(".s-eyebrow");
+  const words=root.querySelectorAll(".s-head .w");
+  const sub=root.querySelectorAll(".s-sub");
+  const outAt=Math.max(1.2, scene.dur-.6);
+  const tl=gsap.timeline(); gsap.set(root,{autoAlpha:1});
+  tl.fromTo(eye,{y:24,autoAlpha:0},{y:0,autoAlpha:1,duration:.5,ease:"power2.out"},0)
+    .fromTo(words,{yPercent:120,autoAlpha:0},{yPercent:0,autoAlpha:1,duration:.62,stagger:.07,ease:"power4.out"},.12)
+    .fromTo(sub,{y:24,autoAlpha:0},{y:0,autoAlpha:1,duration:.6,ease:"power2.out"},"-=.25")
+    .to(root,{autoAlpha:0,duration:.5,ease:"power2.in"},outAt);
+  return tl;
+}
+function newspaperMontage(scene){
+  const root=sceneEl(scene.id);
+  const eye=root.querySelectorAll(".s-eyebrow");
+  const words=root.querySelectorAll(".s-head .w");
+  const outAt=Math.max(1.6, scene.dur-.6);
+  const tl=gsap.timeline(); gsap.set(root,{autoAlpha:1});
+  tl.fromTo(eye,{autoAlpha:0},{autoAlpha:1,duration:.4},0);
+  words.forEach((w,i)=>{
+    tl.fromTo(w,{scale:2.2,rotation:gsap.utils.random(-9,9),autoAlpha:0,filter:"blur(8px)"},
+      {scale:1,rotation:0,autoAlpha:1,filter:"blur(0px)",duration:.5,ease:"back.out(2.2)"}, .35+i*.55);
+  });
+  tl.to(root,{autoAlpha:0,duration:.45,ease:"power2.in"},outAt);
+  return tl;
+}
+function montage(scene){
+  const root=sceneEl(scene.id);
+  const items=root.querySelectorAll(".s-eyebrow,.s-head .w,.s-sub");
+  const outAt=Math.max(1.4, scene.dur-.55);
+  const tl=gsap.timeline(); gsap.set(root,{autoAlpha:1});
+  tl.fromTo(items,{y:30,autoAlpha:0,filter:"blur(5px)"},
+    {y:0,autoAlpha:1,filter:"blur(0px)",duration:.55,stagger:.09,ease:"power3.out"},0)
+    .to(root,{autoAlpha:0,duration:.5,ease:"power2.in"},outAt);
+  return tl;
+}
+function usecasesBuild(scene){ return montage(scene); }
+function flowSteps(scene){
+  const root=sceneEl(scene.id);
+  const eye=root.querySelectorAll(".s-eyebrow");
+  const words=root.querySelectorAll(".s-head .w");  // "Submit. Match. Fan out. Verify. Pay."
+  const sub=root.querySelectorAll(".s-sub");
+  const outAt=Math.max(1.8, scene.dur-.6);
+  const tl=gsap.timeline(); gsap.set(root,{autoAlpha:1});
+  tl.fromTo(eye,{y:20,autoAlpha:0},{y:0,autoAlpha:1,duration:.45,ease:"power2.out"},0)
+    .fromTo(words,{x:-30,autoAlpha:0},{x:0,autoAlpha:1,duration:.5,stagger:.22,ease:"power3.out"},.2)
+    .fromTo(sub,{y:20,autoAlpha:0},{y:0,autoAlpha:1,duration:.5,ease:"power2.out"},"-=.2")
+    .to(root,{autoAlpha:0,duration:.5,ease:"power2.in"},outAt);
+  return tl;
+}
+function brandReveal(scene){
+  const root=sceneEl(scene.id);
+  const eye=root.querySelectorAll(".s-eyebrow");
+  const words=root.querySelectorAll(".s-head .w");
+  const sub=root.querySelectorAll(".s-sub");
+  const outAt=Math.max(1.6, scene.dur-.6);
+  const tl=gsap.timeline(); gsap.set(root,{autoAlpha:1});
+  tl.fromTo(eye,{autoAlpha:0,y:18},{autoAlpha:1,y:0,duration:.5},0)
+    .fromTo(words,{autoAlpha:0,scale:.82,letterSpacing:"0.3em"},
+      {autoAlpha:1,scale:1,letterSpacing:"-0.03em",duration:.9,stagger:.1,ease:"power3.out"},.2)
+    .fromTo(sub,{autoAlpha:0,y:18},{autoAlpha:1,y:0,duration:.6,ease:"power2.out"},"-=.4")
+    .to(root,{autoAlpha:0,duration:.5,ease:"power2.in"},outAt);
+  return tl;
+}
+function numberCount(scene){
+  const root=sceneEl(scene.id);
+  const eye=root.querySelectorAll(".s-eyebrow");
+  const valEl=root.querySelector(".numval");
+  const unit=root.querySelectorAll(".unit");
+  const sub=root.querySelectorAll(".s-sub");
+  const outAt=Math.max(2.0, scene.dur-.55);
+  const tl=gsap.timeline(); gsap.set(root,{autoAlpha:1});
+  tl.fromTo(eye,{y:22,autoAlpha:0},{y:0,autoAlpha:1,duration:.5,ease:"power2.out"},0);
+  if(valEl){
+    const raw=valEl.textContent;
+    const pre=(raw.match(/^[^\d]*/)||[""])[0];
+    const numStr=(raw.match(/[\d,.]+/)||["0"])[0];
+    const hasComma=numStr.indexOf(",")>=0;
+    const dec=(numStr.split(".")[1]||"").length;
+    const target=parseFloat(numStr.replace(/,/g,""));
+    const o={v:0};
+    gsap.set(valEl,{autoAlpha:0});
+    valEl.textContent=pre+(dec?(0).toFixed(dec):"0");   // seed zero so the final figure never flashes pre-count
+    tl.fromTo(valEl,{autoAlpha:0},{autoAlpha:1,duration:.4},.15)
+      .fromTo(valEl,{scale:.7,filter:"blur(8px)"},{scale:1,filter:"blur(0px)",duration:.7,ease:"power3.out"},.15)
+      .to(o,{v:target,duration:1.25,ease:"power2.out",onUpdate:()=>{
+        let s=dec?o.v.toFixed(dec):Math.round(o.v).toString();
+        if(hasComma) s=Number(s).toLocaleString("en-US");
+        valEl.textContent=pre+s;
+      }},.2);
+  }
+  tl.fromTo(unit,{autoAlpha:0,x:-10},{autoAlpha:1,x:0,duration:.5},.7)
+    .fromTo(sub,{y:22,autoAlpha:0},{y:0,autoAlpha:1,duration:.55,ease:"power2.out"},.7)
+    .to(root,{autoAlpha:0,duration:.5,ease:"power2.in"},outAt);
+  return tl;
+}
+/* shared count-up: read a figure's text, seed zero, tick up to target on the scene timeline (scrub-safe) */
+function countUp(tl, valEl, atTime, dur){
+  if(!valEl) return;
+  const raw=valEl.textContent;
+  const pre=(raw.match(/^[^\d]*/)||[""])[0];
+  const numStr=(raw.match(/[\d,.]+/)||["0"])[0];
+  const post=raw.slice(pre.length+numStr.length);
+  const hasComma=numStr.indexOf(",")>=0;
+  const dec=(numStr.split(".")[1]||"").length;
+  const target=parseFloat(numStr.replace(/,/g,""));
+  const o={v:0};
+  valEl.textContent=pre+(dec?(0).toFixed(dec):"0")+post;   // seed zero so the final figure never flashes pre-count
+  tl.to(o,{v:target,duration:dur||1.25,ease:"power2.out",onUpdate:()=>{
+    let s=dec?o.v.toFixed(dec):Math.round(o.v).toString();
+    if(hasComma) s=Number(s).toLocaleString("en-US");
+    valEl.textContent=pre+s+post;
+  }}, atTime);
+}
+/* problem — frosted stat card: card lifts in, figure counts up, caption rises */
+function statCard(scene){
+  const root=sceneEl(scene.id);
+  const card=root.querySelector(".statcard");
+  const eye=root.querySelectorAll(".s-eyebrow");
+  const fig=root.querySelectorAll(".figure");
+  const val=root.querySelector(".numval");
+  const unit=root.querySelectorAll(".unit");
+  const cap=root.querySelectorAll(".cap");
+  const outAt=Math.max(2.2, scene.dur-.55);
+  const tl=gsap.timeline(); gsap.set(root,{autoAlpha:1});
+  tl.fromTo(card,{y:44,autoAlpha:0,filter:"blur(8px)"},{y:0,autoAlpha:1,filter:"blur(0px)",duration:.7,ease:"power3.out"},0)
+    .fromTo(eye,{y:18,autoAlpha:0},{y:0,autoAlpha:1,duration:.5,ease:"power2.out"},.15)
+    .fromTo(fig,{scale:.8,autoAlpha:0,filter:"blur(8px)"},{scale:1,autoAlpha:1,filter:"blur(0px)",duration:.7,ease:"power3.out"},.25);
+  countUp(tl,val,.3,1.2);
+  tl.fromTo(unit,{autoAlpha:0,x:-8},{autoAlpha:1,x:0,duration:.5},.7)
+    .fromTo(cap,{y:22,autoAlpha:0},{y:0,autoAlpha:1,duration:.55,ease:"power2.out"},.7)
+    .to(root,{autoAlpha:0,duration:.5,ease:"power2.in"},outAt);
+  return tl;
+}
+/* solution — orchestrator step cards stagger in */
+function stepCards(scene){
+  const root=sceneEl(scene.id);
+  const eye=root.querySelectorAll(".s-eyebrow");
+  const cards=root.querySelectorAll(".stepcard");
+  const sub=root.querySelectorAll(".s-sub");
+  const outAt=Math.max(2.2, scene.dur-.55);
+  const tl=gsap.timeline(); gsap.set(root,{autoAlpha:1});
+  tl.fromTo(eye,{y:18,autoAlpha:0},{y:0,autoAlpha:1,duration:.5,ease:"power2.out"},0)
+    .fromTo(cards,{y:42,autoAlpha:0,filter:"blur(6px)"},{y:0,autoAlpha:1,filter:"blur(0px)",duration:.55,stagger:.12,ease:"power3.out"},.2)
+    .fromTo(sub,{y:18,autoAlpha:0},{y:0,autoAlpha:1,duration:.5,ease:"power2.out"},"-=.15")
+    .to(root,{autoAlpha:0,duration:.5,ease:"power2.in"},outAt);
+  return tl;
+}
+/* safety — single feat card (security manifest beat) lifts in */
+function featCard(scene){
+  const root=sceneEl(scene.id);
+  const card=root.querySelectorAll(".featcard");
+  const tag=root.querySelectorAll(".tag");
+  const h=root.querySelectorAll(".featcard h3");
+  const p=root.querySelectorAll(".featcard p");
+  const outAt=Math.max(1.8, scene.dur-.5);
+  const tl=gsap.timeline(); gsap.set(root,{autoAlpha:1});
+  tl.fromTo(card,{y:46,autoAlpha:0,filter:"blur(8px)"},{y:0,autoAlpha:1,filter:"blur(0px)",duration:.7,ease:"power3.out"},0)
+    .fromTo(tag,{autoAlpha:0,y:-8},{autoAlpha:1,y:0,duration:.45},.15)
+    .fromTo(h,{y:22,autoAlpha:0},{y:0,autoAlpha:1,duration:.55,ease:"power2.out"},.25)
+    .fromTo(p,{y:18,autoAlpha:0},{y:0,autoAlpha:1,duration:.5,ease:"power2.out"},.4)
+    .to(root,{autoAlpha:0,duration:.5,ease:"power2.in"},outAt);
+  return tl;
+}
+/* usecases — editorial grid of frosted tags */
+function useGrid(scene){
+  const root=sceneEl(scene.id);
+  const eye=root.querySelectorAll(".s-eyebrow");
+  const tags=root.querySelectorAll(".usetag");
+  const sub=root.querySelectorAll(".s-sub");
+  const outAt=Math.max(2.4, scene.dur-.55);
+  const tl=gsap.timeline(); gsap.set(root,{autoAlpha:1});
+  tl.fromTo(eye,{y:18,autoAlpha:0},{y:0,autoAlpha:1,duration:.5},0)
+    .fromTo(tags,{y:34,autoAlpha:0,scale:.96},{y:0,autoAlpha:1,scale:1,duration:.5,stagger:.08,ease:"power3.out"},.2)
+    .fromTo(sub,{y:18,autoAlpha:0},{y:0,autoAlpha:1,duration:.5},"-=.1")
+    .to(root,{autoAlpha:0,duration:.5,ease:"power2.in"},outAt);
+  return tl;
+}
+/* usecases — honest 1.8 ExaOPS count-up + ceiling/measured bars fill */
+function honestBars(scene){
+  const root=sceneEl(scene.id);
+  const eye=root.querySelectorAll(".s-eyebrow");
+  const big=root.querySelectorAll(".big");
+  const val=root.querySelector(".numval");
+  const cap=root.querySelectorAll(".cap");
+  const bars=root.querySelectorAll(".bar");
+  const fills=root.querySelectorAll(".bar__fill");
+  const outAt=Math.max(2.6, scene.dur-.55);
+  const tl=gsap.timeline(); gsap.set(root,{autoAlpha:1});
+  tl.fromTo(eye,{y:18,autoAlpha:0},{y:0,autoAlpha:1,duration:.5},0)
+    .fromTo(big,{scale:.82,autoAlpha:0,filter:"blur(8px)"},{scale:1,autoAlpha:1,filter:"blur(0px)",duration:.7,ease:"power3.out"},.15);
+  countUp(tl,val,.25,1.2);
+  tl.fromTo(cap,{y:20,autoAlpha:0},{y:0,autoAlpha:1,duration:.5},.5)
+    .fromTo(bars,{y:24,autoAlpha:0},{y:0,autoAlpha:1,duration:.5,stagger:.12},.45);
+  fills.forEach(f=>{ const w=(+f.dataset.w||100)/100; tl.fromTo(f,{scaleX:0},{scaleX:w,duration:1.1,ease:"power2.out"},.7); });
+  tl.to(root,{autoAlpha:0,duration:.5,ease:"power2.in"},outAt);
+  return tl;
+}
+/* rewards — dark win-win panel lifts in, chips pop */
+function winPanel(scene){
+  const root=sceneEl(scene.id);
+  const panel=root.querySelectorAll(".winpanel");
+  const eye=root.querySelectorAll(".winpanel .s-eyebrow");
+  const h=root.querySelectorAll(".winpanel h2");
+  const chips=root.querySelectorAll(".chip");
+  const outAt=Math.max(2.0, scene.dur-.55);
+  const tl=gsap.timeline(); gsap.set(root,{autoAlpha:1});
+  tl.fromTo(panel,{y:48,autoAlpha:0,filter:"blur(8px)"},{y:0,autoAlpha:1,filter:"blur(0px)",duration:.75,ease:"power3.out"},0)
+    .fromTo(eye,{autoAlpha:0,y:-8},{autoAlpha:1,y:0,duration:.45},.2)
+    .fromTo(h,{y:24,autoAlpha:0},{y:0,autoAlpha:1,duration:.6,ease:"power2.out"},.3)
+    .fromTo(chips,{y:16,autoAlpha:0,scale:.95},{y:0,autoAlpha:1,scale:1,duration:.45,stagger:.1},.55)
+    .to(root,{autoAlpha:0,duration:.5,ease:"power2.in"},outAt);
+  return tl;
+}
+function clipBuild(scene){
+  // shared clip overlay; show frame + caption, optionally pause for a real clip
+  const tl=gsap.timeline();
+  const hasSrc=!!(CLIPS[scene.id]&&CLIPS[scene.id].trim());
+  const inAt=0, outAt=Math.max(1.0, scene.dur-.5);
+  tl.add(()=>{ // configure overlay for this scene
+    clipwho.textContent=scene.clip.who;
+    cliphint.textContent=hasSrc?"":"placeholder · set CLIPS['"+scene.id+"']";
+    capname.textContent=scene.clip.who+(scene.clip.role?"  ·  "+scene.clip.role:"");
+    capstamp.textContent=scene.eyebrow||"On the record";
+    clipvideo.style.display=hasSrc?"block":"none";
+    clipph.style.display=hasSrc?"none":"flex";
+    if(hasSrc&&clipvideo.getAttribute("src")!==CLIPS[scene.id]){ clipvideo.src=CLIPS[scene.id]; }
+  },null,inAt);
+  tl.fromTo([clipframe,clipcap],{autoAlpha:0,scale:1.06},
+    {autoAlpha:1,scale:1,duration:.45,ease:"power3.out"},inAt);
+  // NOTE: the real-clip pause is added on the MASTER timeline in build() (a pause on this
+  // nested child would only stop the child, not the show). hasSrc still drives the overlay above.
+  tl.to([clipframe,clipcap],{autoAlpha:0,scale:1.05,duration:.6,ease:"power2.in"},outAt);
+  return tl;
+}
+/* ======================================================================
+   PAPER CRUMPLE (WebGL) — cinematic "un-crumple outward → text" opener.
+   Custom ShaderMaterial: vertex crumple via simplex (MIT) + curl (BSD) noise,
+   analytic normals so creases catch a raking light. Graceful no-op if WebGL
+   is unavailable (the headline still pops). Driven off the GSAP master timeline.
+   ====================================================================== */
+const PAPER_VS=`
+uniform float uProgress; uniform float uTime; uniform float uFreq; uniform float uAmp; uniform float uEdge;
+varying vec2  vUv;
+varying vec3  vN;
+varying vec3  vPos;
+varying float vCrease;
+varying float vFold;
+varying float vCav;
+varying float vHeight;
+
+const float CAV_GAIN = 8.0;
+vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
+vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}
+vec4 permute(vec4 x){return mod289(((x*34.0)+10.0)*x);}
+vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}
+float snoise(vec3 v){
+  const vec2 C=vec2(1.0/6.0,1.0/3.0); const vec4 D=vec4(0.0,0.5,1.0,2.0);
+  vec3 i=floor(v+dot(v,C.yyy)); vec3 x0=v-i+dot(i,C.xxx);
+  vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.0-g; vec3 i1=min(g.xyz,l.zxy); vec3 i2=max(g.xyz,l.zxy);
+  vec3 x1=x0-i1+C.xxx; vec3 x2=x0-i2+C.yyy; vec3 x3=x0-D.yyy; i=mod289(i);
+  vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));
+  float n_=0.142857142857; vec3 ns=n_*D.wyz-D.xzx;
+  vec4 j=p-49.0*floor(p*ns.z*ns.z); vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.0*x_);
+  vec4 x=x_*ns.x+ns.yyyy; vec4 y=y_*ns.x+ns.yyyy; vec4 h=1.0-abs(x)-abs(y);
+  vec4 b0=vec4(x.xy,y.xy); vec4 b1=vec4(x.zw,y.zw);
+  vec4 s0=floor(b0)*2.0+1.0; vec4 s1=floor(b1)*2.0+1.0; vec4 sh=-step(h,vec4(0.0));
+  vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy; vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
+  vec3 p0=vec3(a0.xy,h.x); vec3 p1=vec3(a0.zw,h.y); vec3 p2=vec3(a1.xy,h.z); vec3 p3=vec3(a1.zw,h.w);
+  vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+  p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w;
+  vec4 m=max(0.5-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0); m=m*m;
+  return 105.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+}
+vec3 snoiseVec3(vec3 x){return vec3(snoise(x),snoise(vec3(x.y-19.1,x.z+33.4,x.x+47.2)),snoise(vec3(x.z+74.2,x.x-124.5,x.y+99.4)));}
+vec3 curlNoise(vec3 p){ const float e=0.1; vec3 dx=vec3(e,0.0,0.0),dy=vec3(0.0,e,0.0),dz=vec3(0.0,0.0,e);
+  vec3 px0=snoiseVec3(p-dx),px1=snoiseVec3(p+dx); vec3 py0=snoiseVec3(p-dy),py1=snoiseVec3(p+dy); vec3 pz0=snoiseVec3(p-dz),pz1=snoiseVec3(p+dz);
+  float x=py1.z-py0.z-pz1.y+pz0.y; float y=pz1.x-pz0.x-px1.z+px0.z; float z=px1.y-px0.y-py1.x+py0.x;
+  return normalize(vec3(x,y,z)*(1.0/(2.0*e))); }
+vec3 crumple(vec3 p){ vec3 q=p*uFreq; float ridge=0.0,a=0.55;
+  for(int i=0;i<4;i++){ ridge+=a*(1.0-abs(snoise(q))); q*=2.0; a*=0.5; }
+  vec3 curl=curlNoise(p*uFreq*0.5+uTime*0.04);
+  return vec3(curl.xy*0.45, ridge*1.3)*uAmp; }
+void main(){
+  vUv = uv;
+  vec3 base = position;
+  float prog = uProgress;
+  float e  = 0.012;
+  vec3  ex = vec3(e,0.0,0.0);
+  vec3  ey = vec3(0.0,e,0.0);
+
+  vec3 raw = crumple(base);
+  vFold = clamp(length(raw.xy)*1.3 + abs(raw.z)*0.6, 0.0, 1.0);
+
+  vec3 d0  = raw * prog;
+  vec3 dxp = crumple(base+ex)*prog;
+  vec3 dxm = crumple(base-ex)*prog;
+  vec3 dyp = crumple(base+ey)*prog;
+  vec3 dym = crumple(base-ey)*prog;
+
+  vec3 P   = base       + d0;
+  vec3 Pxp = base+ex    + dxp;
+  vec3 Pxm = base-ex    + dxm;
+  vec3 Pyp = base+ey    + dyp;
+  vec3 Pym = base-ey    + dym;
+
+  // faint edge/corner flutter, masked to border, driven by uTime, gated by uEdge
+  float em = pow(1.0 - smoothstep(0.0, 0.22, min(min(vUv.x,1.0-vUv.x), min(vUv.y,1.0-vUv.y))), 2.0);
+  P.z += em * uEdge * (0.10*sin(vUv.y*7.0 + uTime*1.9) + 0.06*sin(vUv.x*5.0 - uTime*1.3));
+
+  vec3 Tx = Pxp - Pxm;
+  vec3 Ty = Pyp - Pym;
+  vec3 nrm = normalize(cross(Tx, Ty));
+  if(nrm.z < 0.0) nrm = -nrm;
+
+  vec3 lap = (Pxp + Pxm + Pyp + Pym) - 4.0*P;
+  float curv = dot(lap, nrm);
+  vCav = clamp(curv * CAV_GAIN, 0.0, 1.0);
+
+  vCrease = clamp(length(d0.xy)*1.4, 0.0, 1.0);
+  vHeight = d0.z;
+
+  vN   = normalize(mat3(modelMatrix) * nrm);
+  vPos = (modelMatrix * vec4(P,1.0)).xyz;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(P,1.0);
+}
+`;
+const PAPER_FS=`
+precision highp float;
+uniform float uTime;
+uniform vec3  uPaper;
+uniform vec3  uShadow;
+uniform vec3  uLightDir;
+uniform vec3  uKeyColor;
+uniform vec3  uFillColor;
+uniform vec3  uRimColor;
+uniform vec3  uSheenColor;
+uniform vec3  uBack;
+varying vec2  vUv;
+varying vec3  vN;
+varying vec3  vPos;
+varying float vCrease;
+varying float vFold;
+varying float vCav;
+varying float vHeight;
+
+float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
+float vnoise(vec2 p){
+  vec2 i=floor(p), f=fract(p);
+  float a=hash21(i), b=hash21(i+vec2(1.0,0.0)),
+        c=hash21(i+vec2(0.0,1.0)), d=hash21(i+vec2(1.0,1.0));
+  vec2 u=f*f*(3.0-2.0*f);
+  return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
+}
+float fbm(vec2 p){ float s=0.0,a=0.5; for(int i=0;i<3;i++){ s+=a*vnoise(p); p*=2.02; a*=0.5; } return s; }
+float paperGrain(vec2 uv){
+  float warp  = fbm(uv*vec2(820.0,150.0));
+  float weft  = fbm(uv*vec2(150.0,820.0));
+  float micro = fbm(uv*1500.0);
+  return warp*0.55 + weft*0.35 + micro*0.22;
+}
+float D_Charlie(float r, float ndh){
+  float a   = max(r*r, 1e-3);
+  float inv = 1.0/a;
+  float c2  = ndh*ndh;
+  float s2  = max(1.0-c2, 0.0078125);
+  return (2.0+inv)*pow(s2, inv*0.5)/(2.0*3.14159265);
+}
+float V_Neubelt(float ndv, float ndl){
+  return clamp(1.0/(4.0*(ndl+ndv-ndl*ndv)+1e-4), 0.0, 1.0);
+}
+float gridMask(vec2 uv, float n, float w){
+  vec2 fr = fract(uv*n);
+  vec2 d  = min(fr, 1.0-fr);
+  return 1.0 - smoothstep(0.0, w, min(d.x, d.y));
+}
+void main(){
+  vec3 N = normalize(vN);
+  vec3 V = vec3(0.0,0.0,1.0);
+  float ge = 0.0016;
+  float h  = paperGrain(vUv);
+  float hx = paperGrain(vUv+vec2(ge,0.0));
+  float hy = paperGrain(vUv+vec2(0.0,ge));
+  vec3 bump = normalize(vec3((h-hx)/ge, (h-hy)/ge, 1.0));
+  float fiberAmt = 0.06;
+  N = normalize(N + vec3(bump.xy*fiberAmt, 0.0));
+  float warpStreak = fbm(vUv*vec2(820.0,150.0));
+  vec3 baseL  = normalize(uLightDir);
+  vec3 keyDir = normalize(baseL + vec3(sin(uTime*0.09)*0.35, cos(uTime*0.07)*0.22, 0.0));
+  vec3 H = normalize(keyDir + V);
+  float ndl = clamp(dot(N, keyDir), 0.0, 1.0);
+  float ndv = clamp(dot(N, V), 0.0, 1.0);
+  float ndh = clamp(dot(N, H), 0.0, 1.0);
+  float key  = pow(clamp(dot(N,keyDir)*0.5+0.5, 0.0, 1.0), 1.5);
+  float fill = clamp(0.5 - 0.5*N.y, 0.0, 1.0);
+  float cav    = vCav;
+  float creaseAmt = vCrease;
+  float memory = vFold;
+  float ao = clamp(1.0 - cav*0.55 - creaseAmt*0.32 - memory*0.12, 0.25, 1.0);
+  float contact = smoothstep(0.45, 1.0, cav) * 0.25;
+  float sheen = D_Charlie(0.6, ndh) * V_Neubelt(ndv, ndl) * ndl;
+  sheen *= (0.75 + 0.5*warpStreak);
+  float fres = pow(1.0 - ndv, 3.0);
+  float back  = clamp(dot(-keyDir, V)*0.5+0.5, 0.0, 1.0);
+  float trans = pow(back, 2.0) * clamp(vHeight*0.6+0.15, 0.0, 1.0);
+  float grad = clamp(vUv.x*0.7 + vUv.y*0.3, 0.0, 1.0);
+  vec3 albedo = mix(uPaper*vec3(1.03,0.99,0.93), uPaper*vec3(0.95,0.98,1.04), grad);
+  vec3 ambient = uFillColor * (0.34 + 0.26*fill);
+  vec3 diffuse = uKeyColor  * key * 0.85;
+  vec3 col = albedo * (ambient + diffuse);
+  col *= ao;
+  col -= contact * uShadow * 0.6;
+  col = mix(col, uShadow, (cav*0.40 + creaseAmt*0.25 + memory*0.06)*0.5);
+  col += uSheenColor * sheen * 0.5;
+  col += uRimColor   * fres  * 0.06;
+  col += uBack       * trans * 0.10;
+  col += (h-0.5)*0.025;
+  vec3 ink = vec3(0.20,0.34,0.52);
+  float gMinor = gridMask(vUv, 34.0, 0.020);
+  float gMajor = gridMask(vUv,  6.8, 0.014);
+  col = mix(col, ink, gMinor*0.11*ao);
+  col = mix(col, ink, gMajor*0.20*ao);
+  float vig = smoothstep(1.15, 0.35, length(vUv-0.5));
+  col *= mix(0.84, 1.0, vig);
+  col  = col / (col + 0.155) * 1.155;
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+let paperRenderer,paperScene,paperCam,paperMesh,paperMat,paperReady=false,crumpleActive=false;
+let paperIdle={k:0};
+const paperfx=()=>document.getElementById("paperfx");
+function initPaper(){
+  try{
+    if(typeof THREE==="undefined") return;
+    const canvas=paperfx(); if(!canvas) return;
+    paperRenderer=new THREE.WebGLRenderer({canvas,antialias:false,alpha:true,powerPreference:"high-performance"});
+    paperRenderer.setPixelRatio(1); paperRenderer.setSize(1280,720,false);
+    if(THREE.sRGBEncoding) paperRenderer.outputEncoding=THREE.sRGBEncoding;
+    paperScene=new THREE.Scene();
+    paperCam=new THREE.OrthographicCamera(-8,8,4.5,-4.5,0.1,100); paperCam.position.set(0,0,10);
+    const geo=new THREE.PlaneGeometry(16,9,100,100);
+    paperMat=new THREE.ShaderMaterial({ vertexShader:PAPER_VS, fragmentShader:PAPER_FS, side:THREE.DoubleSide, transparent:true,
+      uniforms:{ uProgress:{value:1.15}, uTime:{value:0}, uFreq:{value:1.0}, uAmp:{value:0.72}, uEdge:{value:0},
+        uPaper:{value:new THREE.Color(0.95,0.91,0.83)}, uShadow:{value:new THREE.Color(0.34,0.23,0.13)},
+        uLightDir:{value:new THREE.Vector3(-0.55,0.5,0.75)},
+        uKeyColor:   { value: new THREE.Color(1.00, 0.93, 0.80) },
+        uFillColor:  { value: new THREE.Color(0.42, 0.50, 0.66) },
+        uRimColor:   { value: new THREE.Color(1.00, 0.90, 0.74) },
+        uSheenColor: { value: new THREE.Color(1.00, 0.96, 0.88) },
+        uBack:       { value: new THREE.Color(0.96, 0.66, 0.42) } } });
+    paperMesh=new THREE.Mesh(geo,paperMat); paperMesh.scale.set(0.2,0.2,0.2); paperScene.add(paperMesh);
+    // NOTE: rendering is driven by onTick (per master frame while playing + once per seek) so it never
+    // spins continuously behind the poster or shimmers inside the hover-preview iframe.
+    paperReady=true;
+  }catch(e){ paperReady=false; }
+}
+function paperCrumple(scene){
+  const root=sceneEl(scene.id);
+  const words=root.querySelectorAll(".s-head .w");
+  const sub=root.querySelectorAll(".s-sub");
+  const tl=gsap.timeline(); gsap.set(root,{autoAlpha:1});
+  const paperRelax = p => 1 - Math.pow(1 - p, 4) * (1 - 0.16*Math.sin(p*Math.PI));
+  if(paperReady){
+    const U=paperMat.uniforms;
+    paperIdle.k=0;
+    tl.set(paperMesh.scale,{x:0.2,y:0.2,z:0.2},0);
+    tl.set(U.uProgress,{value:1.15},0);
+    tl.set(U.uEdge,{value:0},0);
+    tl.to(paperMesh.scale,{x:0.165,y:0.165,z:0.165,duration:0.15,ease:"power2.in"},0);
+    tl.to(U.uProgress,{value:1.23,duration:0.15,ease:"power2.in"},0);
+    tl.to(U.uProgress,{value:0.045,duration:1.85,ease:paperRelax},0.15);
+    tl.to(paperMesh.scale,{x:1.0,y:1.0,z:1.0,duration:1.35,ease:"expo.out"},0.2);
+    tl.to(paperMesh.scale,{x:1.012,y:1.012,z:1.012,duration:0.4,ease:"sine.inOut",yoyo:true,repeat:1},1.5);
+    tl.to(U.uProgress,{value:0.085,duration:0.6,ease:"power1.inOut"},2.0);
+    tl.to(paperIdle,{k:1,duration:0.9,ease:"power1.out"},2.5);
+    tl.to(U.uEdge,{value:1,duration:0.9,ease:"power1.out"},2.5);
+    tl.to(U.uProgress,{value:0.115,duration:1.3,ease:"sine.inOut",yoyo:true,repeat:1},2.7);
+  }
+  // rack-focus: soft -> sharp as the sheet flattens (scrub-safe, part of the scene timeline)
+  const pfx=paperfx();
+  if(pfx){ tl.fromTo(pfx,{filter:"blur(6px)"},{filter:"blur(0px)",duration:1.6,ease:"power2.out"},0.20); }
+  // one-shot warm light-leak sweep as the paper opens
+  const leak=document.querySelector(".leak");
+  if(leak){
+    tl.set(leak,{autoAlpha:0,xPercent:-130},1.1);
+    tl.to(leak,{xPercent:130,duration:1.0,ease:"sine.inOut"},1.1);
+    tl.to(leak,{autoAlpha:0.5,duration:0.4,ease:"sine.out"},1.1);
+    tl.to(leak,{autoAlpha:0,duration:0.55,ease:"sine.in"},1.6);
+  }
+  const popAt=Math.max(1.2, Math.min(2.0, scene.dur-4.6));
+  tl.fromTo(words,{yPercent:70,autoAlpha:0,filter:"blur(16px)",rotationX:18},
+    {yPercent:0,autoAlpha:1,filter:"blur(0px)",rotationX:0,duration:0.8,stagger:0.07,ease:"back.out(1.7)"},popAt);
+  if(sub.length) tl.fromTo(sub,{y:26,autoAlpha:0},{y:0,autoAlpha:1,duration:.55,ease:"power3.out"},popAt+0.42);
+  tl.to(root,{autoAlpha:0,duration:.5,ease:"power2.in"},scene.dur-0.5);
+  return tl;
+}
+const BUILDERS={riseIn,wordCascade,newspaperMontage,montage,flowSteps,brandReveal,numberCount,usecases:usecasesBuild,clip:clipBuild,paperCrumple,
+  statCard,stepCards,featCard,useGrid,honestBars,winPanel};
+
+let master, cues=[], grainTurb=null;
+function build(){
+  master=gsap.timeline({paused:true,onUpdate:onTick,onComplete:onEnd});
+  let at=0; cues=[];
+  SCENES.forEach(scene=>{
+    const label="sc-"+scene.id;
+    const root=sceneEl(scene.id);
+    master.addLabel(label,at);
+    master.set(root,{autoAlpha:1,immediateRender:false},at);            // show ON the timeline at scene start
+    const fn=BUILDERS[scene.style]||riseIn;
+    master.add(fn(scene),label);
+    if(scene.style==="clip" && CLIPS[scene.id] && CLIPS[scene.id].trim()){
+      master.addPause(at+0.7, ()=>playClip(scene));   // real clip: pause the SHOW, play full-frame, resume on end
+    }
+    if(scene.style==="paperCrumple"){ master.call(playPaperSound,null,at+0.15); master.call(playNarration,null,at+2.7); master.call(playClipMusic,null,at+5.5); }   // paper sound + VO + the AI music swelling in mid-crumple (scrub-safe)
+    master.set(root,{autoAlpha:0,immediateRender:false},at+scene.dur);  // hide at scene end (no leak)
+    cues.push({id:scene.id,start:at,dur:scene.dur,chapter:scene.chapter,bg:scene.bg,style:scene.style,label});
+    at+=scene.dur;
+  });
+  master.totalDur=at;
+}
+
+/* ---- real clip playback: pause → play full-frame → resume on end/timeout ---- */
+let seeking=false, clipActive=false, clipMusic=null, clipMusicArmed=true, clipMusicId=null;
+function initClipMusic(){ if(PREVIEW||typeof Howl==="undefined")return; try{ clipMusic=new Howl({src:["music/ai-bed.mp3"],volume:0,html5:false,preload:true,pool:1}); }catch(e){} }
+function rearmClipMusic(){ clipMusicArmed=true; }
+function playClipMusic(){
+  if(PREVIEW || seeking || !clipMusicArmed || !clipMusic) return;   // once per opener entry, scrub-safe; starts mid-paper, carries into the AI clip
+  clipMusicArmed=false; audioUnlock();
+  try{ clipMusic.stop(); clipMusicId=clipMusic.play(); clipMusic.fade(0,0.5,900,clipMusicId); }catch(e){}
+}
+function stopClipMusic(){ try{ if(clipMusic){ clipMusic.fade(clipMusic.volume(),0,400); setTimeout(()=>{try{clipMusic.stop();}catch(_){}} ,420);} }catch(_){} }
+function playClip(scene){
+  if(seeking)return;                 // don't fire when scrubbing/seeking across the pause point
+  const v=clipvideo; clipActive=true;
+  let done=false;
+  const resume=()=>{ if(done)return; done=true; clipActive=false; try{clipvideo.pause();}catch(_){} try{ if(clipMusic){ clipMusic.fade(clipMusic.volume(),0,400); setTimeout(()=>{try{clipMusic.stop();}catch(_){}} ,420); } }catch(_){} cleanup(); const cue=cues.find(c=>c.id===scene.id); if(cue) master.totalTime(cue.start+Math.max(1.0,scene.dur-0.5)); master.play(); };
+  const cleanup=()=>{ v.removeEventListener("ended",resume); v.removeEventListener("error",resume); clearTimeout(safety); };
+  v.addEventListener("ended",resume); v.addEventListener("error",resume);
+  const safety=setTimeout(resume, 60000); // never hang the show
+  try{ if(scene.id==="opener-ai") playClipMusic(); }catch(e){}   // fallback: if the mid-paper cue was skipped (e.g. scrubbed straight to the clip), start it now; no-op if already swelling
+  try{ v.muted=false; v.volume=0.92; v.currentTime=0; const p=v.play(); if(p&&p.catch)p.catch(()=>{ v.muted=true; const q=v.play(); if(q&&q.catch)q.catch(resume); }); }catch(e){ resume(); }
+}
+
+/* ======================================================================
+   BACKGROUND + CHAPTER per scene (works on play, seek, scrub)
+   ====================================================================== */
+const BGCLASS={white:"bg-white",calm:"bg-calm",coral:"bg-coral",night:"bg-night",black:"bg-black"};
+const CH_ORDER=["problem","turn","solution","safety","usecases","rewards","close"];
+let curScene=-1;
+function applyScene(i){
+  if(i===curScene)return; curScene=i;
+  const c=cues[i]; if(!c)return;
+  stage.classList.remove("bg-white","bg-calm","bg-coral","bg-night","bg-black");
+  stage.classList.add(BGCLASS[c.bg]||"bg-calm");
+  $("#chapter").textContent=CHAPTERS[c.chapter]||"";
+  const di=CH_ORDER.indexOf(c.chapter), df=$("#deckframe");
+  if(df){ df.classList.remove("on"); }
+  const cr=(c.style==="paperCrumple"&&paperReady); crumpleActive=cr;
+  const cv=paperfx(); if(cv) cv.style.opacity=cr?"1":"0";
+  if(!cr){ rearmPaperSound(); stopPaperSound(); rearmNarration(); stopNarration(); }
+  if(c.id!=="opener-hook" && c.id!=="opener-ai"){ stopClipMusic(); rearmClipMusic(); }   // the AI bed spans the paper+clip opener; stop & rearm once we leave it (covers scrub-out + replay)
+}
+function sceneIndexAt(t){ let idx=0; for(let i=0;i<cues.length;i++) if(t>=cues[i].start-1e-3) idx=i; return idx; }
+
+/* ======================================================================
+   HUD + TRANSPORT
+   ====================================================================== */
+const tnum=$("#tnum"), pp=$("#pp"), hud=$("#hud");
+const scrub=$("#scrub"), chaptersEl=$("#chapters"), knob=$("#knob");
+const PREVIEW=new URLSearchParams(location.search).has("preview");
+let CHAPS=[], showRemaining=false;
+const clamp01=v=>v<0?0:v>1?1:v;
+function clamp(v,a,b){ return v<a?a:v>b?b:v; }
+
+/* chapters: YouTube-style segments, widths proportional to chapter duration, ~2px gaps */
+function buildChapters(){
+  const total=master.totalDuration(); CHAPS=[]; chaptersEl.innerHTML="";
+  let i=0;
+  while(i<cues.length){
+    const key=cues[i].chapter, start=cues[i].start; let j=i;
+    while(j<cues.length && cues[j].chapter===key) j++;
+    const end=(j<cues.length)?cues[j].start:total;
+    CHAPS.push({key,label:CHAPTERS[key]||key,start,end,dur:Math.max(.001,end-start)});
+    i=j;
+  }
+  CHAPS.forEach((c,idx)=>{
+    const seg=document.createElement("div"); seg.className="chap"; seg.style.flexGrow=c.dur; seg.dataset.idx=idx;
+    seg.innerHTML='<div class="chap-rail"><div class="chap-buf"></div><div class="chap-hover"></div><div class="chap-play"></div></div>';
+    chaptersEl.appendChild(seg);
+    c.el=seg; c.play=seg.querySelector(".chap-play"); c.hov=seg.querySelector(".chap-hover");
+  });
+}
+function chapAt(t){ for(let k=0;k<CHAPS.length;k++){ if(t<CHAPS[k].end-1e-6) return CHAPS[k]; } return CHAPS[CHAPS.length-1]; }
+
+/* time readout: repeat-aware totals; click toggles remaining (-M:SS) */
+function paintTime(){
+  const total=master.totalDuration(), el=master.totalTime();
+  if(showRemaining){ const ts=master.timeScale()||1; tnum.textContent="-"+fmt((total-el)/ts)+" / "+fmt(total); }
+  else tnum.textContent=fmt(el)+" / "+fmt(total);
+}
+function onTick(){
+  const el=master.totalTime();
+  for(const c of CHAPS){ if(c.play) c.play.style.transform="scaleX("+clamp01((el-c.start)/c.dur)+")"; }
+  const c=chapAt(el); if(c&&c.el) knob.style.left=(c.el.offsetLeft + clamp01((el-c.start)/c.dur)*c.el.offsetWidth)+"px";
+  paintTime();
+  pp.className="hud-btn "+(master.paused()?"play":"pause");
+  applyScene(sceneIndexAt(el));
+  if(crumpleActive && paperReady && paperRenderer){
+    const u=(paperMat.uniforms.uTime.value+=0.016);
+    const k=paperIdle.k;
+    paperMesh.rotation.y = k*(0.045*Math.sin(u*0.29+0.7) + 0.020*Math.sin(u*0.83));
+    paperMesh.rotation.x = k*(0.030*Math.sin(u*0.37)     + 0.016*Math.sin(u*0.91+1.3));
+    paperMesh.rotation.z = k*(0.012*Math.sin(u*0.23+2.1));
+    paperMesh.position.x = k*(0.05*Math.sin(u*0.19+0.5));
+    paperMesh.position.y = k*(0.04*Math.sin(u*0.26+1.7));
+    paperRenderer.render(paperScene,paperCam);
+  }
+  const gt=grainTurb||(grainTurb=document.getElementById("grainTurb"));
+  if(gt){ gt.setAttribute("seed", (Math.floor(master.totalTime()*24)%64)); }
+}
+function onEnd(){ pp.className="hud-btn play"; showHUD(); }
+
+/* seek helpers (repeat-aware totalTime; brief seeking-guard so clip pauses don't fire) */
+function seekTo(t){ seeking=true; master.totalTime(clamp(t,0,master.totalDuration())); seeking=false; if(master.paused()) onTick(); }
+function seekBy(sec){ const wasPlaying=!master.paused(); seekTo(master.totalTime()+sec); if(wasPlaying&&master.paused())master.play(); }
+function jumpPct(p){ const wasPlaying=!master.paused(); seekTo(p*master.totalDuration()); if(wasPlaying&&master.paused())master.play(); }
+function seekScene(dir){ const wasPlaying=!master.paused();
+  const i=clamp(sceneIndexAt(master.totalTime())+dir,0,cues.length-1);
+  seeking=true;
+  master.tweenTo(cues[i].label,{duration:.4,ease:"power2.inOut",onComplete:()=>{ seeking=false; if(wasPlaying)master.play(); }}); }
+
+/* live hover preview: a same-origin iframe of THIS page, seeked to the hovered time (always reflects current animations) */
+let pvwWrap,pvw,pvwChEl,pvwTEl,pvwReady=false,rafPending=false,lastHoverT=0;
+function makePreview(){
+  pvwWrap=document.createElement("div"); pvwWrap.id="pvw-wrap";
+  pvwWrap.innerHTML='<div id="pvw-frame"><iframe id="pvw" src="video.html?preview" tabindex="-1" scrolling="no"></iframe></div><div id="pvw-cap"><span id="pvw-ch"></span><span id="pvw-t"></span></div>';
+  document.body.appendChild(pvwWrap);
+  pvw=pvwWrap.querySelector("#pvw"); pvwChEl=pvwWrap.querySelector("#pvw-ch"); pvwTEl=pvwWrap.querySelector("#pvw-t");
+  pvw.addEventListener("load",()=>{ pvwReady=true; seekPreview(lastHoverT); });
+}
+function seekPreview(t){
+  if(!pvwReady)return;
+  try{ const w=pvw.contentWindow, m=w.__show&&w.__show(); if(m){ m.pause(); m.totalTime(clamp(t,0,m.totalDuration())); } }catch(e){}
+}
+function fracFromX(x){ const r=chaptersEl.getBoundingClientRect(); return clamp01((x-r.left)/Math.max(1,r.width)); }
+function moveHover(x){
+  if(!pvwWrap)return;
+  const total=master.totalDuration(), t=fracFromX(x)*total; lastHoverT=t;
+  for(const c of CHAPS){ if(c.hov) c.hov.style.transform="scaleX("+clamp01((t-c.start)/c.dur)+")"; if(c.el) c.el.classList.remove("hot"); }
+  const hc=chapAt(t); if(hc&&hc.el) hc.el.classList.add("hot");
+  const r=chaptersEl.getBoundingClientRect(), w=200;
+  pvwWrap.style.left=clamp(x-w/2,r.left,r.right-w)+"px";
+  pvwWrap.style.bottom=(innerHeight-r.top+16)+"px";
+  if(pvwChEl) pvwChEl.textContent=hc?hc.label:"";
+  if(pvwTEl) pvwTEl.textContent="  "+fmt(t);
+  if(!rafPending){ rafPending=true; requestAnimationFrame(()=>{ rafPending=false; seekPreview(lastHoverT); }); }
+}
+
+/* drag-to-scrub */
+let dragging=false, dragWasPlaying=false;
+function beginDrag(x){ dragging=true; dragWasPlaying=!master.paused(); scrub.classList.add("dragging"); master.pause(); seekTo(fracFromX(x)*master.totalDuration()); }
+function endDrag(){ if(!dragging)return; dragging=false; scrub.classList.remove("dragging"); if(dragWasPlaying) master.play(); showHUD(); }
+
+function togglePlay(){
+  if(!posterGone()){ start(); return; }
+  if(introPlaying) return;   // intro pre-roll owns the screen; never start the master under it (no early narration/paper-skip)
+  if(clipActive){ clipvideo.paused?clipvideo.play():clipvideo.pause(); return; }
+  if(master.totalProgress()>=1) master.restart(); else master.paused()?master.play():master.pause();
+}
+
+/* HUD auto-hide + manual hide */
+let hideT, hudHidden=false;
+function showHUD(){ if(hudHidden||introPlaying)return; hud.classList.remove("hide"); clearTimeout(hideT);
+  hideT=setTimeout(()=>{ if(master&&!master.paused()&&!dragging) hud.classList.add("hide"); },2600); }
+function toggleHUD(){ hudHidden=!hudHidden; hud.classList.toggle("hide",hudHidden); }
+window.addEventListener("mousemove",showHUD);
+
+/* poster / start */
+const poster=$("#poster");
+const posterGone=()=>poster.classList.contains("gone");
+/* intro pre-roll: full-bleed intro.mp4 plays first (with its own audio), then wooshes out to the left into the film */
+let introBegun=false, introPlaying=false;
+function startFilm(){ if(introBegun)return; introBegun=true; introPlaying=false; applyScene(0); const cv=paperfx(); if(cv) cv.style.opacity="1"; master.play(); showHUD(); playPaperSound(); }
+function playIntro(){
+  const v=document.getElementById("introvid");
+  if(!v){ startFilm(); return; }
+  if(hud) hud.classList.add("hide"); introPlaying=true; { const pf=paperfx(); if(pf) pf.style.opacity="0"; }   // keep the paper hidden (pure black) until the intro is fully gone
+  v.style.display="block"; v.classList.remove("woosh"); v.muted=false; try{v.currentTime=0;}catch(e){} v.src="intro.mp4";
+  let done=false;
+  const go=()=>{ if(done)return; done=true;
+    try{gsap.to(v,{volume:0,duration:0.32,ease:"power1.in"});}catch(e){}
+    v.classList.add("woosh");                                  // push the intro out to the left + fade; black is revealed behind it
+    setTimeout(()=>{ v.style.display="none"; try{v.pause();}catch(e){} v.removeAttribute("src"); v.classList.remove("woosh"); }, 540);   // video fully gone -> pure black screen
+    setTimeout(()=>{ startFilm(); }, 720);                    // a short black beat, THEN the paper appears and crumples in on the black
+  };
+  const onTU=()=>{ if(v.duration && v.currentTime>=v.duration-0.82){ v.removeEventListener("timeupdate",onTU); go(); } };
+  v.addEventListener("timeupdate",onTU);
+  v.addEventListener("ended",go,{once:true}); v.addEventListener("error",go,{once:true});
+  const p=v.play(); if(p&&p.catch)p.catch(()=>{ v.muted=true; const q=v.play(); if(q&&q.catch)q.catch(go); });
+}
+/* ---- paper-crumple SFX (Howler/Web Audio): public-domain crumple + page-turn, scrub-safe ---- */
+let paperSfx=null, paperOpen=null, paperArmed=true, paperId=null, paperOpenT=0;
+function initPaperAudio(){
+  if(PREVIEW) return;                          // the hover-preview iframe stays silent
+  if(typeof Howl==="undefined") return;        // graceful degrade
+  try{
+    paperSfx  = new Howl({ src:["kit/sfx/paper-crumple.mp3"],  volume:0, preload:true, html5:false, pool:1 });
+    paperOpen = new Howl({ src:["kit/sfx/paper-pageturn.mp3"], volume:0, preload:true, html5:false, pool:1 });
+  }catch(e){}
+}
+function audioUnlock(){ try{ if(typeof Howler!=="undefined" && Howler.ctx && Howler.ctx.state!=="running") Howler.ctx.resume(); }catch(e){} }
+function rearmPaperSound(){ paperArmed=true; }
+function playPaperSound(){
+  if(PREVIEW || seeking || !paperArmed || !paperSfx) return;   // play once per entry, never on scrub/preview
+  paperArmed=false; audioUnlock();
+  try{ paperSfx.stop(); paperId=paperSfx.play(); paperSfx.rate(0.96,paperId); paperSfx.fade(0,0.85,120,paperId); }catch(e){}
+  clearTimeout(paperOpenT);
+  paperOpenT=setTimeout(()=>{ if(seeking||master.paused())return; try{ const o=paperOpen.play(); paperOpen.fade(0,0.6,60,o); }catch(e){} }, 1850);
+}
+function stopPaperSound(){
+  clearTimeout(paperOpenT);
+  try{ if(paperSfx) paperSfx.fade(paperSfx.volume(),0,180); if(paperOpen) paperOpen.fade(paperOpen.volume(),0,120); }catch(e){}
+  setTimeout(()=>{ try{ paperSfx&&paperSfx.stop(); paperOpen&&paperOpen.stop(); }catch(e){} }, 220);
+}
+/* British-narrator VO (Howler): armed + scrub-safe, like the paper SFX */
+let narrSfx=null, narrArmed=true, narrId=null;
+function initNarrAudio(){
+  if(PREVIEW) return;
+  if(typeof Howl==="undefined") return;
+  try{ narrSfx = new Howl({ src:["narration.mp3"], volume:0, preload:true, html5:false, pool:1 }); }catch(e){}
+}
+function rearmNarration(){ narrArmed=true; }
+function playNarration(){
+  if(PREVIEW || seeking || !narrArmed || !narrSfx) return;
+  narrArmed=false; audioUnlock();
+  try{ narrSfx.stop(); narrId=narrSfx.play(); narrSfx.fade(0,1.0,160,narrId); }catch(e){}
+  try{ if(paperSfx) paperSfx.fade(paperSfx.volume(),0.18,250); if(paperOpen) paperOpen.fade(paperOpen.volume(),0.18,250); }catch(e){}
+}
+function stopNarration(){
+  try{ if(narrSfx) narrSfx.fade(narrSfx.volume(),0,180); }catch(e){}
+  setTimeout(()=>{ try{ narrSfx&&narrSfx.stop(); }catch(e){} }, 220);
+}
+function start(){ if(posterGone())return; poster.classList.add("gone"); setTimeout(()=>{poster.style.display="none";},650); audioUnlock(); rearmPaperSound(); playIntro(); }
+
+/* wiring */
+if(typeof gsap!=="undefined") gsap.ticker.lagSmoothing(0); initPaper(); initPaperAudio(); initNarrAudio(); initClipMusic(); build(); gsap.set(".scene",{autoAlpha:0}); buildChapters(); applyScene(0); onTick();
+const wrapEl=$("#wrap");
+
+if(PREVIEW){
+  // this page is the hover-thumbnail source for its parent: just a frame, no chrome, no autoplay, no nested preview
+  document.body.classList.add("preview-mode");
+  poster.classList.add("gone"); poster.style.display="none"; if(hud) hud.style.display="none";
+  master.totalTime(0).pause();
+}else{
+  poster.addEventListener("click",start);
+  stage.addEventListener("click",e=>{ if(e.target.closest("#hud"))return; togglePlay(); });
+  pp.addEventListener("click",e=>{e.stopPropagation();togglePlay();});
+  tnum.addEventListener("click",e=>{ e.stopPropagation(); showRemaining=!showRemaining; paintTime(); });
+  scrub.addEventListener("pointerenter",()=>{ if(posterGone()){ if(!pvwWrap) makePreview(); scrub.classList.add("hovering"); pvwWrap.classList.add("on"); } });
+  scrub.addEventListener("pointerleave",()=>{ if(dragging)return; scrub.classList.remove("hovering"); pvwWrap.classList.remove("on");
+    for(const c of CHAPS){ if(c.hov)c.hov.style.transform="scaleX(0)"; if(c.el)c.el.classList.remove("hot"); } });
+  scrub.addEventListener("pointermove",e=>{ if(!posterGone())return; moveHover(e.clientX); if(dragging) seekTo(lastHoverT); });
+  scrub.addEventListener("pointerdown",e=>{ if(!posterGone()||introPlaying)return; e.preventDefault(); try{scrub.setPointerCapture(e.pointerId);}catch(_){} beginDrag(e.clientX); });
+  scrub.addEventListener("pointerup",()=>{ endDrag(); });
+  window.addEventListener("pointerup",endDrag);
+  window.addEventListener("keydown",e=>{
+    if(introPlaying){ if(e.code==="Space"||e.code==="KeyK")e.preventDefault(); return; }   // intro pre-roll: ignore transport keys
+    if(/^Digit[0-9]$/.test(e.code)){ e.preventDefault(); if(posterGone())jumpPct(parseInt(e.code.slice(5),10)/10); return; }
+    switch(e.code){
+      case "Space": case "KeyK": if(e.repeat)break; e.preventDefault(); togglePlay(); break;
+      case "ArrowRight": e.preventDefault(); if(posterGone())seekBy(5); break;
+      case "ArrowLeft": e.preventDefault(); if(posterGone())seekBy(-5); break;
+      case "KeyL": e.preventDefault(); if(posterGone())seekBy(10); break;
+      case "KeyJ": e.preventDefault(); if(posterGone())seekBy(-10); break;
+      case "Period": e.preventDefault(); if(posterGone())seekScene(1); break;
+      case "Comma": e.preventDefault(); if(posterGone())seekScene(-1); break;
+      case "Home": e.preventDefault(); if(posterGone())seekTo(0); break;
+      case "End": e.preventDefault(); if(posterGone())seekTo(master.totalDuration()); break;
+      case "KeyR": e.preventDefault(); if(posterGone()){ rearmPaperSound(); rearmNarration(); rearmClipMusic(); stopClipMusic(); master.restart(); showHUD(); } break;
+      case "KeyF": e.preventDefault(); document.fullscreenElement?document.exitFullscreen():(wrapEl.requestFullscreen?wrapEl.requestFullscreen().catch(()=>{}):0); break;
+      case "KeyH": e.preventDefault(); toggleHUD(); break;
+    }
+  });
+  document.addEventListener("fullscreenchange",fit);   // re-fit the 16:9 stage on enter/exit fullscreen
+}
+
+/* ======================================================================
+   16:9 STAGE — scale to fit, centered, letterboxed
+   ====================================================================== */
+function fit(){ const s=Math.min(innerWidth/1920, innerHeight/1080); stage.style.transform="translate(-50%,-50%) scale("+s+")"; }
+window.addEventListener("resize",fit); fit();
+
+window.__show=()=>master; // console handle
+window.__paper=()=>({ready:paperReady,active:crumpleActive});
+window.__audio=()=>({howl:typeof Howl!=="undefined", sfx:!!paperSfx, armed:paperArmed, narr:!!narrSfx, narrArmed:narrArmed, ctx:(typeof Howler!=="undefined"&&Howler.ctx)?Howler.ctx.state:"none"});
+
+/* deep-link for review/recording:  ?t=SECONDS jumps to a frame (paused);  ?play auto-plays */
+(function(){ const q=new URLSearchParams(location.search);
+  if(q.has("t")){ const t=parseFloat(q.get("t"))||0; poster.classList.add("gone"); poster.style.display="none"; seeking=true; master.time(t).pause(); seeking=false; onTick(); showHUD(); }
+  else if(q.has("play")){ start(); }
+})();
+</script>
+</body>
+</html>
