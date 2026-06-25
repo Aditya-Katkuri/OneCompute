@@ -146,11 +146,11 @@
   /* LAUNCHER — the click target */
   .launcher { margin-top: 46px; }
   .launcher .l-cap { font-size: 22px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--text-soft); margin-bottom: 20px; }
-  .l-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; }
-  .l-btn { position: relative; border: 1px solid var(--border-strong); border-radius: 20px; padding: 26px 24px; background: var(--surface);
+  .l-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .l-btn { position: relative; border: 1px solid var(--border-strong); border-radius: 18px; padding: 18px 20px; background: var(--surface);
            text-align: left; overflow: hidden; }
   .l-btn .l-kind { font-size: 15px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--text-soft); }
-  .l-btn .l-name { font-size: 27px; font-weight: 800; color: var(--text); margin-top: 6px; letter-spacing: -.01em; }
+  .l-btn .l-name { font-size: 22px; font-weight: 800; color: var(--text); margin-top: 5px; letter-spacing: -.01em; }
   .l-btn.primary { border-color: transparent; color: #fff; background: var(--accent); box-shadow: 0 18px 40px -16px rgba(178,61,128,.6); }
   .l-btn.primary .l-kind { color: rgba(255,255,255,.8); }
   .l-btn.primary .l-name { color: #fff; }
@@ -280,8 +280,13 @@
           <div class="l-row">
             <button class="l-btn"><span class="l-kind">Non-AI</span><div class="l-name">Fractal render</div></button>
             <button class="l-btn"><span class="l-kind">Non-AI</span><div class="l-name">Param sweep</div></button>
+            <button class="l-btn"><span class="l-kind">Non-AI</span><div class="l-name">Monte-Carlo risk</div></button>
+            <button class="l-btn"><span class="l-kind">Non-AI</span><div class="l-name">Hash crack</div></button>
             <button class="l-btn primary" id="runBtn"><span class="l-kind">AI</span><div class="l-name">Run AI job</div><span class="ripple" id="ripple"></span></button>
+            <button class="l-btn"><span class="l-kind">AI</span><div class="l-name">Local LLM</div></button>
             <button class="l-btn"><span class="l-kind">AI</span><div class="l-name">Synth data</div></button>
+            <button class="l-btn"><span class="l-kind">AI</span><div class="l-name">Model eval</div></button>
+            <button class="l-btn"><span class="l-kind">AI</span><div class="l-name">Knowledge graph</div></button>
           </div>
         </div>
       </div>
@@ -421,7 +426,7 @@ caption(tl, 4.1, "Connected", "Thousands of idle machines, ready.", 2.6);
 // ACT 3 — zoom to the launcher; the giant cursor glides in and clicks "Run AI job"
 tl.to("#world", { ...SHOT.launch, duration: 1.8 }, 6.2);
 tl.set("#cursor", { opacity: 1, x: 1560, y: 180 }, 6.4);
-tl.to("#cursor", { x: 1104, y: 336, duration: 1.5, ease: "power2.inOut" }, 6.6);
+tl.to("#cursor", { x: 944, y: 443, duration: 1.5, ease: "power2.inOut" }, 6.6);
 caption(tl, 6.7, "One click", "Launch a job across the fleet.", 2.0);
 // the click
 tl.to("#cursor", { scale: 0.86, duration: 0.12, ease: "power2.in" }, 8.25)

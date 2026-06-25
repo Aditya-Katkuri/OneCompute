@@ -742,6 +742,16 @@
     .opt-bar-fill { display: block; height: 100%; background: var(--accent-2); border-radius: 999px; }
     .res-backend { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-soft); border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; }
     .res-running { color: var(--text-soft); font-size: 12.5px; padding: 8px 2px; }
+    /* Generic workload-summary readout (montecarlo / hashcrack / eval / graph) */
+    .sum-stats { display: flex; flex-wrap: wrap; gap: 9px; }
+    .sum-stat { flex: 1 1 120px; min-width: 110px; background: var(--surface-soft); border: 1px solid var(--border); border-radius: 11px; padding: 9px 11px; }
+    .sum-stat .sk { display: block; font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--text-soft); }
+    .sum-stat b { font-size: 19px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+    .sum-stat b.neg { color: var(--danger); }
+    .mc-hist { display: flex; align-items: flex-end; gap: 1px; height: 56px; margin-top: 11px; padding: 0 1px; }
+    .mc-hist .mc-bar { flex: 1; min-height: 1px; border-radius: 1px 1px 0 0; background: var(--brand-grad); opacity: .9; }
+    .hc-hash { margin-top: 11px; font-size: 12px; color: var(--text-muted); }
+    .hc-hash code { display: block; margin-top: 4px; font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px; color: var(--idle); word-break: break-all; }
 
     /* Purposeful motion: result panels enter on launch; launcher cards stagger in;
        a one-shot ring confirms completion. (Global reduced-motion block neutralizes these.) */
@@ -1572,6 +1582,11 @@
       optimize: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/></svg>',
       "ai.batch_infer": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="13" rx="2"/><path d="M9 9h6M9 12.5h4M8 21l4-4 4 4"/></svg>',
       "ai.synth": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9.5h16M9.5 9.5V20M4 14.5h16"/></svg>',
+      montecarlo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18M5 20c0-9 4.5-13 7-13s7 4 7 13"/></svg>',
+      hashcrack: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
+      "ai.infer": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M9.5 3v4M14.5 3v4M9.5 17v4M14.5 17v4M3 9.5h4M3 14.5h4M17 9.5h4M17 14.5h4"/></svg>',
+      "ai.eval": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="6"/><path d="M9 14l-1.5 7L12 18l4.5 3L15 14"/></svg>',
+      "ai.graph": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="7" r="2.4"/><circle cx="12" cy="17" r="2.4"/><path d="M8 7l3 8M16 9l-3 6"/></svg>',
     };
     const WL_FALLBACK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v6c0 4-3 6.5-8 8-5-1.5-8-4-8-8V7z"/></svg>';
 
@@ -1586,7 +1601,7 @@
     }
     function renderCatalog(cat) {
       if (!cat.length) { E.launchGrid.innerHTML = '<div class="empty">No launchable workloads.</div>'; return; }
-      const order = ["fractal", "optimize", "ai.batch_infer", "ai.synth"];
+      const order = ["fractal", "optimize", "montecarlo", "hashcrack", "ai.batch_infer", "ai.infer", "ai.synth", "ai.eval", "ai.graph"];
       const rank = (k) => { const i = order.indexOf(k); return i === -1 ? 999 : i; };
       cat.sort((a, b) => rank(a.kind) - rank(b.kind));
       E.launchGrid.replaceChildren(...cat.map(buildLaunchCard));
@@ -1765,10 +1780,55 @@
         `<table class="res-table"><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${rows.slice(0, 12).map((rw) => `<tr>${cols.map((c) => `<td>${esc(String(rw[c]))}</td>`).join("")}</tr>`).join("")}</tbody></table>` +
         `<div style="margin-top:9px"><span class="res-backend">${rows.length} rows · backend ${esc(backend || "—")}</span></div>`;
     }
+    function renderMonteCarlo(panel, wl) {
+      const s = wl.summary;
+      if (!s) { panel.body.innerHTML = `<div class="res-running">Pricing ${wl.completed}/${wl.total} path batches…</div>`; return; }
+      const pct = (x) => `${((x || 0) * 100).toFixed(1)}%`;
+      const hist = Array.isArray(s.hist) ? s.hist : [];
+      const hmax = Math.max(1, ...hist);
+      const bars = hist.map((h) => `<span class="mc-bar" style="height:${(h / hmax * 100).toFixed(1)}%"></span>`).join("");
+      panel.body.innerHTML =
+        `<div class="sum-stats">
+           <div class="sum-stat"><span class="sk">Mean return</span><b>${pct(s.mean_return)}</b></div>
+           <div class="sum-stat"><span class="sk">Volatility</span><b>${pct(s.stdev)}</b></div>
+           <div class="sum-stat"><span class="sk">Worst (VaR)</span><b class="neg">${pct(s.worst_return)}</b></div>
+           <div class="sum-stat"><span class="sk">Paths priced</span><b>${(s.paths || 0).toLocaleString()}</b></div>
+         </div>
+         <div class="mc-hist" aria-label="return distribution">${bars}</div>`;
+    }
+    function renderHashcrack(panel, wl) {
+      const s = wl.summary;
+      if (!s) { panel.body.innerHTML = `<div class="res-running">Hashing — ${wl.completed}/${wl.total} ranges searched</div>`; return; }
+      if (!s.found) {
+        panel.body.innerHTML = `<div class="res-running">${(s.hashes_tried || 0).toLocaleString()} hashes tried — no nonce with prefix <b>${esc(s.target_prefix || "")}</b> yet</div>`;
+        return;
+      }
+      panel.body.innerHTML =
+        `<div class="sum-stats">
+           <div class="sum-stat"><span class="sk">Winning nonce</span><b>${(s.nonce || 0).toLocaleString()}</b></div>
+           <div class="sum-stat"><span class="sk">Hashes tried</span><b>${(s.hashes_tried || 0).toLocaleString()}</b></div>
+         </div>
+         <div class="hc-hash">SHA-256 with prefix <b>${esc(s.target_prefix || "")}</b><code>${esc(s.hash || "")}</code></div>`;
+    }
+    function renderSummary(panel, wl) {
+      const s = wl.summary;
+      if (!s) { panel.body.innerHTML = `<div class="res-running">${wl.completed}/${wl.total} tiles complete</div>`; return; }
+      const rows = Object.entries(s)
+        .filter(([, v]) => typeof v === "number" || typeof v === "string")
+        .slice(0, 8)
+        .map(([k, v]) => `<div class="sum-stat"><span class="sk">${esc(k.replace(/_/g, " "))}</span><b>${esc(typeof v === "number" ? v.toLocaleString() : v)}</b></div>`)
+        .join("");
+      panel.body.innerHTML = rows
+        ? `<div class="sum-stats">${rows}</div>`
+        : `<div class="res-running">${wl.completed}/${wl.total} tiles complete</div>`;
+    }
+
     const RESULT_RENDER = {
       fractal: renderFractal, optimize: renderOptimize,
       "ai.batch_infer": renderAIInfer, "ai.synth": renderSynth,
-      generic: (p, wl) => { p.body.innerHTML = `<div class="res-running">${wl.completed}/${wl.total} tiles complete</div>`; },
+      montecarlo: renderMonteCarlo, hashcrack: renderHashcrack,
+      "ai.infer": renderAIInfer, "ai.eval": renderSummary, "ai.graph": renderSummary,
+      generic: renderSummary,
     };
 
     // ===================== Live Fleet Harvest — dependency-free 2.5D terrain =====================

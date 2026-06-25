@@ -17,6 +17,8 @@ from pydantic import BaseModel, Field
 JobKind = Literal[
     "ai.batch_infer", "eval", "data.transform", "render", "challenge",
     "fractal", "optimize", "ai.synth",
+    "montecarlo", "hashcrack",                 # NON-AI long-running, multi-core
+    "ai.infer", "ai.eval", "ai.graph",         # AI long-running, local-model (Ollama)
 ]
 JobState = Literal["queued", "leased", "completed", "failed"]
 ResultStatus = Literal["completed", "failed", "yielded"]
@@ -189,6 +191,7 @@ class FleetState(BaseModel):
 # Workload kinds a dashboard can launch across the fleet with POST /workloads.
 LAUNCHABLE_KINDS: tuple[str, ...] = (
     "fractal", "optimize", "ai.batch_infer", "ai.synth", "data.transform",
+    "montecarlo", "hashcrack", "ai.infer", "ai.eval", "ai.graph",
 )
 
 
@@ -228,3 +231,7 @@ class WorkloadView(BaseModel):
     total: int = 0
     completed: int = 0
     jobs: list[JobDetail] = Field(default_factory=list)
+    # Render-ready merged result computed server-side over the completed tiles (None until any
+    # tile finishes). Shape depends on kind -- see docs/dashboard-api.md. The dashboard draws
+    # this directly instead of re-implementing each workload's aggregation in the browser.
+    summary: dict[str, Any] | None = None
