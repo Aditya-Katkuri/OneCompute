@@ -71,6 +71,17 @@
   @keyframes d3{to{transform:translate(6vw,-9vh) scale(1.2)}}
   @keyframes d4{to{transform:translate(-9vw,-7vh) scale(1.1)}}
 
+  /* translucent cloud wisps drifting over the lake + horizon -> layered atmospheric parallax (more 3D depth) */
+  .skyhaze{position:absolute;left:0;top:0;width:100%;height:66vh;z-index:1;pointer-events:none;overflow:hidden}
+  .haze{position:absolute;left:-22%;width:144%;background:url("textures/cloudwisp.webp") center/cover no-repeat;will-change:transform}
+  .haze--far {top:2vh; height:30vh;opacity:.13;filter:blur(2px);animation:haze1 92s ease-in-out infinite alternate}
+  .haze--mid {top:18vh;height:34vh;opacity:.20;animation:haze2 66s ease-in-out infinite alternate}
+  .haze--near{top:31vh;height:30vh;opacity:.12;filter:blur(3px);animation:haze3 48s ease-in-out infinite alternate}
+  @keyframes haze1{from{transform:translate3d(-3%,0,0) scale(1.03)}to{transform:translate3d(4%,.6vh,0) scale(1.09)}}
+  @keyframes haze2{from{transform:translate3d(3%,0,0) scaleX(-1) scale(1.04)}to{transform:translate3d(-5%,-.5vh,0) scaleX(-1) scale(1.11)}}
+  @keyframes haze3{from{transform:translate3d(-5%,0,0) scale(1.1)}to{transform:translate3d(6%,.6vh,0) scale(1.16)}}
+  @media(prefers-reduced-motion:reduce){.haze{animation:none}}
+
   /* ---- grain + atmosphere on top of everything ---- */
   body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:95;opacity:.42;mix-blend-mode:multiply;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.86' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E")}
@@ -116,7 +127,7 @@
   .hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:150px 0 90px;position:relative}
   .kick{display:flex;gap:16px;align-items:center;margin-bottom:34px}
   .kick .ln{height:1px;width:70px;background:linear-gradient(90deg,var(--magenta),transparent)}
-  .hero h1{font-size:clamp(50px,10.5vw,158px);margin:0 0 -.04em -.01em;color:var(--plum);text-shadow:0 1px 30px rgba(247,239,233,.5)}
+  .hero h1{font-size:clamp(46px,10.5vw,158px);margin:0 0 -.04em -.01em;color:var(--plum);text-shadow:0 1px 30px rgba(247,239,233,.5)}
   .hero .sub{max-width:580px;margin-top:38px;color:var(--ink);font-size:clamp(17px,1.7vw,21px);line-height:1.5;text-wrap:pretty}
   .hero__cta{display:flex;flex-wrap:wrap;gap:14px;margin-top:38px}
   .scrollcue{margin-top:74px;font-family:var(--mono);font-size:11px;letter-spacing:.3em;color:var(--muted);text-transform:uppercase;display:flex;align-items:center;gap:12px}
@@ -280,7 +291,306 @@
   @media(max-width:720px){.cinema__copy{top:80px;max-width:22ch}.term{width:min(360px,86vw)}}
   @media(prefers-reduced-motion:reduce){.cinema{height:110vh}.term__cur{animation:none}.cloud__glow{opacity:.42}}
 
+  /* ====== Stage 3: internal hardware fleet — idle sources fan into one hub ====== */
+  .fleet{position:relative;height:340vh}
+  .fleet__stage{position:sticky;top:0;height:100vh;width:100vw;margin-left:calc(50% - 50vw);
+    overflow:hidden;display:block;
+    background:
+      linear-gradient(180deg, #f6eee9 0%, rgba(246,238,233,0.55) 9%, rgba(246,238,233,0) 26%),
+      radial-gradient(58% 50% at 50% 50%, rgba(201,184,240,0.22) 0%, rgba(201,184,240,0) 60%),
+      radial-gradient(150% 120% at 50% 118%, var(--paper) 0%, var(--cream) 64%)}
+  .fleet__copy{position:absolute;left:50%;transform:translateX(-50%);top:clamp(92px,13vh,128px);z-index:6;
+    width:min(640px,56vw);text-align:center;pointer-events:none}
+  .fleet__copy h2{font-size:clamp(27px,3.8vw,48px);color:var(--plum);margin-top:12px;
+    text-shadow:0 1px 26px rgba(247,239,233,.7);text-wrap:balance}
 
+  .fleet__scene{position:absolute;inset:0;z-index:2}
+  .fleet__wires{position:absolute;inset:0;width:100%;height:100%;z-index:3;pointer-events:none;overflow:visible}
+  .fleet__wire{fill:none;stroke:var(--mauve);stroke-width:2.2;stroke-linecap:round;opacity:.72}
+  .fleet__arrow{fill:var(--magenta-ink)}
+  .fleet__spark{fill:var(--blush);opacity:0}
+
+  .fleet__nodes{display:contents}
+
+  .fleet__hub{position:absolute;left:50%;top:52%;transform:translate(-50%,-50%);z-index:5;
+    width:clamp(186px,21vw,262px);height:clamp(186px,21vw,262px);display:grid;place-items:center;text-align:center;will-change:transform}
+  .fleet__hub-glow{position:absolute;inset:-42%;border-radius:50%;pointer-events:none;z-index:0;opacity:.85;
+    background:radial-gradient(circle, rgba(201,184,240,.55) 0%, rgba(242,181,212,.30) 40%, rgba(242,181,212,0) 70%);
+    filter:blur(22px);mix-blend-mode:screen;will-change:opacity,transform}
+  .fleet__hub-core{position:absolute;inset:0;border-radius:50%;z-index:0;
+    background:radial-gradient(circle at 50% 40%, rgba(255,255,255,.94) 0%, var(--blush) 24%, var(--lilac) 56%, var(--peach) 100%);
+    box-shadow:0 30px 90px -30px rgba(159,134,201,.7), 0 0 64px rgba(242,181,212,.45);will-change:transform}
+  .fleet__ring{position:absolute;left:50%;top:50%;width:100%;height:100%;border-radius:50%;z-index:1;pointer-events:none;
+    border:1.5px solid rgba(159,134,201,.42);transform:translate(-50%,-50%) scale(.7);
+    animation:fleetRing 4.6s var(--ease-out) infinite}
+  .fleet__ring--2{animation-delay:2.3s}
+  @keyframes fleetRing{0%{transform:translate(-50%,-50%) scale(.62);opacity:.55}
+    70%{opacity:.12}100%{transform:translate(-50%,-50%) scale(1.5);opacity:0}}
+  .fleet__hub>svg{position:absolute;inset:16%;width:68%;height:68%;opacity:.16;z-index:1}
+  .fleet__hub-label{position:relative;z-index:3;font-family:var(--disp);font-weight:700;color:var(--plum);
+    font-size:clamp(14px,1.5vw,19px);line-height:1.16;letter-spacing:.01em;max-width:11ch;text-wrap:balance;
+    text-shadow:0 1px 10px rgba(255,255,255,.78)}
+
+  .fleet__node{position:absolute;transform:translate(-50%,-50%);z-index:4;
+    width:clamp(116px,14vw,184px);pointer-events:none}
+  .fleet__node--laptops{left:18%;top:26%}
+  .fleet__node--xbox{left:82%;top:26%}
+  .fleet__node--desktop{left:16%;top:75%}
+  .fleet__node--devbox{left:84%;top:74%}
+  .fleet__node-in{display:flex;flex-direction:column;align-items:center;text-align:center;will-change:transform,opacity}
+  .fleet__node-art{position:relative;width:100%;aspect-ratio:240/200;display:grid;place-items:center}
+  .fleet__node-halo{position:absolute;inset:-16% -8%;border-radius:50%;z-index:0;pointer-events:none;
+    background:radial-gradient(circle, rgba(242,181,212,.46) 0%, rgba(201,184,240,.24) 46%, rgba(201,184,240,0) 72%);
+    filter:blur(14px);will-change:opacity,transform}
+  .fleet__node-art>svg{position:relative;z-index:1;width:100%;height:100%;display:block;
+    filter:drop-shadow(0 14px 22px rgba(43,34,51,.18))}
+  .fleet__node-label{margin-top:10px;font-family:var(--disp);font-weight:700;line-height:1.18;
+    font-size:clamp(13px,1.35vw,17px);color:var(--plum);text-wrap:balance;text-shadow:0 1px 8px rgba(247,239,233,.7)}
+  .fleet__node-stat{margin-top:3px;font-family:var(--mono);font-size:clamp(10.5px,1vw,12px);color:var(--ink);
+    letter-spacing:.02em;line-height:1.45;max-width:22ch;text-wrap:balance}
+
+  .fleet__close{position:absolute;left:50%;bottom:clamp(40px,8vh,92px);transform:translateX(-50%);z-index:6;
+    text-align:center;font-family:var(--serif);font-style:italic;font-size:clamp(18px,2.5vw,31px);color:var(--plum);
+    max-width:24ch;text-wrap:balance;text-shadow:0 1px 18px rgba(247,239,233,.72)}
+
+  @media(max-width:760px){
+    .fleet{height:auto}
+    .fleet__stage{position:relative;top:auto;height:auto;width:auto;margin-left:0;overflow:visible;padding:92px 18px 64px}
+    .fleet__copy{position:static;left:auto;transform:none;width:auto;max-width:none;margin:0 auto 30px;text-align:center}
+    .fleet__copy h2{margin-top:12px}
+    .fleet__scene{position:static;display:flex;flex-direction:column;align-items:center;gap:30px}
+    .fleet__wires{display:none}
+    .fleet__hub{position:static;transform:none;margin:0 auto;width:min(214px,66vw);height:min(214px,66vw)}
+    .fleet__nodes{display:grid;grid-template-columns:1fr 1fr;gap:26px 18px;width:100%;max-width:520px}
+    .fleet__node{position:static;transform:none;width:100%}
+    .fleet__close{position:static;transform:none;margin:6px auto 0}
+  }
+  @media(max-width:420px){.fleet__nodes{grid-template-columns:1fr;max-width:300px}}
+
+  @media(prefers-reduced-motion:reduce){
+    .fleet{height:auto}
+    .fleet__stage{position:relative;top:auto;height:auto;min-height:100vh}
+    .fleet__ring{animation:none;opacity:.3}
+  }
+
+
+  /* ===== Stage 4 — Launch: scroll cinematic bridging the fleet into the embedded launch film ===== */
+  .launch{position:relative;height:700vh;
+    --void-1:#160f1d; --void-2:#241a30; --void-3:#100b16}
+  .launch__stage{position:sticky;top:0;height:100vh;width:100vw;margin-left:calc(50% - 50vw);
+    overflow:hidden;background:var(--cream)}
+
+  /* deep-plum void that fades in as you descend, then fades back to cream for the handoff */
+  .launch__void{position:absolute;inset:0;z-index:1;opacity:0;will-change:opacity;
+    background:radial-gradient(120% 90% at 50% 18%, var(--void-2) 0%, var(--void-1) 52%, var(--void-3) 100%)}
+
+  /* self-contained SVG/CSS atmosphere for the plum world: starfield + soft pastel nebulae */
+  .launch__atmos{position:absolute;inset:0;z-index:2;opacity:0;pointer-events:none;overflow:hidden;will-change:opacity}
+  .launch__stars{position:absolute;inset:-10%;
+    background-image:
+      radial-gradient(1.3px 1.3px at 12% 22%, rgba(255,255,255,.9), transparent),
+      radial-gradient(1.1px 1.1px at 78% 14%, rgba(248,204,221,.8), transparent),
+      radial-gradient(1px 1px at 33% 71%, rgba(201,184,240,.85), transparent),
+      radial-gradient(1.4px 1.4px at 62% 58%, rgba(255,255,255,.8), transparent),
+      radial-gradient(1px 1px at 88% 82%, rgba(255,255,255,.7), transparent),
+      radial-gradient(1.1px 1.1px at 47% 33%, rgba(217,143,192,.7), transparent),
+      radial-gradient(1px 1px at 7% 64%, rgba(255,255,255,.65), transparent),
+      radial-gradient(1.2px 1.2px at 95% 41%, rgba(248,204,221,.7), transparent);
+    background-repeat:repeat;background-size:340px 340px;animation:launchDrift 120s linear infinite}
+  .launch__stars--b{background-size:560px 560px;opacity:.6;animation-duration:200s;animation-direction:reverse}
+  .launch__neb{position:absolute;border-radius:50%;filter:blur(60px);mix-blend-mode:screen;will-change:transform,opacity}
+  .launch__neb--1{left:8%;top:18%;width:46vw;height:46vw;
+    background:radial-gradient(circle, rgba(201,184,240,.42) 0%, rgba(201,184,240,0) 68%);animation:launchFloat 26s var(--ease-out) infinite}
+  .launch__neb--2{right:4%;top:44%;width:42vw;height:42vw;
+    background:radial-gradient(circle, rgba(248,204,221,.36) 0%, rgba(248,204,221,0) 68%);animation:launchFloat 32s var(--ease-out) infinite reverse}
+  .launch__neb--3{left:34%;bottom:6%;width:50vw;height:50vw;
+    background:radial-gradient(circle, rgba(217,143,192,.30) 0%, rgba(217,143,192,0) 70%);animation:launchFloat 38s var(--ease-out) infinite}
+  @keyframes launchDrift{to{background-position:340px 340px}}
+  @keyframes launchFloat{0%,100%{transform:translate3d(0,0,0)}50%{transform:translate3d(2.4%,-3%,0)}}
+
+  /* framing copy (the website provides the words; the film runs captions=0) */
+  .launch__frame{position:absolute;left:50%;top:clamp(74px,11vh,118px);transform:translateX(-50%);z-index:6;
+    width:min(620px,72vw);text-align:center;pointer-events:none;will-change:opacity}
+  .launch__frame .eyebrow{color:var(--plum)}
+  .launch__frame h2{font-family:var(--serif);font-weight:400;color:var(--plum);margin-top:12px;
+    font-size:clamp(26px,4vw,50px);line-height:1.04;text-wrap:balance;text-shadow:0 2px 30px rgba(22,15,29,.6)}
+
+  /* the world that holds the two bubbles; panned + zoomed by scroll */
+  .launch__world{position:absolute;inset:0;z-index:3;will-change:transform,opacity}
+
+  /* luminous orbs in the Stage-3 .fleet__hub style */
+  .launch__bubble{position:absolute;left:50%;transform:translate(-50%,-50%);z-index:4;
+    width:clamp(150px,18vw,232px);height:clamp(150px,18vw,232px);display:grid;place-items:center;text-align:center}
+  .launch__bubble--ihf{top:34%}
+  .launch__bubble--lc{top:84%;opacity:0}
+  .launch__bubble-glow{position:absolute;inset:-46%;border-radius:50%;pointer-events:none;z-index:0;opacity:.9;
+    filter:blur(24px);mix-blend-mode:screen;will-change:opacity,transform}
+  .launch__bubble--ihf .launch__bubble-glow{
+    background:radial-gradient(circle, rgba(201,184,240,.6) 0%, rgba(242,181,212,.32) 42%, rgba(242,181,212,0) 72%)}
+  .launch__bubble--lc .launch__bubble-glow{
+    background:radial-gradient(circle, rgba(248,211,188,.6) 0%, rgba(232,163,140,.32) 42%, rgba(232,163,140,0) 72%)}
+  .launch__bubble-core{position:absolute;inset:0;border-radius:50%;z-index:0;
+    box-shadow:0 30px 90px -30px rgba(22,15,29,.8), 0 0 70px rgba(242,181,212,.4)}
+  .launch__bubble--ihf .launch__bubble-core{
+    background:radial-gradient(circle at 50% 38%, rgba(255,255,255,.96) 0%, var(--blush) 24%, var(--lilac) 56%, var(--peach) 100%)}
+  .launch__bubble--lc .launch__bubble-core{
+    background:radial-gradient(circle at 50% 38%, rgba(255,255,255,.96) 0%, var(--peach) 26%, var(--pink) 58%, var(--coral) 100%)}
+  .launch__ring{position:absolute;left:50%;top:50%;width:100%;height:100%;border-radius:50%;z-index:1;pointer-events:none;
+    border:1.5px solid rgba(201,184,240,.5);transform:translate(-50%,-50%) scale(.7);
+    animation:fleetRing 4.6s var(--ease-out) infinite}
+  .launch__ring--2{animation-delay:2.3s}
+  .launch__bubble-label{position:relative;z-index:3;font-family:var(--disp);font-weight:700;color:var(--plum);
+    font-size:clamp(13px,1.5vw,18px);line-height:1.16;letter-spacing:.01em;max-width:11ch;text-wrap:balance;
+    text-shadow:0 1px 10px rgba(255,255,255,.82)}
+
+  /* device-nodes around the IHF bubble; they retract into the hub during merge-back */
+  .launch__dev{position:absolute;left:50%;top:50%;z-index:2;width:clamp(58px,7vw,84px);
+    display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none;will-change:transform,opacity}
+  .launch__dev-orb{position:relative;width:clamp(30px,3.4vw,42px);height:clamp(30px,3.4vw,42px);border-radius:50%;
+    background:radial-gradient(circle at 50% 38%, #fff 0%, var(--blush) 38%, var(--lilac) 100%);
+    box-shadow:0 8px 24px -8px rgba(22,15,29,.7), 0 0 22px rgba(242,181,212,.5)}
+  .launch__dev-label{font-family:var(--mono);font-size:clamp(9px,1vw,11px);letter-spacing:.02em;color:var(--plum);
+    text-shadow:0 1px 8px rgba(22,15,29,.7);white-space:nowrap}
+  .launch__wire{position:absolute;left:50%;top:50%;height:2px;z-index:1;transform-origin:0 50%;
+    background:linear-gradient(90deg, rgba(201,184,240,0) 0%, rgba(201,184,240,.7) 100%);
+    border-radius:2px;pointer-events:none;will-change:width,opacity}
+
+  /* embedded launch film — rendered at its native 1920x1080 and scaled to cover the
+     stage, so the film's own fitFrame stays at 1:1 (its grid-centring misbehaves at other sizes) */
+  .launch__filmwrap{position:absolute;inset:0;z-index:5;opacity:0;overflow:hidden;will-change:opacity}
+  .launch__film{position:absolute;top:50%;left:50%;width:1920px;height:1080px;border:0;display:block;
+    transform-origin:center center;transform:translate(-50%,-50%) scale(0.52);background:var(--void-3)}
+
+  /* dark flash that masks the cross-fade from bridge to film */
+  .launch__flash{position:absolute;inset:0;z-index:7;opacity:0;pointer-events:none;background:var(--void-3)}
+
+  @media(max-width:760px){
+    .launch{height:auto}
+    .launch__stage{position:relative;top:auto;height:auto;width:auto;margin-left:0;overflow:visible;
+      padding:84px 18px 64px;display:flex;flex-direction:column;align-items:center;gap:34px}
+    .launch__void{opacity:1}
+    .launch__atmos{opacity:.85}
+    .launch__frame{position:static;left:auto;transform:none;width:auto;max-width:520px}
+    .launch__world{position:static;transform:none;opacity:1;display:flex;flex-direction:column;align-items:center;gap:34px;width:100%}
+    .launch__bubble{position:relative;inset:auto;transform:none;margin:0 auto;opacity:1;
+      width:min(190px,56vw);height:min(190px,56vw)}
+    .launch__dev,.launch__wire{display:none}
+    .launch__filmwrap{position:relative;width:min(560px,92vw);aspect-ratio:16/9;opacity:1;
+      border-radius:18px;overflow:hidden;box-shadow:0 30px 80px -40px rgba(22,15,29,.9)}
+    .launch__flash{display:none}
+  }
+
+  .launch--static{height:auto}
+  .launch--static .launch__stage{position:relative;top:auto;height:auto;width:auto;margin-left:0;overflow:visible;
+    padding:84px 18px 64px;display:flex;flex-direction:column;align-items:center;gap:34px}
+  .launch--static .launch__void{opacity:1}
+  .launch--static .launch__atmos{opacity:.85}
+  .launch--static .launch__frame{position:static;left:auto;transform:none;width:auto;max-width:560px}
+  .launch--static .launch__world{position:static;transform:none;opacity:1;display:flex;flex-direction:column;align-items:center;gap:36px;width:100%}
+  .launch--static .launch__bubble{position:relative;inset:auto;transform:none;margin:0 auto;opacity:1;
+    width:min(232px,42vw);height:min(232px,42vw)}
+  .launch--static .launch__dev,.launch--static .launch__wire{display:none}
+  .launch--static .launch__filmwrap{position:relative;width:min(900px,92vw);aspect-ratio:16/9;opacity:1;
+    border-radius:18px;overflow:hidden;box-shadow:0 30px 80px -40px rgba(22,15,29,.9)}
+  .launch--static .launch__flash{display:none}
+
+  @media(prefers-reduced-motion:reduce){
+    .launch{height:auto}
+    .launch__stage{position:relative;top:auto;height:auto;width:auto;margin-left:0;overflow:visible;
+      padding:84px 18px 64px;display:flex;flex-direction:column;align-items:center;gap:34px}
+    .launch__void{opacity:1}.launch__atmos{opacity:.7}
+    .launch__stars,.launch__neb{animation:none}
+    .launch__ring{animation:none;opacity:.32}
+    .launch__frame{position:static;left:auto;transform:none;width:auto;max-width:560px}
+    .launch__world{position:static;transform:none;opacity:1;display:flex;flex-direction:column;align-items:center;gap:36px;width:100%}
+    .launch__bubble{position:relative;inset:auto;transform:none;margin:0 auto;opacity:1;
+      width:min(232px,56vw);height:min(232px,56vw)}
+    .launch__dev,.launch__wire{display:none}
+    .launch__filmwrap{position:relative;width:min(900px,92vw);aspect-ratio:16/9;opacity:1;
+      border-radius:18px;overflow:hidden;box-shadow:0 30px 80px -40px rgba(22,15,29,.9)}
+    .launch__flash{display:none}
+  }
+
+
+
+  /* ===== Stage 2.5: capex narrative vignettes ===== */
+.vh{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+/* ============================================================
+   STAGE 2.5 — vignette cinematic
+   Default (no JS / headless / SR): STATIC, legible grid — all 9 visible.
+   .is-cinema (added only on desktop w/ GSAP, not reduced-motion):
+   switches to a pinned, scrubbed, scattered-illustration mode.
+   ============================================================ */
+.narr{position:relative;background:#f6eee9}
+
+/* --- default static layout (the un-enhanced baseline) --- */
+.narr__stage{position:relative;width:100%;background:var(--cream)}
+.narr__bg{display:none}
+.narr__vstage{
+  position:relative;max-width:1120px;margin:0 auto;padding:10vh 6vw 12vh;
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+  gap:clamp(20px,3vw,40px);align-items:start;justify-items:center;
+}
+.narr__cap{text-align:center;font-family:var(--serif);font-weight:400;
+  font-size:clamp(22px,3.4vw,34px);color:var(--plum);margin:0 0 .2em;padding:8vh 6vw 0}
+.narr__cap-sub{text-align:center;color:var(--muted);font-size:14px;margin:0 0 2vh}
+
+.vig{position:relative;display:flex;flex-direction:column;align-items:center;gap:10px;width:100%}
+.vig__art{position:relative;width:clamp(140px,16vw,190px);aspect-ratio:1/1;display:grid;place-items:center}
+.vig__halo{position:absolute;inset:-14%;border-radius:50%;z-index:0;
+  background:radial-gradient(circle at 50% 46%, var(--halo,#EBDDF6) 0%, rgba(255,255,255,0) 70%);
+  filter:blur(2px)}
+.vig__art svg{position:relative;z-index:1;width:100%;height:100%;overflow:visible}
+.vig__word{font-family:var(--sans);font-weight:600;font-size:clamp(13px,1.5vw,15px);
+  letter-spacing:.01em;color:var(--magenta-ink);text-align:center;line-height:1.25;
+  max-width:18ch;text-wrap:balance}
+
+/* ============================================================
+   CINEMA MODE (desktop, GSAP present, motion allowed)
+   ============================================================ */
+.narr.is-cinema{height:520vh}
+.narr.is-cinema .narr__cap,
+.narr.is-cinema .narr__cap-sub{display:none}
+.narr.is-cinema .narr__stage{
+  position:sticky;top:0;height:100vh;width:100vw;margin-left:calc(50% - 50vw);overflow:hidden}
+.narr.is-cinema .narr__bg{display:block;position:absolute;inset:0;z-index:0;
+  background-color:var(--cream)}
+.narr.is-cinema .narr__bg::after{content:"";position:absolute;inset:0;
+  background:radial-gradient(120% 80% at 50% 8%, rgba(255,255,255,.55), rgba(255,255,255,0) 60%);
+  pointer-events:none}
+.narr.is-cinema .narr__vstage{
+  position:absolute;inset:0;max-width:none;margin:0;padding:0;display:block}
+.narr.is-cinema .vig{
+  position:absolute;left:var(--x);top:var(--y);width:auto;flex-direction:column;
+  gap:14px;will-change:transform,opacity,filter}
+.narr.is-cinema .vig__art{width:calc(clamp(180px,15vw,230px) * var(--s,1))}
+.narr.is-cinema .vig__halo{inset:-20%;filter:blur(6px)}
+.narr.is-cinema .vig__word{
+  position:relative;margin-top:2px;font-size:clamp(14px,1.3vw,18px);
+  background:rgba(255,255,255,.62);padding:5px 14px;border-radius:999px;
+  box-shadow:0 6px 22px rgba(43,34,51,.10)}
+
+/* ===== reduced-motion: pin off, static grid, calmer halos ===== */
+@media(prefers-reduced-motion:reduce){
+  .narr.is-cinema{height:auto}
+  .narr.is-cinema .narr__stage{position:relative;height:auto;width:100%;margin-left:0}
+  .narr.is-cinema .narr__vstage{position:relative;inset:auto;display:grid}
+  .narr.is-cinema .vig{position:relative;left:auto;top:auto}
+  .vig__halo{filter:none}
+}
+
+/* ===== responsive (<=760px): always static, condensed, no overflow ===== */
+@media(max-width:760px){
+  .narr.is-cinema{height:auto}
+  .narr.is-cinema .narr__cap,.narr.is-cinema .narr__cap-sub{display:block}
+  .narr.is-cinema .narr__stage{position:relative;height:auto;width:100%;margin-left:0;overflow:visible}
+  .narr.is-cinema .narr__bg{display:none}
+  .narr.is-cinema .narr__vstage{position:relative;inset:auto;display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(140px,1fr));padding:8vh 5vw 10vh;gap:24px}
+  .narr.is-cinema .vig{position:relative;left:auto;top:auto;width:100%}
+  .narr.is-cinema .vig__art{width:clamp(120px,38vw,170px)}
+  .vig__word{max-width:16ch}
+}
 </style>
 </head>
 <body>
@@ -288,6 +598,7 @@
 <canvas id="fluid" aria-hidden="true"></canvas>
 <div class="cursor" id="cursor" aria-hidden="true"><span class="cursor__dot"></span><span class="cursor__ring"></span></div>
 <div class="orbs" id="orbs" hidden><div class="orb o1"></div><div class="orb o2"></div><div class="orb o3"></div><div class="orb o4"></div><div class="orb o5"></div></div>
+<div class="skyhaze" aria-hidden="true"><div class="haze haze--far"></div><div class="haze haze--mid"></div><div class="haze haze--near"></div></div>
 <div class="filmgrain"></div>
 <div class="vignette"></div>
 
@@ -318,7 +629,7 @@
       <span class="ln"></span>
       <span class="eyebrow">The second supercomputer</span>
     </div>
-    <h1 class="reveal">Idle machines,<br>woken at <span class="it">dawn.</span></h1>
+    <h1 class="reveal">Nothing idle,<br>nothing <span class="it">wasted.</span></h1>
     <p class="sub reveal">Every company already owns a second supercomputer, scattered across the laptops that sit idle overnight and through the long browser-and-chat hours of the day. OneCompute harvests that spare headroom into a private, opt-in grid, and steps aside the instant someone needs their machine back.</p>
     <div class="hero__cta reveal">
       <a class="btn" href="#cta">Switch it on tonight <span class="ar">&rarr;</span></a>
@@ -344,6 +655,1181 @@
           <div class="term__meter"><span class="term__num" data-reclaim>0.0</span> PFLOP&middot;h reclaimed</div>
         </div>
       </div>
+    </div>
+  </section>
+
+  <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute"><!-- STAGE 2.5 vignette art -->
+<defs>
+  <!-- FILTERS -->
+  <filter id="va-blur3" x="-60%" y="-60%" width="220%" height="220%">
+    <feGaussianBlur stdDeviation="3"/>
+  </filter>
+  <filter id="va-blur5" x="-60%" y="-60%" width="220%" height="220%">
+    <feGaussianBlur stdDeviation="5"/>
+  </filter>
+  <filter id="va-glow6" x="-50%" y="-50%" width="200%" height="200%">
+    <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="b"/>
+    <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+  <filter id="va-glow9" x="-70%" y="-70%" width="240%" height="240%">
+    <feGaussianBlur in="SourceGraphic" stdDeviation="9" result="b"/>
+    <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+
+  <!-- VIG-BET -->
+  <linearGradient id="va-bet-body" x1="25%" y1="0%" x2="75%" y2="100%">
+    <stop offset="0%" stop-color="#C9B8F0"/>
+    <stop offset="100%" stop-color="#9F86C9"/>
+  </linearGradient>
+  <linearGradient id="va-bet-nose" x1="25%" y1="0%" x2="75%" y2="100%">
+    <stop offset="0%" stop-color="#F8D3BC"/>
+    <stop offset="100%" stop-color="#E8A38C"/>
+  </linearGradient>
+  <radialGradient id="va-bet-flame" cx="50%" cy="15%" r="85%">
+    <stop offset="0%" stop-color="#F8CCDD"/>
+    <stop offset="65%" stop-color="#F8D3BC"/>
+    <stop offset="100%" stop-color="#F8D3BC" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="va-bet-fin" x1="20%" y1="0%" x2="80%" y2="100%">
+    <stop offset="0%" stop-color="#B59FE3"/>
+    <stop offset="100%" stop-color="#9F86C9"/>
+  </linearGradient>
+
+  <!-- VIG-SPEND -->
+  <linearGradient id="va-spend-building" x1="25%" y1="0%" x2="75%" y2="100%">
+    <stop offset="0%" stop-color="#C9B8F0"/>
+    <stop offset="100%" stop-color="#9F86C9"/>
+  </linearGradient>
+  <radialGradient id="va-spend-coin" cx="33%" cy="28%" r="72%">
+    <stop offset="0%" stop-color="#F8D3BC"/>
+    <stop offset="100%" stop-color="#E8A38C"/>
+  </radialGradient>
+
+  <!-- VIG-CAPEX -->
+  <linearGradient id="va-cap-coin-a" x1="25%" y1="0%" x2="75%" y2="100%">
+    <stop offset="0%" stop-color="#F8D3BC"/>
+    <stop offset="100%" stop-color="#E8A38C"/>
+  </linearGradient>
+  <linearGradient id="va-cap-coin-b" x1="25%" y1="0%" x2="75%" y2="100%">
+    <stop offset="0%" stop-color="#F8CCDD"/>
+    <stop offset="100%" stop-color="#F2B5D4"/>
+  </linearGradient>
+  <radialGradient id="va-cap-top-a" cx="30%" cy="30%" r="70%">
+    <stop offset="0%" stop-color="#F7EFE9"/>
+    <stop offset="100%" stop-color="#F8D3BC"/>
+  </radialGradient>
+  <radialGradient id="va-cap-top-b" cx="30%" cy="30%" r="70%">
+    <stop offset="0%" stop-color="#F7EFE9"/>
+    <stop offset="100%" stop-color="#F8CCDD"/>
+  </radialGradient>
+  <linearGradient id="va-cap-note" x1="25%" y1="0%" x2="75%" y2="100%">
+    <stop offset="0%" stop-color="#F8D3BC"/>
+    <stop offset="100%" stop-color="#F8CCDD"/>
+  </linearGradient>
+
+  <!-- VIG-DEMAND -->
+  <linearGradient id="va-dem-building" x1="25%" y1="0%" x2="75%" y2="100%">
+    <stop offset="0%" stop-color="#C9B8F0"/>
+    <stop offset="100%" stop-color="#9F86C9"/>
+  </linearGradient>
+  <linearGradient id="va-dem-door" x1="50%" y1="0%" x2="50%" y2="100%">
+    <stop offset="0%" stop-color="#F8D3BC"/>
+    <stop offset="100%" stop-color="#D98FC0"/>
+  </linearGradient>
+  <radialGradient id="va-dem-glow" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#E8A38C" stop-opacity="0.90"/>
+    <stop offset="55%" stop-color="#D98FC0" stop-opacity="0.45"/>
+    <stop offset="100%" stop-color="#D98FC0" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="va-dem-gpu" x1="25%" y1="0%" x2="75%" y2="100%">
+    <stop offset="0%" stop-color="#F8D3BC"/>
+    <stop offset="100%" stop-color="#E8A38C"/>
+  </linearGradient>
+
+  <!-- VIG-NUCLEAR -->
+  <linearGradient id="va-nuc-tower1" x1="30%" y1="0%" x2="70%" y2="100%">
+    <stop offset="0%" stop-color="#C9B8F0"/>
+    <stop offset="100%" stop-color="#B59FE3"/>
+  </linearGradient>
+  <linearGradient id="va-nuc-tower2" x1="30%" y1="0%" x2="70%" y2="100%">
+    <stop offset="0%" stop-color="#B59FE3"/>
+    <stop offset="100%" stop-color="#9F86C9"/>
+  </linearGradient>
+  <!-- steam: visible lavender-grey, not cream, so it shows against the page -->
+  <radialGradient id="va-nuc-steam" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#DDD6F5" stop-opacity="0.96"/>
+    <stop offset="70%" stop-color="#E4DCF8" stop-opacity="0.60"/>
+    <stop offset="100%" stop-color="#E4DCF8" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="va-nuc-server" x1="25%" y1="0%" x2="75%" y2="100%">
+    <stop offset="0%" stop-color="#B59FE3"/>
+    <stop offset="100%" stop-color="#9F86C9"/>
+  </linearGradient>
+
+  <!-- VIG-LEASE -->
+  <linearGradient id="va-lease-left-co" x1="25%" y1="0%" x2="75%" y2="100%">
+    <stop offset="0%" stop-color="#F8D3BC"/>
+    <stop offset="100%" stop-color="#E8A38C"/>
+  </linearGradient>
+  <linearGradient id="va-lease-right-co" x1="25%" y1="0%" x2="75%" y2="100%">
+    <stop offset="0%" stop-color="#C9B8F0"/>
+    <stop offset="100%" stop-color="#9F86C9"/>
+  </linearGradient>
+  <linearGradient id="va-lease-gpu" x1="25%" y1="0%" x2="75%" y2="100%">
+    <stop offset="0%" stop-color="#C9B8F0"/>
+    <stop offset="100%" stop-color="#B59FE3"/>
+  </linearGradient>
+  <linearGradient id="va-lease-tag" x1="25%" y1="0%" x2="75%" y2="100%">
+    <stop offset="0%" stop-color="#F8CCDD"/>
+    <stop offset="100%" stop-color="#F2B5D4"/>
+  </linearGradient>
+
+  <!-- VIG-CONSTRAINED -->
+  <linearGradient id="va-con-needle" x1="0%" y1="50%" x2="100%" y2="50%">
+    <stop offset="0%" stop-color="#2B2233"/>
+    <stop offset="100%" stop-color="#D98FC0"/>
+  </linearGradient>
+  <linearGradient id="va-con-building" x1="25%" y1="0%" x2="75%" y2="100%">
+    <stop offset="0%" stop-color="#B59FE3"/>
+    <stop offset="100%" stop-color="#9F86C9"/>
+  </linearGradient>
+  <radialGradient id="va-con-warn" cx="50%" cy="45%" r="55%">
+    <stop offset="0%" stop-color="#F8D3BC"/>
+    <stop offset="100%" stop-color="#E8A38C"/>
+  </radialGradient>
+
+  <!-- VIG-LAPTOP -->
+  <linearGradient id="va-lap-lid" x1="25%" y1="0%" x2="75%" y2="100%">
+    <stop offset="0%" stop-color="#F8CCDD"/>
+    <stop offset="100%" stop-color="#F8D3BC"/>
+  </linearGradient>
+  <linearGradient id="va-lap-base" x1="25%" y1="0%" x2="75%" y2="100%">
+    <stop offset="0%" stop-color="#F8D3BC"/>
+    <stop offset="100%" stop-color="#F8CCDD"/>
+  </linearGradient>
+  <radialGradient id="va-lap-screen" cx="42%" cy="38%" r="62%">
+    <stop offset="0%" stop-color="#C9B8F0"/>
+    <stop offset="60%" stop-color="#9F86C9"/>
+    <stop offset="100%" stop-color="#3A2E45"/>
+  </radialGradient>
+  <radialGradient id="va-lap-glow" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#C9B8F0" stop-opacity="0.55"/>
+    <stop offset="100%" stop-color="#C9B8F0" stop-opacity="0"/>
+  </radialGradient>
+
+  <!-- VIG-ONECOMPUTE -->
+  <radialGradient id="va-oc-hub" cx="38%" cy="32%" r="68%">
+    <stop offset="0%" stop-color="#C9B8F0"/>
+    <stop offset="100%" stop-color="#9F86C9"/>
+  </radialGradient>
+  <radialGradient id="va-oc-glow" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#C9B8F0" stop-opacity="0.65"/>
+    <stop offset="100%" stop-color="#C9B8F0" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="va-oc-device" x1="25%" y1="0%" x2="75%" y2="100%">
+    <stop offset="0%" stop-color="#F8CCDD"/>
+    <stop offset="100%" stop-color="#F8D3BC"/>
+  </linearGradient>
+  <radialGradient id="va-oc-devglow" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#C9B8F0" stop-opacity="0.55"/>
+    <stop offset="100%" stop-color="#C9B8F0" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+<symbol id="vig-bet" viewBox="0 0 200 200">
+  <!-- ground shadow -->
+  <ellipse cx="105" cy="174" rx="52" ry="8" fill="#2B2233" fill-opacity="0.13" filter="url(#va-blur3)"/>
+  <!-- faint background swoosh -->
+  <path d="M20,175 C45,140 90,85 160,28" stroke="#C9B8F0" stroke-width="2.5" stroke-opacity="0.18" fill="none" stroke-linecap="round"/>
+  <!-- step-chart line (steep ascent) -->
+  <polyline points="22,168 48,168 48,140 74,140 74,112 100,112 100,84 132,84"
+    stroke="#B59FE3" stroke-width="5" fill="none"
+    stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.78"/>
+  <!-- chart arrowhead -->
+  <polygon points="132,67 124,86 140,86"
+    fill="#B59FE3" fill-opacity="0.82" stroke="#2B2233" stroke-opacity="0.3" stroke-width="0.8"/>
+  <!-- rocket (centered 115,72, rotated −30°) -->
+  <g transform="translate(115,72) rotate(-30)">
+    <ellipse cx="0" cy="36" rx="8" ry="22" fill="url(#va-bet-flame)"/>
+    <rect x="-13" y="-26" width="26" height="56" rx="13"
+      fill="url(#va-bet-body)" stroke="#2B2233" stroke-opacity="0.45" stroke-width="1.5"/>
+    <ellipse cx="0" cy="-29" rx="13" ry="10"
+      fill="url(#va-bet-nose)" stroke="#2B2233" stroke-opacity="0.35" stroke-width="1"/>
+    <polygon points="-13,6 -24,30 -5,22"
+      fill="url(#va-bet-fin)" stroke="#2B2233" stroke-opacity="0.35" stroke-width="0.8"/>
+    <polygon points="13,6 24,30 5,22"
+      fill="url(#va-bet-fin)" stroke="#2B2233" stroke-opacity="0.35" stroke-width="0.8"/>
+    <circle cx="0" cy="-5" r="7.5" fill="#F8CCDD" stroke="#2B2233" stroke-opacity="0.28" stroke-width="0.8"/>
+    <circle cx="0" cy="-5" r="4"   fill="#F8D3BC"/>
+    <!-- rim light top-left -->
+    <ellipse cx="-6" cy="-19" rx="5" ry="13" fill="rgba(255,255,255,0.45)"/>
+  </g>
+  <!-- 3 chip shapes at chart base -->  <g transform="translate(22,150)">
+    <rect width="18" height="13" rx="2.5" fill="#F8D3BC" stroke="#2B2233" stroke-opacity="0.40" stroke-width="1"/>
+    <line x1="5"  y1="0" x2="5"  y2="13" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.6"/>
+    <line x1="10" y1="0" x2="10" y2="13" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.6"/>
+    <line x1="15" y1="0" x2="15" y2="13" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.6"/>
+    <line x1="0" y1="5"  x2="18" y2="5"  stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.6"/>
+    <line x1="0" y1="9"  x2="18" y2="9"  stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.6"/>
+    <line x1="4"  y1="13" x2="4"  y2="17" stroke="#2B2233" stroke-opacity="0.40" stroke-width="1"/>
+    <line x1="9"  y1="13" x2="9"  y2="17" stroke="#2B2233" stroke-opacity="0.40" stroke-width="1"/>
+    <line x1="14" y1="13" x2="14" y2="17" stroke="#2B2233" stroke-opacity="0.40" stroke-width="1"/>
+  </g>  <g transform="translate(46,145)">
+    <rect width="18" height="13" rx="2.5" fill="#F8CCDD" stroke="#2B2233" stroke-opacity="0.40" stroke-width="1"/>
+    <line x1="5"  y1="0" x2="5"  y2="13" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.6"/>
+    <line x1="10" y1="0" x2="10" y2="13" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.6"/>
+    <line x1="15" y1="0" x2="15" y2="13" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.6"/>
+    <line x1="0" y1="5"  x2="18" y2="5"  stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.6"/>
+    <line x1="0" y1="9"  x2="18" y2="9"  stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.6"/>
+    <line x1="4"  y1="13" x2="4"  y2="17" stroke="#2B2233" stroke-opacity="0.40" stroke-width="1"/>
+    <line x1="9"  y1="13" x2="9"  y2="17" stroke="#2B2233" stroke-opacity="0.40" stroke-width="1"/>
+    <line x1="14" y1="13" x2="14" y2="17" stroke="#2B2233" stroke-opacity="0.40" stroke-width="1"/>
+  </g>  <g transform="translate(70,151)">
+    <rect width="18" height="13" rx="2.5" fill="#F8D3BC" stroke="#2B2233" stroke-opacity="0.40" stroke-width="1"/>
+    <line x1="5"  y1="0" x2="5"  y2="13" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.6"/>
+    <line x1="10" y1="0" x2="10" y2="13" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.6"/>
+    <line x1="15" y1="0" x2="15" y2="13" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.6"/>
+    <line x1="0" y1="5"  x2="18" y2="5"  stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.6"/>
+    <line x1="0" y1="9"  x2="18" y2="9"  stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.6"/>
+    <line x1="4"  y1="13" x2="4"  y2="17" stroke="#2B2233" stroke-opacity="0.40" stroke-width="1"/>
+    <line x1="9"  y1="13" x2="9"  y2="17" stroke="#2B2233" stroke-opacity="0.40" stroke-width="1"/>
+    <line x1="14" y1="13" x2="14" y2="17" stroke="#2B2233" stroke-opacity="0.40" stroke-width="1"/>
+  </g>
+</symbol>
+<symbol id="vig-spend" viewBox="0 0 200 200">
+  <ellipse cx="140" cy="172" rx="42" ry="7" fill="#2B2233" fill-opacity="0.12" filter="url(#va-blur3)"/>
+  <!-- datacenter building -->
+  <rect x="108" y="36" width="74" height="124" rx="5"
+    fill="url(#va-spend-building)" stroke="#2B2233" stroke-opacity="0.45" stroke-width="1.5"/>
+  <rect x="109" y="37" width="14" height="52" rx="5" fill="rgba(255,255,255,0.30)"/>
+  <!-- antennae -->
+  <line x1="126" y1="36" x2="126" y2="24" stroke="#2B2233" stroke-opacity="0.40" stroke-width="1.5" stroke-linecap="round"/>
+  <circle cx="126" cy="23" r="2.5" fill="#E8A38C" stroke="#2B2233" stroke-opacity="0.3" stroke-width="0.8"/>
+  <line x1="150" y1="36" x2="150" y2="21" stroke="#2B2233" stroke-opacity="0.40" stroke-width="1.5" stroke-linecap="round"/>
+  <circle cx="150" cy="20" r="2.5" fill="#F2B5D4" stroke="#2B2233" stroke-opacity="0.3" stroke-width="0.8"/>
+  <!-- windows (3×3 grid) -->
+  <rect x="116" y="50" width="14" height="10" rx="2" fill="#F8CCDD" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.5"/>
+  <rect x="136" y="50" width="14" height="10" rx="2" fill="#F8D3BC" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.5"/>
+  <rect x="156" y="50" width="14" height="10" rx="2" fill="#F8CCDD" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.5"/>
+  <rect x="116" y="68" width="14" height="10" rx="2" fill="#F8D3BC" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.5"/>
+  <rect x="136" y="68" width="14" height="10" rx="2" fill="#F8CCDD" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.5"/>
+  <rect x="156" y="68" width="14" height="10" rx="2" fill="#F8D3BC" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.5"/>
+  <rect x="116" y="86" width="14" height="10" rx="2" fill="#F8CCDD" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.5"/>
+  <rect x="136" y="86" width="14" height="10" rx="2" fill="#F8D3BC" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.5"/>
+  <rect x="156" y="86" width="14" height="10" rx="2" fill="#F8CCDD" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.5"/>
+  <!-- vent strips -->
+  <rect x="110" y="105" width="70" height="4" rx="1.5" fill="#2B2233" fill-opacity="0.10"/>
+  <rect x="110" y="115" width="70" height="4" rx="1.5" fill="#2B2233" fill-opacity="0.10"/>
+  <rect x="110" y="125" width="70" height="4" rx="1.5" fill="#2B2233" fill-opacity="0.10"/>
+  <!-- entrance -->
+  <rect x="133" y="141" width="18" height="19" rx="2" fill="#3A2E45" fill-opacity="0.42" stroke="#2B2233" stroke-opacity="0.25" stroke-width="0.8"/>
+  <!-- coins (left side) -->
+  <!-- coin 1 -->
+  <circle cx="45" cy="67" r="22" fill="url(#va-spend-coin)" stroke="#2B2233" stroke-opacity="0.40" stroke-width="1.5"/>
+  <line x1="45" y1="53" x2="45" y2="81" stroke="#9F86C9" stroke-opacity="0.65" stroke-width="2" stroke-linecap="round"/>
+  <line x1="37" y1="61" x2="53" y2="61" stroke="#9F86C9" stroke-opacity="0.65" stroke-width="2" stroke-linecap="round"/>
+  <line x1="37" y1="73" x2="53" y2="73" stroke="#9F86C9" stroke-opacity="0.65" stroke-width="2" stroke-linecap="round"/>
+  <ellipse cx="36" cy="59" rx="6" ry="10" fill="rgba(255,255,255,0.42)"/>
+  <!-- coin 2 -->
+  <circle cx="57" cy="107" r="17" fill="url(#va-spend-coin)" stroke="#2B2233" stroke-opacity="0.40" stroke-width="1.5"/>
+  <line x1="57" y1="95"  x2="57" y2="119" stroke="#9F86C9" stroke-opacity="0.65" stroke-width="1.8" stroke-linecap="round"/>
+  <line x1="50" y1="102" x2="64" y2="102" stroke="#9F86C9" stroke-opacity="0.65" stroke-width="1.8" stroke-linecap="round"/>
+  <line x1="50" y1="112" x2="64" y2="112" stroke="#9F86C9" stroke-opacity="0.65" stroke-width="1.8" stroke-linecap="round"/>
+  <ellipse cx="50" cy="99" rx="5" ry="8" fill="rgba(255,255,255,0.38)"/>
+  <!-- coin 3 -->
+  <circle cx="40" cy="143" r="14" fill="url(#va-spend-coin)" stroke="#2B2233" stroke-opacity="0.40" stroke-width="1.5"/>
+  <line x1="40" y1="132" x2="40" y2="154" stroke="#9F86C9" stroke-opacity="0.65" stroke-width="1.6" stroke-linecap="round"/>
+  <line x1="33" y1="139" x2="47" y2="139" stroke="#9F86C9" stroke-opacity="0.65" stroke-width="1.6" stroke-linecap="round"/>
+  <line x1="33" y1="148" x2="47" y2="148" stroke="#9F86C9" stroke-opacity="0.65" stroke-width="1.6" stroke-linecap="round"/>
+  <ellipse cx="33" cy="136" rx="4" ry="7" fill="rgba(255,255,255,0.38)"/>
+  <!-- flow dashes -->
+  <path d="M67,67  Q92,57  106,69"  stroke="#F2B5D4" stroke-width="2.2" fill="none" stroke-opacity="0.90" stroke-dasharray="5,3" stroke-linecap="round"/>
+  <path d="M74,107 Q94,100 106,104" stroke="#F2B5D4" stroke-width="2.2" fill="none" stroke-opacity="0.90" stroke-dasharray="5,3" stroke-linecap="round"/>
+  <path d="M54,143 Q82,137 106,139" stroke="#F2B5D4" stroke-width="2.2" fill="none" stroke-opacity="0.90" stroke-dasharray="5,3" stroke-linecap="round"/>
+  <!-- arrowhead tips (pointing right into building) -->
+  <polygon points="112,65 105,61 105,73" fill="#F2B5D4" fill-opacity="0.82"/>
+  <polygon points="112,100 105,96 105,108" fill="#F2B5D4" fill-opacity="0.82"/>
+  <polygon points="112,135 105,131 105,143" fill="#F2B5D4" fill-opacity="0.82"/>
+</symbol>
+<symbol id="vig-capex" viewBox="0 0 200 200">
+  <ellipse cx="100" cy="183" rx="50" ry="7" fill="#2B2233" fill-opacity="0.14" filter="url(#va-blur3)"/>
+  <rect x="70" y="168" width="60" height="10" rx="3" fill="url(#va-cap-coin-a)" stroke="#2B2233" stroke-opacity="0.32" stroke-width="0.9"/>
+  <ellipse cx="100" cy="168" rx="30" ry="5.5" fill="url(#va-cap-top-a)" stroke="#2B2233" stroke-opacity="0.22" stroke-width="0.8"/>
+  <rect x="70" y="157" width="60" height="10" rx="3" fill="url(#va-cap-coin-b)" stroke="#2B2233" stroke-opacity="0.32" stroke-width="0.9"/>
+  <ellipse cx="100" cy="157" rx="30" ry="5.5" fill="url(#va-cap-top-b)" stroke="#2B2233" stroke-opacity="0.22" stroke-width="0.8"/>
+  <rect x="70" y="146" width="60" height="10" rx="3" fill="url(#va-cap-coin-a)" stroke="#2B2233" stroke-opacity="0.32" stroke-width="0.9"/>
+  <ellipse cx="100" cy="146" rx="30" ry="5.5" fill="url(#va-cap-top-a)" stroke="#2B2233" stroke-opacity="0.22" stroke-width="0.8"/>
+  <rect x="70" y="135" width="60" height="10" rx="3" fill="url(#va-cap-coin-b)" stroke="#2B2233" stroke-opacity="0.32" stroke-width="0.9"/>
+  <ellipse cx="100" cy="135" rx="30" ry="5.5" fill="url(#va-cap-top-b)" stroke="#2B2233" stroke-opacity="0.22" stroke-width="0.8"/>
+  <rect x="70" y="124" width="60" height="10" rx="3" fill="url(#va-cap-coin-a)" stroke="#2B2233" stroke-opacity="0.32" stroke-width="0.9"/>
+  <ellipse cx="100" cy="124" rx="30" ry="5.5" fill="url(#va-cap-top-a)" stroke="#2B2233" stroke-opacity="0.22" stroke-width="0.8"/>
+  <rect x="70" y="113" width="60" height="10" rx="3" fill="url(#va-cap-coin-b)" stroke="#2B2233" stroke-opacity="0.32" stroke-width="0.9"/>
+  <ellipse cx="100" cy="113" rx="30" ry="5.5" fill="url(#va-cap-top-b)" stroke="#2B2233" stroke-opacity="0.22" stroke-width="0.8"/>
+  <rect x="70" y="102" width="60" height="10" rx="3" fill="url(#va-cap-coin-a)" stroke="#2B2233" stroke-opacity="0.32" stroke-width="0.9"/>
+  <ellipse cx="100" cy="102" rx="30" ry="5.5" fill="url(#va-cap-top-a)" stroke="#2B2233" stroke-opacity="0.22" stroke-width="0.8"/>
+  <rect x="70" y="91" width="60" height="10" rx="3" fill="url(#va-cap-coin-b)" stroke="#2B2233" stroke-opacity="0.32" stroke-width="0.9"/>
+  <ellipse cx="100" cy="91" rx="30" ry="5.5" fill="url(#va-cap-top-b)" stroke="#2B2233" stroke-opacity="0.22" stroke-width="0.8"/>
+  <rect x="70" y="80" width="60" height="10" rx="3" fill="url(#va-cap-coin-a)" stroke="#2B2233" stroke-opacity="0.32" stroke-width="0.9"/>
+  <ellipse cx="100" cy="80" rx="30" ry="5.5" fill="url(#va-cap-top-a)" stroke="#2B2233" stroke-opacity="0.22" stroke-width="0.8"/>
+  <!-- top-coin rim light -->
+  <ellipse cx="85" cy="79" rx="9" ry="3.5" fill="rgba(255,255,255,0.52)"/>
+  <!-- drawn $ symbol (left side, using arcs + vertical bar) -->
+  <line x1="38" y1="86" x2="38" y2="145" stroke="#9F86C9" stroke-opacity="0.72" stroke-width="3" stroke-linecap="round"/>
+  <!-- top S arc -->
+  <path d="M27,95 Q27,86 38,86 Q49,86 49,95 Q49,104 38,104 Q27,104 27,113 Q27,122 38,122 Q49,122 49,113"
+    stroke="#9F86C9" stroke-opacity="0.72" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <!-- banknote bundles (right side) -->
+  <rect x="142" y="143" width="40" height="14" rx="3" fill="url(#va-cap-note)" stroke="#2B2233" stroke-opacity="0.35" stroke-width="1"/>
+  <line x1="142" y1="150" x2="182" y2="150" stroke="#2B2233" stroke-opacity="0.14" stroke-width="0.7"/>
+  <line x1="152" y1="143" x2="152" y2="157" stroke="#2B2233" stroke-opacity="0.14" stroke-width="0.7"/>
+  <line x1="162" y1="143" x2="162" y2="157" stroke="#2B2233" stroke-opacity="0.14" stroke-width="0.7"/>
+  <line x1="172" y1="143" x2="172" y2="157" stroke="#2B2233" stroke-opacity="0.14" stroke-width="0.7"/>
+  <rect x="145" y="127" width="37" height="13" rx="3" fill="url(#va-cap-note)" stroke="#2B2233" stroke-opacity="0.35" stroke-width="1"/>
+  <line x1="145" y1="133.5" x2="182" y2="133.5" stroke="#2B2233" stroke-opacity="0.14" stroke-width="0.7"/>
+  <line x1="155" y1="127" x2="155" y2="140" stroke="#2B2233" stroke-opacity="0.14" stroke-width="0.7"/>
+  <line x1="165" y1="127" x2="165" y2="140" stroke="#2B2233" stroke-opacity="0.14" stroke-width="0.7"/>
+  <line x1="175" y1="127" x2="175" y2="140" stroke="#2B2233" stroke-opacity="0.14" stroke-width="0.7"/>
+  <rect x="148" y="112" width="34" height="13" rx="3" fill="url(#va-cap-note)" stroke="#2B2233" stroke-opacity="0.35" stroke-width="1"/>
+  <line x1="148" y1="118.5" x2="182" y2="118.5" stroke="#2B2233" stroke-opacity="0.14" stroke-width="0.7"/>
+  <line x1="158" y1="112" x2="158" y2="125" stroke="#2B2233" stroke-opacity="0.14" stroke-width="0.7"/>
+  <line x1="168" y1="112" x2="168" y2="125" stroke="#2B2233" stroke-opacity="0.14" stroke-width="0.7"/>
+</symbol>
+<symbol id="vig-demand" viewBox="0 0 200 200">
+  <ellipse cx="72" cy="172" rx="52" ry="7" fill="#2B2233" fill-opacity="0.13" filter="url(#va-blur3)"/>
+  <!-- datacenter building (left) -->
+  <rect x="18" y="36" width="90" height="122" rx="5"
+    fill="url(#va-dem-building)" stroke="#2B2233" stroke-opacity="0.45" stroke-width="1.5"/>
+  <rect x="19" y="37" width="13" height="52" rx="5" fill="rgba(255,255,255,0.28)"/>
+  <!-- server blade strips (front face) -->
+  <rect x="20" y="52" width="86" height="4" rx="1.5" fill="#2B2233" fill-opacity="0.09"/>
+  <rect x="20" y="62" width="86" height="4" rx="1.5" fill="#2B2233" fill-opacity="0.09"/>
+  <rect x="20" y="72" width="86" height="4" rx="1.5" fill="#2B2233" fill-opacity="0.09"/>
+  <rect x="20" y="82" width="86" height="4" rx="1.5" fill="#2B2233" fill-opacity="0.09"/>
+  <rect x="20" y="92" width="86" height="4" rx="1.5" fill="#2B2233" fill-opacity="0.09"/>
+  <rect x="20" y="102" width="86" height="4" rx="1.5" fill="#2B2233" fill-opacity="0.09"/>
+  <!-- doorway / maw opening -->
+  <rect x="48" y="110" width="40" height="48" rx="4"
+    fill="url(#va-dem-door)" stroke="#2B2233" stroke-opacity="0.22" stroke-width="0.8"/>
+  <!-- hungry glow radiating out -->
+  <ellipse cx="68" cy="134" rx="44" ry="38" fill="url(#va-dem-glow)" filter="url(#va-blur5)"/>
+  <!-- light rays from doorway -->
+  <line x1="88" y1="134" x2="114" y2="118" stroke="#E8A38C" stroke-opacity="0.38" stroke-width="1.5" stroke-dasharray="4,3" stroke-linecap="round"/>
+  <line x1="88" y1="134" x2="118" y2="134" stroke="#E8A38C" stroke-opacity="0.38" stroke-width="1.5" stroke-dasharray="4,3" stroke-linecap="round"/>
+  <line x1="88" y1="134" x2="114" y2="150" stroke="#E8A38C" stroke-opacity="0.38" stroke-width="1.5" stroke-dasharray="4,3" stroke-linecap="round"/>
+  <!-- GPU cards approaching from right -->  <g transform="translate(122,54)">
+    <rect width="52" height="22" rx="3" fill="url(#va-dem-gpu)" stroke="#2B2233" stroke-opacity="0.40" stroke-width="1.2"/>
+    <rect x="0" y="4" width="6" height="14" rx="1" fill="#3A2E45" fill-opacity="0.55" stroke="#2B2233" stroke-opacity="0.25" stroke-width="0.7"/>
+    <circle cx="22" cy="11" r="7" fill="#F3E7EE" stroke="#2B2233" stroke-opacity="0.20" stroke-width="0.8"/>
+    <circle cx="22" cy="11" r="3.5" fill="#E8A38C"/>
+    <circle cx="38" cy="11" r="7" fill="#F3E7EE" stroke="#2B2233" stroke-opacity="0.20" stroke-width="0.8"/>
+    <circle cx="38" cy="11" r="3.5" fill="#F2B5D4"/>
+    <line x1="8" y1="11" x2="52" y2="11" stroke="#2B2233" stroke-opacity="0.12" stroke-width="0.6"/>
+    <rect x="1" y="1" width="6" height="18" rx="2" fill="rgba(255,255,255,0.30)"/>
+  </g>  <g transform="translate(128,89)">
+    <rect width="52" height="22" rx="3" fill="url(#va-dem-gpu)" stroke="#2B2233" stroke-opacity="0.40" stroke-width="1.2"/>
+    <rect x="0" y="4" width="6" height="14" rx="1" fill="#3A2E45" fill-opacity="0.55" stroke="#2B2233" stroke-opacity="0.25" stroke-width="0.7"/>
+    <circle cx="22" cy="11" r="7" fill="#F3E7EE" stroke="#2B2233" stroke-opacity="0.20" stroke-width="0.8"/>
+    <circle cx="22" cy="11" r="3.5" fill="#E8A38C"/>
+    <circle cx="38" cy="11" r="7" fill="#F3E7EE" stroke="#2B2233" stroke-opacity="0.20" stroke-width="0.8"/>
+    <circle cx="38" cy="11" r="3.5" fill="#F2B5D4"/>
+    <line x1="8" y1="11" x2="52" y2="11" stroke="#2B2233" stroke-opacity="0.12" stroke-width="0.6"/>
+    <rect x="1" y="1" width="6" height="18" rx="2" fill="rgba(255,255,255,0.30)"/>
+  </g>  <g transform="translate(122,124)">
+    <rect width="52" height="22" rx="3" fill="url(#va-dem-gpu)" stroke="#2B2233" stroke-opacity="0.40" stroke-width="1.2"/>
+    <rect x="0" y="4" width="6" height="14" rx="1" fill="#3A2E45" fill-opacity="0.55" stroke="#2B2233" stroke-opacity="0.25" stroke-width="0.7"/>
+    <circle cx="22" cy="11" r="7" fill="#F3E7EE" stroke="#2B2233" stroke-opacity="0.20" stroke-width="0.8"/>
+    <circle cx="22" cy="11" r="3.5" fill="#E8A38C"/>
+    <circle cx="38" cy="11" r="7" fill="#F3E7EE" stroke="#2B2233" stroke-opacity="0.20" stroke-width="0.8"/>
+    <circle cx="38" cy="11" r="3.5" fill="#F2B5D4"/>
+    <line x1="8" y1="11" x2="52" y2="11" stroke="#2B2233" stroke-opacity="0.12" stroke-width="0.6"/>
+    <rect x="1" y="1" width="6" height="18" rx="2" fill="rgba(255,255,255,0.30)"/>
+  </g>
+  <!-- approach arrows (pointing left toward building) -->
+  <polygon points="120,65  126,61 126,69" fill="#E8A38C" fill-opacity="0.72"/>
+  <polygon points="120,100 126,96 126,104" fill="#E8A38C" fill-opacity="0.72"/>
+  <polygon points="120,135 126,131 126,139" fill="#E8A38C" fill-opacity="0.72"/>
+</symbol>
+<symbol id="vig-nuclear" viewBox="0 0 200 200">
+  <ellipse cx="100" cy="174" rx="72" ry="7" fill="#2B2233" fill-opacity="0.12" filter="url(#va-blur3)"/>
+  <!-- ground line -->
+  <line x1="22" y1="165" x2="178" y2="165" stroke="#2B2233" stroke-opacity="0.15" stroke-width="1"/>
+
+  <!-- TOWER 1 (left, larger)
+       Base  (y=165): x=26..116 = 90 px wide
+       Throat(y=108): x=57..87  = 30 px wide  ← narrowest
+       Top   (y=36):  x=52..92  = 40 px wide  ← flares back out
+  -->
+  <path d="M26,165
+           C30,134 52,116 57,108
+           C57,100 52,68 52,36
+           L92,36
+           C92,68 87,100 87,108
+           C87,116 114,134 118,165 Z"
+    fill="url(#va-nuc-tower1)" stroke="#2B2233" stroke-opacity="0.45" stroke-width="1.5"/>
+  <!-- tower 1 rim light — thin left sliver -->
+  <path d="M27,158 C31,130 52,114 57,108 C57,100 52,67 53,36 L58,36 C57,68 57,100 57,108 C57,116 34,134 30,158 Z"
+    fill="rgba(255,255,255,0.30)" stroke="none"/>
+  <!-- subtle inner shade line to emphasise the waist -->
+  <path d="M57,108 C57,100 52,68 52,36" stroke="#2B2233" stroke-opacity="0.08" stroke-width="1.5" fill="none"/>
+  <path d="M87,108 C87,100 92,68 92,36" stroke="#2B2233" stroke-opacity="0.08" stroke-width="1.5" fill="none"/>
+
+  <!-- TOWER 2 (right, slightly smaller)
+       Base  (y=165): x=104..176 = 72 px wide
+       Throat(y=110): x=128..152 = 24 px wide
+       Top   (y=40):  x=124..156 = 32 px wide
+  -->
+  <path d="M104,165
+           C108,132 124,114 128,110
+           C128,102 124,70 124,40
+           L156,40
+           C156,70 152,102 152,110
+           C152,114 172,132 176,165 Z"
+    fill="url(#va-nuc-tower2)" stroke="#2B2233" stroke-opacity="0.45" stroke-width="1.5"/>
+  <!-- tower 2 rim light -->
+  <path d="M105,157 C109,128 124,113 128,110 C128,102 124,70 125,40 L130,40 C129,70 129,102 129,110 C129,113 112,132 109,157 Z"
+    fill="rgba(255,255,255,0.26)" stroke="none"/>
+
+  <!-- STEAM PUFFS above tower 1 (lavender-grey so they're visible against cream page) -->
+  <circle cx="72"  cy="27" r="16" fill="url(#va-nuc-steam)"/>
+  <circle cx="56"  cy="19" r="13" fill="url(#va-nuc-steam)"/>
+  <circle cx="87"  cy="22" r="12" fill="url(#va-nuc-steam)"/>
+  <circle cx="46"  cy="28" r="10" fill="url(#va-nuc-steam)"/>
+  <!-- STEAM PUFFS above tower 2 -->
+  <circle cx="140" cy="31" r="14" fill="url(#va-nuc-steam)"/>
+  <circle cx="126" cy="24" r="11" fill="url(#va-nuc-steam)"/>
+  <circle cx="154" cy="25" r="10" fill="url(#va-nuc-steam)"/>
+
+  <!-- ATOM GLYPH (lower right) -->
+  <circle cx="162" cy="130" r="9"  fill="#F8CCDD" stroke="#2B2233" stroke-opacity="0.30" stroke-width="1"/>
+  <circle cx="162" cy="130" r="4.5" fill="#E8A38C"/>
+  <ellipse cx="162" cy="130" rx="23" ry="7.5"
+    fill="none" stroke="#C9B8F0" stroke-opacity="0.82" stroke-width="1.8"/>
+  <ellipse cx="162" cy="130" rx="23" ry="7.5" transform="rotate(60,162,130)"
+    fill="none" stroke="#B59FE3" stroke-opacity="0.74" stroke-width="1.8"/>
+  <ellipse cx="162" cy="130" rx="23" ry="7.5" transform="rotate(120,162,130)"
+    fill="none" stroke="#C9B8F0" stroke-opacity="0.74" stroke-width="1.8"/>
+  <circle cx="185" cy="130" r="3.5" fill="#F2B5D4" stroke="#2B2233" stroke-opacity="0.20" stroke-width="0.6"/>
+  <circle cx="150" cy="118" r="3.5" fill="#F2B5D4" stroke="#2B2233" stroke-opacity="0.20" stroke-width="0.6"/>
+  <circle cx="174" cy="142" r="3"   fill="#F8CCDD" stroke="#2B2233" stroke-opacity="0.20" stroke-width="0.6"/>
+
+  <!-- POWER CABLE from tower base to mini server -->
+  <path d="M72,165 Q100,176 138,169 Q152,165 158,158"
+    stroke="#2B2233" stroke-opacity="0.50" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <!-- lightning bolt on cable (more visible) -->
+  <polyline points="97,172 102,165 98,164 103,157"
+    stroke="#F8D3BC" stroke-opacity="0.92" stroke-width="2" fill="none"
+    stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- MINI SERVER (bottom right) -->
+  <rect x="148" y="150" width="28" height="19" rx="2"
+    fill="url(#va-nuc-server)" stroke="#2B2233" stroke-opacity="0.40" stroke-width="1"/>
+  <line x1="150" y1="156" x2="174" y2="156" stroke="#2B2233" stroke-opacity="0.20" stroke-width="0.8"/>
+  <line x1="150" y1="161" x2="174" y2="161" stroke="#2B2233" stroke-opacity="0.20" stroke-width="0.8"/>
+  <circle cx="172" cy="158.5" r="2.5" fill="#F8CCDD"/>
+</symbol>
+<symbol id="vig-lease" viewBox="0 0 200 200">
+  <ellipse cx="43"  cy="168" rx="30" ry="6" fill="#2B2233" fill-opacity="0.11" filter="url(#va-blur3)"/>
+  <ellipse cx="157" cy="168" rx="30" ry="6" fill="#2B2233" fill-opacity="0.11" filter="url(#va-blur3)"/>
+  <rect x="14" y="52" width="56" height="104" rx="5" fill="url(#va-lease-left-co)" stroke="#2B2233" stroke-opacity="0.45" stroke-width="1.5"/>
+  <rect x="15" y="53" width="11" height="52" rx="5" fill="rgba(255,255,255,0.28)"/>
+  <rect x="23" y="66" width="12" height="9" rx="2" fill="#F7EFE9" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.5"/>
+  <rect x="50" y="66" width="12" height="9" rx="2" fill="#F7EFE9" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.5"/>
+  <rect x="23" y="82" width="12" height="9" rx="2" fill="#F7EFE9" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.5"/>
+  <rect x="50" y="82" width="12" height="9" rx="2" fill="#F7EFE9" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.5"/>
+  <rect x="23" y="98" width="12" height="9" rx="2" fill="#F7EFE9" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.5"/>
+  <rect x="50" y="98" width="12" height="9" rx="2" fill="#F7EFE9" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.5"/>
+  <rect x="34" y="136" width="16" height="20" rx="2" fill="#3A2E45" fill-opacity="0.40"/>
+  <rect x="130" y="52" width="56" height="104" rx="5" fill="url(#va-lease-right-co)" stroke="#2B2233" stroke-opacity="0.45" stroke-width="1.5"/>
+  <rect x="131" y="53" width="11" height="52" rx="5" fill="rgba(255,255,255,0.28)"/>
+  <rect x="139" y="66" width="12" height="9" rx="2" fill="#F7EFE9" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.5"/>
+  <rect x="166" y="66" width="12" height="9" rx="2" fill="#F7EFE9" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.5"/>
+  <rect x="139" y="82" width="12" height="9" rx="2" fill="#F7EFE9" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.5"/>
+  <rect x="166" y="82" width="12" height="9" rx="2" fill="#F7EFE9" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.5"/>
+  <rect x="139" y="98" width="12" height="9" rx="2" fill="#F7EFE9" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.5"/>
+  <rect x="166" y="98" width="12" height="9" rx="2" fill="#F7EFE9" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.5"/>
+  <rect x="150" y="136" width="16" height="20" rx="2" fill="#3A2E45" fill-opacity="0.40"/>
+  <!-- GPU CARD (center) -->
+  <rect x="71" y="86" width="58" height="26" rx="4"
+    fill="url(#va-lease-gpu)" stroke="#2B2233" stroke-opacity="0.45" stroke-width="1.5"/>
+  <rect x="71" y="90" width="7" height="18" rx="2" fill="#3A2E45" fill-opacity="0.52" stroke="#2B2233" stroke-opacity="0.28" stroke-width="0.7"/>
+  <circle cx="102" cy="99" r="8"  fill="#F3E7EE" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.8"/>
+  <circle cx="102" cy="99" r="4"  fill="#C9B8F0"/>
+  <circle cx="118" cy="99" r="8"  fill="#F3E7EE" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.8"/>
+  <circle cx="118" cy="99" r="4"  fill="#B59FE3"/>
+  <line x1="80" y1="99" x2="127" y2="99" stroke="#2B2233" stroke-opacity="0.12" stroke-width="0.6"/>
+  <rect x="72" y="87" width="9" height="24" rx="3" fill="rgba(255,255,255,0.35)"/>
+  <!-- RENTAL TAG -->
+  <line x1="100" y1="86" x2="100" y2="73" stroke="#2B2233" stroke-opacity="0.40" stroke-width="1" stroke-linecap="round"/>
+  <rect x="88" y="59" width="24" height="14" rx="3"
+    fill="url(#va-lease-tag)" stroke="#2B2233" stroke-opacity="0.45" stroke-width="1.2"/>
+  <circle cx="100" cy="66" r="3" fill="none" stroke="#2B2233" stroke-opacity="0.38" stroke-width="1.1"/>
+  <line x1="92" y1="63" x2="108" y2="63" stroke="#9F86C9" stroke-opacity="0.60" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="92" y1="70" x2="108" y2="70" stroke="#9F86C9" stroke-opacity="0.60" stroke-width="1.2" stroke-linecap="round"/>
+  <!-- transfer arrows -->
+  <polygon points="72,95 64,91 64,103" fill="#D98FC0" fill-opacity="0.78"/>
+  <polygon points="128,95 136,91 136,103" fill="#C9B8F0" fill-opacity="0.78"/>
+</symbol>
+<symbol id="vig-constrained" viewBox="0 0 200 200">
+  <ellipse cx="100" cy="180" rx="54" ry="7" fill="#2B2233" fill-opacity="0.12" filter="url(#va-blur3)"/>
+  <!-- gauge track background (full arc) -->
+  <path d="M52.5,165.9 A62,62 0 1 1 147.5,165.9"
+    fill="none" stroke="#2B2233" stroke-opacity="0.08" stroke-width="22" stroke-linecap="round"/>
+  <!-- segment 1: safe / lilac -->
+  <path d="M52.5,165.9 A62,62 0 0 1 57.5,80.9"
+    fill="none" stroke="#C9B8F0" stroke-opacity="0.88" stroke-width="18" stroke-linecap="butt"/>
+  <!-- segment 2: caution / peach -->
+  <path d="M57.5,80.9 A62,62 0 0 1 142.5,80.9"
+    fill="none" stroke="#F8D3BC" stroke-opacity="0.88" stroke-width="18" stroke-linecap="butt"/>
+  <!-- segment 3: danger / coral-magenta -->
+  <path d="M142.5,80.9 A62,62 0 0 1 147.5,165.9"
+    fill="none" stroke="#E8A38C" stroke-opacity="0.88" stroke-width="18" stroke-linecap="butt"/>
+  <!-- magenta pulse glow on danger zone -->
+  <path d="M142.5,80.9 A62,62 0 0 1 147.5,165.9"
+    fill="none" stroke="#D98FC0" stroke-opacity="0.42" stroke-width="26" stroke-linecap="round" filter="url(#va-blur5)"/>
+  <line x1="60.9" y1="158.8" x2="44.1" y2="172.9" stroke="#2B2233" stroke-opacity="0.28" stroke-width="1.5"/>
+  <line x1="53.8" y1="104.4" x2="33.8" y2="95.1" stroke="#2B2233" stroke-opacity="0.28" stroke-width="1.5"/>
+  <line x1="100.0" y1="75.0" x2="100.0" y2="53.0" stroke="#2B2233" stroke-opacity="0.28" stroke-width="1.5"/>
+  <line x1="146.2" y1="104.4" x2="166.2" y2="95.1" stroke="#2B2233" stroke-opacity="0.28" stroke-width="1.5"/>
+  <line x1="139.1" y1="158.8" x2="155.9" y2="172.9" stroke="#2B2233" stroke-opacity="0.28" stroke-width="1.5"/>
+  <!-- needle -->
+  <line x1="100" y1="126" x2="147.1" y2="148.0"
+    stroke="url(#va-con-needle)" stroke-width="4.5" stroke-linecap="round"/>
+  <!-- hub -->
+  <circle cx="100" cy="126" r="10" fill="#F8D3BC" stroke="#2B2233" stroke-opacity="0.35" stroke-width="1.2"/>
+  <circle cx="100" cy="126" r="5"  fill="#E8A38C"/>
+  <!-- WARNING diamond above -->
+  <polygon points="100,30 118,54 100,78 82,54"
+    fill="url(#va-con-warn)" fill-opacity="0.88" stroke="#2B2233" stroke-opacity="0.35" stroke-width="1.5"/>
+  <!-- exclamation inside diamond -->
+  <line x1="100" y1="40" x2="100" y2="60" stroke="#2B2233" stroke-opacity="0.55" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="100" cy="68" r="2.5" fill="#2B2233" fill-opacity="0.55"/>
+  <!-- mini datacenter below, "bursting" -->
+  <rect x="72" y="158" width="56" height="20" rx="3"
+    fill="url(#va-con-building)" stroke="#2B2233" stroke-opacity="0.35" stroke-width="1"/>
+  <line x1="74" y1="164" x2="126" y2="164" stroke="#2B2233" stroke-opacity="0.14" stroke-width="0.8"/>
+  <line x1="74" y1="169" x2="126" y2="169" stroke="#2B2233" stroke-opacity="0.14" stroke-width="0.8"/>
+  <line x1="74" y1="174" x2="126" y2="174" stroke="#2B2233" stroke-opacity="0.14" stroke-width="0.8"/>
+  <!-- burst lines -->
+  <line x1="72"  y1="163" x2="64"  y2="157" stroke="#D98FC0" stroke-opacity="0.65" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="70"  y1="170" x2="61"  y2="170" stroke="#D98FC0" stroke-opacity="0.65" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="128" y1="163" x2="136" y2="157" stroke="#D98FC0" stroke-opacity="0.65" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="130" y1="170" x2="139" y2="170" stroke="#D98FC0" stroke-opacity="0.65" stroke-width="1.5" stroke-linecap="round"/>
+</symbol>
+<symbol id="vig-laptop" viewBox="0 0 200 200">
+  <!-- ambient glow behind laptop -->
+  <ellipse cx="100" cy="100" rx="76" ry="70" fill="url(#va-lap-glow)" filter="url(#va-glow9)"/>
+  <ellipse cx="100" cy="174" rx="60" ry="7" fill="#2B2233" fill-opacity="0.12" filter="url(#va-blur3)"/>
+  <!-- SCREEN LID -->
+  <rect x="30" y="34" width="140" height="98" rx="8"
+    fill="url(#va-lap-lid)" stroke="#2B2233" stroke-opacity="0.45" stroke-width="1.5"/>
+  <!-- bezel -->
+  <rect x="36" y="40" width="128" height="86" rx="5"
+    fill="#3A2E45" fill-opacity="0.12" stroke="#2B2233" stroke-opacity="0.14" stroke-width="0.5"/>
+  <!-- active screen -->
+  <rect x="40" y="44" width="120" height="78" rx="4"
+    fill="url(#va-lap-screen)" stroke="#2B2233" stroke-opacity="0.08" stroke-width="0.5"/>
+  <!-- screen inner highlight -->
+  <ellipse cx="80" cy="63" rx="34" ry="20" fill="rgba(255,255,255,0.22)" filter="url(#va-blur5)"/>
+  <!-- webcam -->
+  <circle cx="100" cy="40" r="3" fill="#3A2E45" fill-opacity="0.48" stroke="#2B2233" stroke-opacity="0.20" stroke-width="0.5"/>
+  <!-- lid rim light (top-left) -->
+  <rect x="31" y="35" width="14" height="56" rx="6" fill="rgba(255,255,255,0.38)"/>
+  <!-- HINGE strip -->
+  <rect x="55" y="130" width="90" height="7" rx="3.5"
+    fill="#E8A38C" fill-opacity="0.55" stroke="#2B2233" stroke-opacity="0.22" stroke-width="0.8"/>
+  <!-- KEYBOARD BASE -->
+  <rect x="26" y="135" width="148" height="28" rx="7"
+    fill="url(#va-lap-base)" stroke="#2B2233" stroke-opacity="0.45" stroke-width="1.5"/>
+  <rect x="27" y="136" width="15" height="28" rx="6" fill="rgba(255,255,255,0.34)"/>
+  <!-- key rows (hint only) -->
+  <rect x="40"  y="139" width="8" height="5" rx="1" fill="#2B2233" fill-opacity="0.07"/>
+  <rect x="52"  y="139" width="8" height="5" rx="1" fill="#2B2233" fill-opacity="0.07"/>
+  <rect x="64"  y="139" width="8" height="5" rx="1" fill="#2B2233" fill-opacity="0.07"/>
+  <rect x="76"  y="139" width="8" height="5" rx="1" fill="#2B2233" fill-opacity="0.07"/>
+  <rect x="88"  y="139" width="8" height="5" rx="1" fill="#2B2233" fill-opacity="0.07"/>
+  <rect x="100" y="139" width="8" height="5" rx="1" fill="#2B2233" fill-opacity="0.07"/>
+  <rect x="112" y="139" width="8" height="5" rx="1" fill="#2B2233" fill-opacity="0.07"/>
+  <rect x="124" y="139" width="8" height="5" rx="1" fill="#2B2233" fill-opacity="0.07"/>
+  <rect x="136" y="139" width="8" height="5" rx="1" fill="#2B2233" fill-opacity="0.07"/>
+  <rect x="148" y="139" width="8" height="5" rx="1" fill="#2B2233" fill-opacity="0.07"/>
+  <!-- space bar row -->
+  <rect x="66" y="149" width="68" height="5" rx="1" fill="#2B2233" fill-opacity="0.07"/>
+  <!-- SPARKLES -->  <g transform="translate(178,50)">
+    <line x1="0" y1="-10" x2="0" y2="10" stroke="#C9B8F0" stroke-width="2.7" stroke-linecap="round" stroke-opacity="0.88"/>
+    <line x1="-10" y1="0" x2="10" y2="0" stroke="#C9B8F0" stroke-width="2.7" stroke-linecap="round" stroke-opacity="0.88"/>
+    <line x1="-5.5" y1="-5.5" x2="5.5" y2="5.5" stroke="#C9B8F0" stroke-width="1.5" stroke-linecap="round" stroke-opacity="0.53"/>
+    <line x1="5.5" y1="-5.5" x2="-5.5" y2="5.5" stroke="#C9B8F0" stroke-width="1.5" stroke-linecap="round" stroke-opacity="0.53"/>
+  </g>  <g transform="translate(26,58)">
+    <line x1="0" y1="-8" x2="0" y2="8" stroke="#F8CCDD" stroke-width="2.2" stroke-linecap="round" stroke-opacity="0.8"/>
+    <line x1="-8" y1="0" x2="8" y2="0" stroke="#F8CCDD" stroke-width="2.2" stroke-linecap="round" stroke-opacity="0.8"/>
+    <line x1="-4.4" y1="-4.4" x2="4.4" y2="4.4" stroke="#F8CCDD" stroke-width="1.2" stroke-linecap="round" stroke-opacity="0.48"/>
+    <line x1="4.4" y1="-4.4" x2="-4.4" y2="4.4" stroke="#F8CCDD" stroke-width="1.2" stroke-linecap="round" stroke-opacity="0.48"/>
+  </g>  <g transform="translate(182,112)">
+    <line x1="0" y1="-6" x2="0" y2="6" stroke="#B59FE3" stroke-width="1.6" stroke-linecap="round" stroke-opacity="0.72"/>
+    <line x1="-6" y1="0" x2="6" y2="0" stroke="#B59FE3" stroke-width="1.6" stroke-linecap="round" stroke-opacity="0.72"/>
+    <line x1="-3.3" y1="-3.3" x2="3.3" y2="3.3" stroke="#B59FE3" stroke-width="0.9" stroke-linecap="round" stroke-opacity="0.43"/>
+    <line x1="3.3" y1="-3.3" x2="-3.3" y2="3.3" stroke="#B59FE3" stroke-width="0.9" stroke-linecap="round" stroke-opacity="0.43"/>
+  </g>  <g transform="translate(100,22)">
+    <line x1="0" y1="-9" x2="0" y2="9" stroke="#C9B8F0" stroke-width="2.4" stroke-linecap="round" stroke-opacity="0.78"/>
+    <line x1="-9" y1="0" x2="9" y2="0" stroke="#C9B8F0" stroke-width="2.4" stroke-linecap="round" stroke-opacity="0.78"/>
+    <line x1="-5.0" y1="-5.0" x2="5.0" y2="5.0" stroke="#C9B8F0" stroke-width="1.3" stroke-linecap="round" stroke-opacity="0.47"/>
+    <line x1="5.0" y1="-5.0" x2="-5.0" y2="5.0" stroke="#C9B8F0" stroke-width="1.3" stroke-linecap="round" stroke-opacity="0.47"/>
+  </g>  <g transform="translate(20,148)">
+    <line x1="0" y1="-6" x2="0" y2="6" stroke="#F2B5D4" stroke-width="1.6" stroke-linecap="round" stroke-opacity="0.7"/>
+    <line x1="-6" y1="0" x2="6" y2="0" stroke="#F2B5D4" stroke-width="1.6" stroke-linecap="round" stroke-opacity="0.7"/>
+    <line x1="-3.3" y1="-3.3" x2="3.3" y2="3.3" stroke="#F2B5D4" stroke-width="0.9" stroke-linecap="round" stroke-opacity="0.42"/>
+    <line x1="3.3" y1="-3.3" x2="-3.3" y2="3.3" stroke="#F2B5D4" stroke-width="0.9" stroke-linecap="round" stroke-opacity="0.42"/>
+  </g>  <g transform="translate(164,164)">
+    <line x1="0" y1="-5" x2="0" y2="5" stroke="#F8CCDD" stroke-width="1.4" stroke-linecap="round" stroke-opacity="0.65"/>
+    <line x1="-5" y1="0" x2="5" y2="0" stroke="#F8CCDD" stroke-width="1.4" stroke-linecap="round" stroke-opacity="0.65"/>
+    <line x1="-2.8" y1="-2.8" x2="2.8" y2="2.8" stroke="#F8CCDD" stroke-width="0.8" stroke-linecap="round" stroke-opacity="0.39"/>
+    <line x1="2.8" y1="-2.8" x2="-2.8" y2="2.8" stroke="#F8CCDD" stroke-width="0.8" stroke-linecap="round" stroke-opacity="0.39"/>
+  </g>
+</symbol>
+<symbol id="vig-onecompute" viewBox="0 0 200 200">
+  <ellipse cx="100" cy="182" rx="65" ry="7" fill="#2B2233" fill-opacity="0.10" filter="url(#va-blur3)"/>
+  <!-- central field glow -->
+  <circle cx="100" cy="100" r="84" fill="url(#va-oc-glow)" filter="url(#va-glow9)"/>
+  <!-- device halos -->
+  <circle cx="100.0" cy="28.0" r="20" fill="url(#va-oc-devglow)"/>
+  <circle cx="162.4" cy="64.0" r="20" fill="url(#va-oc-devglow)"/>
+  <circle cx="162.4" cy="136.0" r="20" fill="url(#va-oc-devglow)"/>
+  <circle cx="100.0" cy="172.0" r="20" fill="url(#va-oc-devglow)"/>
+  <circle cx="37.6" cy="136.0" r="20" fill="url(#va-oc-devglow)"/>
+  <circle cx="37.6" cy="64.0" r="20" fill="url(#va-oc-devglow)"/>
+  <!-- spoke lines -->
+  <line x1="100" y1="100" x2="100.0" y2="28.0" stroke="#C9B8F0" stroke-opacity="0.62" stroke-width="2" stroke-linecap="round"/>
+  <line x1="100" y1="100" x2="162.4" y2="64.0" stroke="#C9B8F0" stroke-opacity="0.62" stroke-width="2" stroke-linecap="round"/>
+  <line x1="100" y1="100" x2="162.4" y2="136.0" stroke="#C9B8F0" stroke-opacity="0.62" stroke-width="2" stroke-linecap="round"/>
+  <line x1="100" y1="100" x2="100.0" y2="172.0" stroke="#C9B8F0" stroke-opacity="0.62" stroke-width="2" stroke-linecap="round"/>
+  <line x1="100" y1="100" x2="37.6" y2="136.0" stroke="#C9B8F0" stroke-opacity="0.62" stroke-width="2" stroke-linecap="round"/>
+  <line x1="100" y1="100" x2="37.6" y2="64.0" stroke="#C9B8F0" stroke-opacity="0.62" stroke-width="2" stroke-linecap="round"/>
+  <!-- connection dots -->
+  <circle cx="100.0" cy="28.0" r="3.5" fill="#C9B8F0" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.8"/>
+  <circle cx="162.4" cy="64.0" r="3.5" fill="#C9B8F0" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.8"/>
+  <circle cx="162.4" cy="136.0" r="3.5" fill="#C9B8F0" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.8"/>
+  <circle cx="100.0" cy="172.0" r="3.5" fill="#C9B8F0" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.8"/>
+  <circle cx="37.6" cy="136.0" r="3.5" fill="#C9B8F0" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.8"/>
+  <circle cx="37.6" cy="64.0" r="3.5" fill="#C9B8F0" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.8"/>
+  <!-- device icons -->
+  <g transform="translate(100.0,28.0)">
+    <rect x="-12" y="-15" width="24" height="15" rx="2" fill="url(#va-oc-device)" stroke="#2B2233" stroke-opacity="0.38" stroke-width="1"/>
+    <rect x="-13" y="0"   width="26" height="6"  rx="2" fill="url(#va-oc-device)" stroke="#2B2233" stroke-opacity="0.38" stroke-width="1"/>
+    <rect x="-9"  y="-12" width="18" height="9"  rx="1" fill="#C9B8F0" fill-opacity="0.72"/>
+  </g>  <g transform="translate(162.4,64.0)">
+    <rect x="-13" y="-16" width="26" height="20" rx="2" fill="url(#va-oc-device)" stroke="#2B2233" stroke-opacity="0.38" stroke-width="1"/>
+    <rect x="-10" y="-13" width="20" height="13" rx="1" fill="#C9B8F0" fill-opacity="0.72"/>
+    <rect x="-3"  y="4"   width="6"  height="5"  rx="1" fill="url(#va-oc-device)" stroke="#2B2233" stroke-opacity="0.28" stroke-width="0.8"/>
+    <rect x="-7"  y="9"   width="14" height="3"  rx="1" fill="url(#va-oc-device)" stroke="#2B2233" stroke-opacity="0.28" stroke-width="0.8"/>
+  </g>  <g transform="translate(162.4,136.0)">
+    <rect x="-12" y="-17" width="24" height="34" rx="2" fill="url(#va-oc-device)" stroke="#2B2233" stroke-opacity="0.38" stroke-width="1"/>
+    <line x1="-12" y1="-6" x2="12" y2="-6" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.8"/>
+    <line x1="-12" y1="4"  x2="12" y2="4"  stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.8"/>
+    <circle cx="7" cy="-11.5" r="2.2" fill="#C9B8F0"/>
+    <circle cx="7" cy="-1"    r="2.2" fill="#F8CCDD"/>
+    <circle cx="7" cy="9"     r="2.2" fill="#C9B8F0"/>
+  </g>  <g transform="translate(100.0,172.0)">
+    <rect x="-10" y="-17" width="20" height="28" rx="2" fill="url(#va-oc-device)" stroke="#2B2233" stroke-opacity="0.38" stroke-width="1"/>
+    <circle cx="0" cy="-6" r="6" fill="#C9B8F0" fill-opacity="0.72"/>
+    <rect x="-5" y="6"  width="10" height="2.5" rx="1" fill="#2B2233" fill-opacity="0.15"/>
+    <circle cx="0" cy="12" r="2" fill="#F8CCDD"/>
+  </g>  <g transform="translate(37.6,136.0)">
+    <rect x="-14" y="-10" width="28" height="20" rx="4" fill="url(#va-oc-device)" stroke="#2B2233" stroke-opacity="0.38" stroke-width="1"/>
+    <circle cx="-5" cy="0" r="4.5" fill="#C9B8F0" fill-opacity="0.65" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.6"/>
+    <circle cx="8"  cy="-3" r="2" fill="#F8CCDD"/>
+    <circle cx="12" cy="2"  r="2" fill="#F2B5D4"/>
+  </g>  <g transform="translate(37.6,64.0)">
+    <rect x="-10" y="-17" width="20" height="30" rx="3" fill="url(#va-oc-device)" stroke="#2B2233" stroke-opacity="0.38" stroke-width="1"/>
+    <rect x="-7"  y="-14" width="14" height="18" rx="1" fill="#C9B8F0" fill-opacity="0.72"/>
+    <circle cx="0" cy="9" r="3" fill="#F8CCDD" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.6"/>
+  </g>
+  <!-- hub circle -->
+  <circle cx="100" cy="100" r="27" fill="url(#va-oc-hub)" stroke="#2B2233" stroke-opacity="0.40" stroke-width="1.5"/>
+  <circle cx="100" cy="100" r="19" fill="none" stroke="#F8CCDD" stroke-opacity="0.62" stroke-width="1.5"/>
+  <circle cx="100" cy="100" r="8"  fill="#F8CCDD" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.8"/>
+  <circle cx="100" cy="100" r="3.5" fill="#F8D3BC"/>
+  <!-- rim light on hub -->
+  <ellipse cx="92" cy="90" rx="8" ry="11" fill="rgba(255,255,255,0.45)"/>
+  <!-- orbit accent dots -->
+  <circle cx="118.5" cy="68.0" r="3.5" fill="#F2B5D4" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.6"/>
+  <circle cx="118.5" cy="132.0" r="3.5" fill="#C9B8F0" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.6"/>
+  <circle cx="63.0" cy="100.0" r="3.5" fill="#F8D3BC" stroke="#2B2233" stroke-opacity="0.18" stroke-width="0.6"/>
+</symbol>
+</svg>
+
+  <!-- ====================== STAGE 2.5 ====================== -->
+<section class="narr" id="why" aria-label="Why OneCompute exists: the cost of the AI build-out — Microsoft is spending nearly one hundred billion dollars this year on AI infrastructure, taking extreme measures like restarting a nuclear reactor at Three Mile Island and leasing GPUs from competitors, yet is still capacity constrained. The real solution is the idle compute already inside the laptop you are using — which is why we built OneCompute.">
+  <p class="vh">Microsoft is spending nearly one hundred billion dollars this year on AI infrastructure. To keep up, the measures have gotten extreme: restarting a nuclear reactor at Three Mile Island and leasing GPUs from competitors. Even so, Microsoft is still capacity constrained. The real solution isn't another data center — it's the idle compute already inside the laptop you're using right now. That's why we built OneCompute: software that harnesses all the idle compute across Microsoft devices.</p>
+
+  <p class="narr__cap">The cost of the AI build-out</p>
+  <p class="narr__cap-sub">scroll to play the story</p>
+
+  <div class="narr__stage">
+    <div class="narr__bg" aria-hidden="true"></div>
+    <div class="narr__vstage">
+      <!-- 9 vignettes; --x/--y anchor + --s size are used only in cinema mode -->
+      <figure class="vig" data-beat="0" style="--x:24%;--y:34%;--s:1.00;--halo:#E5DAF6">
+        <div class="vig__art"><span class="vig__halo"></span><svg viewBox="0 0 200 200" aria-hidden="true"><use href="#vig-bet"/></svg></div>
+      </figure>
+      <figure class="vig" data-beat="1" style="--x:68%;--y:26%;--s:1.05;--halo:#F8DCEA">
+        <div class="vig__art"><span class="vig__halo"></span><svg viewBox="0 0 200 200" aria-hidden="true"><use href="#vig-spend"/></svg></div>
+      </figure>
+      <figure class="vig" data-beat="2" style="--x:46%;--y:56%;--s:1.25;--halo:#FBE3D4">
+        <div class="vig__art"><span class="vig__halo"></span><svg viewBox="0 0 200 200" aria-hidden="true"><use href="#vig-capex"/></svg></div>
+        <figcaption class="vig__word">$100 billion</figcaption>
+      </figure>
+      <figure class="vig" data-beat="3" style="--x:22%;--y:62%;--s:0.95;--halo:#E0D6F2">
+        <div class="vig__art"><span class="vig__halo"></span><svg viewBox="0 0 200 200" aria-hidden="true"><use href="#vig-demand"/></svg></div>
+      </figure>
+      <figure class="vig" data-beat="4" style="--x:74%;--y:58%;--s:1.10;--halo:#DDD0F2">
+        <div class="vig__art"><span class="vig__halo"></span><svg viewBox="0 0 200 200" aria-hidden="true"><use href="#vig-nuclear"/></svg></div>
+        <figcaption class="vig__word">Three Mile Island</figcaption>
+      </figure>
+      <figure class="vig" data-beat="5" style="--x:28%;--y:26%;--s:1.00;--halo:#D6C8EE">
+        <div class="vig__art"><span class="vig__halo"></span><svg viewBox="0 0 200 200" aria-hidden="true"><use href="#vig-lease"/></svg></div>
+        <figcaption class="vig__word">from competitors</figcaption>
+      </figure>
+      <figure class="vig" data-beat="6" style="--x:64%;--y:44%;--s:1.18;--halo:#D2C2EC">
+        <div class="vig__art"><span class="vig__halo"></span><svg viewBox="0 0 200 200" aria-hidden="true"><use href="#vig-constrained"/></svg></div>
+        <figcaption class="vig__word">still capacity constrained</figcaption>
+      </figure>
+      <figure class="vig" data-beat="7" style="--x:42%;--y:34%;--s:1.10;--halo:#FBE0D2">
+        <div class="vig__art"><span class="vig__halo"></span><svg viewBox="0 0 200 200" aria-hidden="true"><use href="#vig-laptop"/></svg></div>
+      </figure>
+      <figure class="vig" data-beat="8" style="--x:50%;--y:50%;--s:1.40;--halo:#F8CCDD">
+        <div class="vig__art"><span class="vig__halo"></span><svg viewBox="0 0 200 200" aria-hidden="true"><use href="#vig-onecompute"/></svg></div>
+        <figcaption class="vig__word">OneCompute</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+<!-- ==================== /STAGE 2.5 ===================== -->
+
+  <section class="fleet" id="fleet" aria-label="Microsoft's idle internal hardware fleet">
+    <div class="fleet__stage">
+      <div class="fleet__copy">
+        <span class="eyebrow">The fleet &middot; already yours</span>
+        <h2>One internal hardware fleet, hiding in plain sight.</h2>
+      </div>
+      <div class="fleet__scene">
+        <svg class="fleet__wires" aria-hidden="true" preserveAspectRatio="none"></svg>
+        <div class="fleet__hub">
+          <span class="fleet__hub-glow" aria-hidden="true"></span>
+          <span class="fleet__hub-core" aria-hidden="true"></span>
+          <span class="fleet__ring fleet__ring--1" aria-hidden="true"></span>
+          <span class="fleet__ring fleet__ring--2" aria-hidden="true"></span>
+          <svg viewBox="0 0 240 200" aria-hidden="true"><use href="#art-hub"/></svg>
+          <span class="fleet__hub-label">Internal Hardware Fleet</span>
+        </div>
+        <div class="fleet__nodes">
+          <div class="fleet__node fleet__node--laptops">
+            <div class="fleet__node-in">
+              <div class="fleet__node-art">
+                <span class="fleet__node-halo" aria-hidden="true"></span>
+                <svg viewBox="0 0 240 200" aria-hidden="true"><use href="#art-laptops"/></svg>
+              </div>
+              <div class="fleet__node-label">Employee laptops</div>
+              <div class="fleet__node-stat">Idle every night and weekend</div>
+            </div>
+          </div>
+          <div class="fleet__node fleet__node--xbox">
+            <div class="fleet__node-in">
+              <div class="fleet__node-art">
+                <span class="fleet__node-halo" aria-hidden="true"></span>
+                <svg viewBox="0 0 240 200" aria-hidden="true"><use href="#art-xbox"/></svg>
+              </div>
+              <div class="fleet__node-label">Xbox &amp; lab consoles</div>
+              <div class="fleet__node-stat">Capable GPUs, mostly parked</div>
+            </div>
+          </div>
+          <div class="fleet__node fleet__node--desktop">
+            <div class="fleet__node-in">
+              <div class="fleet__node-art">
+                <span class="fleet__node-halo" aria-hidden="true"></span>
+                <svg viewBox="0 0 240 200" aria-hidden="true"><use href="#art-desktop"/></svg>
+              </div>
+              <div class="fleet__node-label">Unassigned desktops</div>
+              <div class="fleet__node-stat">Provisioned, never logged in</div>
+            </div>
+          </div>
+          <div class="fleet__node fleet__node--devbox">
+            <div class="fleet__node-in">
+              <div class="fleet__node-art">
+                <span class="fleet__node-halo" aria-hidden="true"></span>
+                <svg viewBox="0 0 240 200" aria-hidden="true"><use href="#art-devbox"/></svg>
+              </div>
+              <div class="fleet__node-label">Idle dev boxes</div>
+              <div class="fleet__node-stat">Quiet between builds and deploys</div>
+            </div>
+          </div>
+        </div>
+        <p class="fleet__close">Already bought. Mostly asleep. Now useful.</p>
+      </div>
+    </div>
+  </section>
+
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs id="fleetArtDefs">
+<!-- FLEET_ART_SYMBOLS -->
+<defs>
+
+  <!-- ground shadow -->
+  <radialGradient id="fa-shadow" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#2B2233" stop-opacity="0.20"/>
+    <stop offset="100%" stop-color="#2B2233" stop-opacity="0"/>
+  </radialGradient>
+
+  <!-- laptop screen -->
+  <linearGradient id="fa-lap-scr-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%" stop-color="#F3E7EE"/>
+    <stop offset="100%" stop-color="#C9B8F0"/>
+  </linearGradient>
+  <linearGradient id="fa-lap-scr-inner" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%" stop-color="#C9B8F0"/>
+    <stop offset="100%" stop-color="#F8CCDD"/>
+  </linearGradient>
+  <radialGradient id="fa-lap-scr-glow" cx="32%" cy="28%" r="72%">
+    <stop offset="0%" stop-color="#ffffff" stop-opacity="0.60"/>
+    <stop offset="55%" stop-color="#C9B8F0" stop-opacity="0.20"/>
+    <stop offset="100%" stop-color="#B59FE3" stop-opacity="0"/>
+  </radialGradient>
+  <!-- keyboard -->
+  <linearGradient id="fa-kbd-top" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%" stop-color="#F8D3BC"/>
+    <stop offset="100%" stop-color="#F7EFE9"/>
+  </linearGradient>
+  <linearGradient id="fa-kbd-front" x1="0%" y1="0%" x2="0%" y2="100%">
+    <stop offset="0%" stop-color="#F8D3BC"/>
+    <stop offset="100%" stop-color="#E8A38C"/>
+  </linearGradient>
+  <linearGradient id="fa-kbd-right" x1="0%" y1="0%" x2="100%" y2="0%">
+    <stop offset="0%" stop-color="#E8A38C"/>
+    <stop offset="100%" stop-color="#C9B8F0"/>
+  </linearGradient>
+
+  <!-- console / xbox -->
+  <linearGradient id="fa-xbox-top" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%" stop-color="#F8CCDD"/>
+    <stop offset="100%" stop-color="#B59FE3"/>
+  </linearGradient>
+  <linearGradient id="fa-xbox-front-up" x1="0%" y1="0%" x2="0%" y2="100%">
+    <stop offset="0%" stop-color="#C9B8F0"/>
+    <stop offset="100%" stop-color="#B59FE3"/>
+  </linearGradient>
+  <linearGradient id="fa-xbox-right-up" x1="0%" y1="0%" x2="100%" y2="0%">
+    <stop offset="0%" stop-color="#B59FE3"/>
+    <stop offset="100%" stop-color="#9F86C9"/>
+  </linearGradient>
+  <linearGradient id="fa-xbox-top-flat" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%" stop-color="#F8CCDD"/>
+    <stop offset="100%" stop-color="#C9B8F0"/>
+  </linearGradient>
+  <linearGradient id="fa-xbox-front-flat" x1="0%" y1="0%" x2="0%" y2="100%">
+    <stop offset="0%" stop-color="#F3E7EE"/>
+    <stop offset="100%" stop-color="#C9B8F0"/>
+  </linearGradient>
+  <linearGradient id="fa-xbox-right-flat" x1="0%" y1="0%" x2="100%" y2="0%">
+    <stop offset="0%" stop-color="#C9B8F0"/>
+    <stop offset="100%" stop-color="#9F86C9"/>
+  </linearGradient>
+  <radialGradient id="fa-pwr-dot" cx="35%" cy="35%" r="65%">
+    <stop offset="0%" stop-color="#ffffff" stop-opacity="0.9"/>
+    <stop offset="50%" stop-color="#F8CCDD"/>
+    <stop offset="100%" stop-color="#D98FC0"/>
+  </radialGradient>
+  <radialGradient id="fa-pwr-halo" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#F8CCDD" stop-opacity="0.45"/>
+    <stop offset="100%" stop-color="#D98FC0" stop-opacity="0"/>
+  </radialGradient>
+
+  <!-- desktop tower -->
+  <linearGradient id="fa-tower-top" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%" stop-color="#F8CCDD"/>
+    <stop offset="100%" stop-color="#B59FE3"/>
+  </linearGradient>
+  <linearGradient id="fa-tower-front" x1="0%" y1="0%" x2="0%" y2="100%">
+    <stop offset="0%" stop-color="#F3E7EE"/>
+    <stop offset="100%" stop-color="#C9B8F0"/>
+  </linearGradient>
+  <linearGradient id="fa-tower-right" x1="0%" y1="0%" x2="100%" y2="0%">
+    <stop offset="0%" stop-color="#C9B8F0"/>
+    <stop offset="100%" stop-color="#9F86C9"/>
+  </linearGradient>
+  <!-- AIO monitor -->
+  <linearGradient id="fa-aio-front" x1="0%" y1="0%" x2="0%" y2="100%">
+    <stop offset="0%" stop-color="#F3E7EE"/>
+    <stop offset="100%" stop-color="#C9B8F0"/>
+  </linearGradient>
+  <linearGradient id="fa-aio-top" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%" stop-color="#F8CCDD"/>
+    <stop offset="100%" stop-color="#B59FE3"/>
+  </linearGradient>
+  <linearGradient id="fa-aio-right" x1="0%" y1="0%" x2="100%" y2="0%">
+    <stop offset="0%" stop-color="#B59FE3"/>
+    <stop offset="100%" stop-color="#9F86C9"/>
+  </linearGradient>
+  <linearGradient id="fa-aio-screen" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%" stop-color="#C9B8F0"/>
+    <stop offset="100%" stop-color="#F8CCDD"/>
+  </linearGradient>
+  <radialGradient id="fa-aio-glow" cx="35%" cy="30%" r="70%">
+    <stop offset="0%" stop-color="#ffffff" stop-opacity="0.50"/>
+    <stop offset="100%" stop-color="#C9B8F0" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="fa-led-pwr" cx="40%" cy="40%" r="60%">
+    <stop offset="0%" stop-color="#B0FFD8"/>
+    <stop offset="100%" stop-color="#52D3A0"/>
+  </radialGradient>
+
+  <!-- dev box rack -->
+  <linearGradient id="fa-rack-top" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%" stop-color="#F8CCDD"/>
+    <stop offset="100%" stop-color="#B59FE3"/>
+  </linearGradient>
+  <linearGradient id="fa-rack-front" x1="0%" y1="0%" x2="0%" y2="100%">
+    <stop offset="0%" stop-color="#F3E7EE"/>
+    <stop offset="100%" stop-color="#C9B8F0"/>
+  </linearGradient>
+  <linearGradient id="fa-rack-right" x1="0%" y1="0%" x2="100%" y2="0%">
+    <stop offset="0%" stop-color="#C9B8F0"/>
+    <stop offset="100%" stop-color="#9F86C9"/>
+  </linearGradient>
+  <radialGradient id="fa-led-g" cx="40%" cy="40%" r="60%">
+    <stop offset="0%" stop-color="#AAFFDC"/>
+    <stop offset="100%" stop-color="#3DC992"/>
+  </radialGradient>
+  <radialGradient id="fa-led-b" cx="40%" cy="40%" r="60%">
+    <stop offset="0%" stop-color="#A0DCFF"/>
+    <stop offset="100%" stop-color="#44AAEE"/>
+  </radialGradient>
+  <radialGradient id="fa-led-o" cx="40%" cy="40%" r="60%">
+    <stop offset="0%" stop-color="#FFE5A0"/>
+    <stop offset="100%" stop-color="#F0AA44"/>
+  </radialGradient>
+
+  <!-- hub -->
+  <radialGradient id="fa-hub-glow" cx="50%" cy="48%" r="52%">
+    <stop offset="0%" stop-color="#ffffff" stop-opacity="0.75"/>
+    <stop offset="28%" stop-color="#F8CCDD" stop-opacity="0.55"/>
+    <stop offset="58%" stop-color="#C9B8F0" stop-opacity="0.30"/>
+    <stop offset="100%" stop-color="#B59FE3" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="fa-hub-ring1" cx="50%" cy="50%" r="50%">
+    <stop offset="68%" stop-color="#F2B5D4" stop-opacity="0"/>
+    <stop offset="88%" stop-color="#D98FC0" stop-opacity="0.32"/>
+    <stop offset="100%" stop-color="#D98FC0" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="fa-hub-ring2" cx="50%" cy="50%" r="50%">
+    <stop offset="68%" stop-color="#C9B8F0" stop-opacity="0"/>
+    <stop offset="88%" stop-color="#B59FE3" stop-opacity="0.24"/>
+    <stop offset="100%" stop-color="#B59FE3" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="fa-hub-cube-top" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%" stop-color="#ffffff" stop-opacity="0.92"/>
+    <stop offset="100%" stop-color="#F8CCDD"/>
+  </linearGradient>
+  <linearGradient id="fa-hub-cube-front" x1="0%" y1="0%" x2="0%" y2="100%">
+    <stop offset="0%" stop-color="#F8CCDD"/>
+    <stop offset="100%" stop-color="#C9B8F0"/>
+  </linearGradient>
+  <linearGradient id="fa-hub-cube-right" x1="0%" y1="0%" x2="100%" y2="0%">
+    <stop offset="0%" stop-color="#C9B8F0"/>
+    <stop offset="100%" stop-color="#9F86C9"/>
+  </linearGradient>
+  <radialGradient id="fa-hub-orb" cx="38%" cy="32%" r="68%">
+    <stop offset="0%" stop-color="#ffffff" stop-opacity="0.85"/>
+    <stop offset="45%" stop-color="#F8CCDD" stop-opacity="0.60"/>
+    <stop offset="75%" stop-color="#D98FC0" stop-opacity="0.30"/>
+    <stop offset="100%" stop-color="#9F86C9" stop-opacity="0.10"/>
+  </radialGradient>
+
+</defs>
+<symbol id="art-laptops" viewBox="0 0 240 200" overflow="visible">
+  <!-- ground shadow -->
+  <ellipse cx="118.0" cy="172.0" rx="102.0" ry="20.0" fill="url(#fa-shadow)" stroke="none" stroke-width="1" stroke-opacity="0.5" />
+  <!-- laptop B: back-center -->
+  <polygon points="93.2,114.12 153.2,114.12 160.35,63.06 100.35,63.06" fill="url(#fa-lap-scr-bg)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="97.19,110.65 150.19,110.65 156.36,66.53 103.36,66.53" fill="url(#fa-lap-scr-glow)" stroke="none" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="97.19,110.65 150.19,110.65 156.36,66.53 103.36,66.53" fill="url(#fa-lap-scr-inner)" stroke="none" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="140.0,122.0 153.2,131.12 153.2,114.12 140.0,105.0" fill="url(#fa-kbd-right)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="80.0,105.0 140.0,105.0 153.2,114.12 93.2,114.12" fill="url(#fa-kbd-top)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="80.0,122.0 140.0,122.0 140.0,105.0 80.0,105.0" fill="url(#fa-kbd-front)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <line x1="100.35" y1="63.06" x2="160.35" y2="63.06" stroke="rgba(255,255,255,0.52)" stroke-width="2.5" stroke-opacity="1" stroke-linecap="round"/>
+  <line x1="100.35" y1="63.06" x2="93.2" y2="114.12" stroke="rgba(255,255,255,0.28)" stroke-width="1.5" stroke-opacity="1" stroke-linecap="round"/>
+  <line x1="80.0" y1="105.0" x2="93.2" y2="114.12" stroke="rgba(255,255,255,0.38)" stroke-width="1.2" stroke-opacity="1" stroke-linecap="round"/>
+  <line x1="93.2" y1="114.12" x2="153.2" y2="114.12" stroke="#9F86C9" stroke-width="3.5" stroke-opacity="0.65" stroke-linecap="round"/>
+  <line x1="85.96" y1="107.74" x2="141.96" y2="107.74" stroke="#2B2233" stroke-width="0.6" stroke-opacity="0.18" stroke-linecap="round"/>
+  <line x1="89.26" y1="110.02" x2="145.26" y2="110.02" stroke="#2B2233" stroke-width="0.6" stroke-opacity="0.18" stroke-linecap="round"/>
+  <line x1="92.3" y1="112.11" x2="148.3" y2="112.11" stroke="#2B2233" stroke-width="0.6" stroke-opacity="0.18" stroke-linecap="round"/>
+  <!-- laptop A: front-left -->
+  <polygon points="36.1,146.36 92.1,146.36 98.15,98.54 42.15,98.54" fill="url(#fa-lap-scr-bg)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="40.04,142.89 89.04,142.89 94.21,102.01 45.21,102.01" fill="url(#fa-lap-scr-glow)" stroke="none" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="40.04,142.89 89.04,142.89 94.21,102.01 45.21,102.01" fill="url(#fa-lap-scr-inner)" stroke="none" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="80.0,153.0 92.1,161.36 92.1,146.36 80.0,138.0" fill="url(#fa-kbd-right)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="24.0,138.0 80.0,138.0 92.1,146.36 36.1,146.36" fill="url(#fa-kbd-top)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="24.0,153.0 80.0,153.0 80.0,138.0 24.0,138.0" fill="url(#fa-kbd-front)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <line x1="42.15" y1="98.54" x2="98.15" y2="98.54" stroke="rgba(255,255,255,0.52)" stroke-width="2.5" stroke-opacity="1" stroke-linecap="round"/>
+  <line x1="42.15" y1="98.54" x2="36.1" y2="146.36" stroke="rgba(255,255,255,0.28)" stroke-width="1.5" stroke-opacity="1" stroke-linecap="round"/>
+  <line x1="24.0" y1="138.0" x2="36.1" y2="146.36" stroke="rgba(255,255,255,0.38)" stroke-width="1.2" stroke-opacity="1" stroke-linecap="round"/>
+  <line x1="36.1" y1="146.36" x2="92.1" y2="146.36" stroke="#9F86C9" stroke-width="3.5" stroke-opacity="0.65" stroke-linecap="round"/>
+  <line x1="29.63" y1="140.51" x2="81.63" y2="140.51" stroke="#2B2233" stroke-width="0.6" stroke-opacity="0.18" stroke-linecap="round"/>
+  <line x1="32.66" y1="142.6" x2="84.66" y2="142.6" stroke="#2B2233" stroke-width="0.6" stroke-opacity="0.18" stroke-linecap="round"/>
+  <line x1="35.44" y1="144.52" x2="87.44" y2="144.52" stroke="#2B2233" stroke-width="0.6" stroke-opacity="0.18" stroke-linecap="round"/>
+  <!-- laptop C: front-right -->
+  <polygon points="145.1,143.36 201.1,143.36 207.15,95.54 151.15,95.54" fill="url(#fa-lap-scr-bg)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="149.04,139.89 198.04,139.89 203.21,99.01 154.21,99.01" fill="url(#fa-lap-scr-glow)" stroke="none" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="149.04,139.89 198.04,139.89 203.21,99.01 154.21,99.01" fill="url(#fa-lap-scr-inner)" stroke="none" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="189.0,150.0 201.1,158.36 201.1,143.36 189.0,135.0" fill="url(#fa-kbd-right)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="133.0,135.0 189.0,135.0 201.1,143.36 145.1,143.36" fill="url(#fa-kbd-top)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="133.0,150.0 189.0,150.0 189.0,135.0 133.0,135.0" fill="url(#fa-kbd-front)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <line x1="151.15" y1="95.54" x2="207.15" y2="95.54" stroke="rgba(255,255,255,0.52)" stroke-width="2.5" stroke-opacity="1" stroke-linecap="round"/>
+  <line x1="151.15" y1="95.54" x2="145.1" y2="143.36" stroke="rgba(255,255,255,0.28)" stroke-width="1.5" stroke-opacity="1" stroke-linecap="round"/>
+  <line x1="133.0" y1="135.0" x2="145.1" y2="143.36" stroke="rgba(255,255,255,0.38)" stroke-width="1.2" stroke-opacity="1" stroke-linecap="round"/>
+  <line x1="145.1" y1="143.36" x2="201.1" y2="143.36" stroke="#9F86C9" stroke-width="3.5" stroke-opacity="0.65" stroke-linecap="round"/>
+  <line x1="138.63" y1="137.51" x2="190.63" y2="137.51" stroke="#2B2233" stroke-width="0.6" stroke-opacity="0.18" stroke-linecap="round"/>
+  <line x1="141.66" y1="139.6" x2="193.66" y2="139.6" stroke="#2B2233" stroke-width="0.6" stroke-opacity="0.18" stroke-linecap="round"/>
+  <line x1="144.44" y1="141.52" x2="196.44" y2="141.52" stroke="#2B2233" stroke-width="0.6" stroke-opacity="0.18" stroke-linecap="round"/>
+</symbol>
+<symbol id="art-xbox" viewBox="0 0 240 200" overflow="visible">
+  <ellipse cx="130.0" cy="176.0" rx="96.0" ry="17.0" fill="url(#fa-shadow)" stroke="none" stroke-width="1" stroke-opacity="0.5" />
+  <!-- console flat – base -->
+  <polygon points="160.0,168.0 182.0,183.2 182.0,155.2 160.0,140.0" fill="url(#fa-xbox-right-flat)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="68.0,140.0 160.0,140.0 182.0,155.2 90.0,155.2" fill="url(#fa-xbox-top-flat)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="68.0,168.0 160.0,168.0 160.0,140.0 68.0,140.0" fill="url(#fa-xbox-front-flat)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <line x1="68.0" y1="140.0" x2="160.0" y2="140.0" stroke="rgba(255,255,255,0.45)" stroke-width="2" stroke-opacity="1" stroke-linecap="round"/>
+  <line x1="93.76" y1="140.0" x2="115.76" y2="155.2" stroke="#2B2233" stroke-width="0.9" stroke-opacity="0.28" stroke-linecap="round"/>
+  <line x1="115.84" y1="140.0" x2="137.84" y2="155.2" stroke="#2B2233" stroke-width="0.9" stroke-opacity="0.28" stroke-linecap="round"/>
+  <line x1="137.92" y1="140.0" x2="159.92" y2="155.2" stroke="#2B2233" stroke-width="0.9" stroke-opacity="0.28" stroke-linecap="round"/>
+  <!-- console upright – on base -->
+  <polygon points="140.0,140.0 148.25,145.7 148.25,55.7 140.0,50.0" fill="url(#fa-xbox-right-up)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="90.0,50.0 140.0,50.0 148.25,55.7 98.25,55.7" fill="url(#fa-xbox-top)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="90.0,140.0 140.0,140.0 140.0,50.0 90.0,50.0" fill="url(#fa-xbox-front-up)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <line x1="94.0" y1="75.2" x2="136.0" y2="75.2" stroke="#2B2233" stroke-width="1" stroke-opacity="0.35" stroke-linecap="round"/>
+  <line x1="94.0" y1="87.8" x2="136.0" y2="87.8" stroke="#2B2233" stroke-width="1" stroke-opacity="0.35" stroke-linecap="round"/>
+  <line x1="94.0" y1="100.4" x2="136.0" y2="100.4" stroke="#2B2233" stroke-width="1" stroke-opacity="0.35" stroke-linecap="round"/>
+  <line x1="94.0" y1="113.0" x2="136.0" y2="113.0" stroke="#2B2233" stroke-width="1" stroke-opacity="0.35" stroke-linecap="round"/>
+  <circle cx="115.0" cy="83.0" r="13.0" fill="url(#fa-pwr-halo)" stroke="none" stroke-width="1" stroke-opacity="0.5"/>
+  <circle cx="115.0" cy="83.0" r="9.0" fill="url(#fa-pwr-dot)" stroke="#2B2233" stroke-width="1" stroke-opacity="0.4"/>
+  <line x1="90.0" y1="50.0" x2="140.0" y2="50.0" stroke="rgba(255,255,255,0.45)" stroke-width="2" stroke-opacity="1" stroke-linecap="round"/>
+</symbol>
+<symbol id="art-desktop" viewBox="0 0 240 200" overflow="visible">
+  <ellipse cx="122.0" cy="178.0" rx="105.0" ry="18.0" fill="url(#fa-shadow)" stroke="none" stroke-width="1" stroke-opacity="0.5" />
+  <!-- tower PC -->
+  <polygon points="80.0,164.0 92.1,172.36 92.1,84.36 80.0,76.0" fill="url(#fa-tower-right)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="38.0,76.0 80.0,76.0 92.1,84.36 50.1,84.36" fill="url(#fa-tower-top)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="38.0,164.0 80.0,164.0 80.0,76.0 38.0,76.0" fill="url(#fa-tower-front)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <line x1="38.0" y1="76.0" x2="80.0" y2="76.0" stroke="rgba(255,255,255,0.45)" stroke-width="2" stroke-opacity="1" stroke-linecap="round"/>
+  <line x1="43.0" y1="84.0" x2="75.0" y2="84.0" stroke="#2B2233" stroke-width="1" stroke-opacity="0.3" stroke-linecap="round"/>
+  <line x1="43.0" y1="91.0" x2="75.0" y2="91.0" stroke="#2B2233" stroke-width="1" stroke-opacity="0.3" stroke-linecap="round"/>
+  <line x1="43.0" y1="98.0" x2="75.0" y2="98.0" stroke="#2B2233" stroke-width="1" stroke-opacity="0.3" stroke-linecap="round"/>
+  <line x1="43.0" y1="105.0" x2="75.0" y2="105.0" stroke="#2B2233" stroke-width="1" stroke-opacity="0.3" stroke-linecap="round"/>
+  <line x1="43.0" y1="112.0" x2="75.0" y2="112.0" stroke="#2B2233" stroke-width="1" stroke-opacity="0.3" stroke-linecap="round"/>
+  <circle cx="72.0" cy="86.0" r="3.0" fill="url(#fa-led-pwr)" stroke="#2B2233" stroke-width="1" stroke-opacity="0.4"/>
+  <!-- AIO monitor -->
+  <polygon points="200.0,155.0 204.4,158.04 204.4,92.04 200.0,89.0" fill="url(#fa-aio-right)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="108.0,89.0 200.0,89.0 204.4,92.04 112.4,92.04" fill="url(#fa-aio-top)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="108.0,155.0 200.0,155.0 200.0,89.0 108.0,89.0" fill="url(#fa-aio-front)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="113.0,94.0 195.0,94.0 195.0,150.0 113.0,150.0" fill="url(#fa-aio-screen)" stroke="none" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="113.0,94.0 195.0,94.0 195.0,150.0 113.0,150.0" fill="url(#fa-aio-glow)" stroke="none" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <line x1="108.0" y1="89.0" x2="200.0" y2="89.0" stroke="rgba(255,255,255,0.45)" stroke-width="2" stroke-opacity="1" stroke-linecap="round"/>
+  <rect x="147.5" y="155.0" width="13" height="20" rx="4" fill="url(#fa-aio-front)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55"/>
+  <ellipse cx="154.0" cy="175.0" rx="26.0" ry="5.0" fill="url(#fa-tower-top)" stroke="#2B2233" stroke-width="1.2" stroke-opacity="0.45" />
+</symbol>
+<symbol id="art-devbox" viewBox="0 0 240 200" overflow="visible">
+  <ellipse cx="122.0" cy="178.0" rx="105.0" ry="18.0" fill="url(#fa-shadow)" stroke="none" stroke-width="1" stroke-opacity="0.5" />
+  <polygon points="200.0,154.0 214.3,163.88 214.3,141.88 200.0,132.0" fill="url(#fa-rack-right)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="200.0,132.0 214.3,141.88 214.3,119.88 200.0,110.0" fill="url(#fa-rack-right)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="200.0,110.0 214.3,119.88 214.3,97.88 200.0,88.0" fill="url(#fa-rack-right)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="38.0,88.0 200.0,88.0 214.3,97.88 52.3,97.88" fill="url(#fa-rack-top)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <line x1="38.0" y1="88.0" x2="200.0" y2="88.0" stroke="rgba(255,255,255,0.50)" stroke-width="2" stroke-opacity="1" stroke-linecap="round"/>
+  <polygon points="200.0,154.0 214.3,163.88 214.3,141.88 200.0,132.0" fill="url(#fa-rack-right)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="38.0,154.0 200.0,154.0 200.0,132.0 38.0,132.0" fill="url(#fa-rack-front)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <line x1="43.0" y1="137.5" x2="93.0" y2="137.5" stroke="#2B2233" stroke-width="0.8" stroke-opacity="0.3" stroke-linecap="round"/>
+  <line x1="43.0" y1="143.0" x2="93.0" y2="143.0" stroke="#2B2233" stroke-width="0.8" stroke-opacity="0.3" stroke-linecap="round"/>
+  <line x1="43.0" y1="148.5" x2="93.0" y2="148.5" stroke="#2B2233" stroke-width="0.8" stroke-opacity="0.3" stroke-linecap="round"/>
+  <circle cx="180.0" cy="143.0" r="2.2" fill="url(#fa-led-g)" stroke="none" stroke-width="1" stroke-opacity="0.5"/>
+  <circle cx="172.0" cy="143.0" r="2.2" fill="url(#fa-led-b)" stroke="none" stroke-width="1" stroke-opacity="0.5"/>
+  <circle cx="164.0" cy="143.0" r="2.2" fill="url(#fa-led-o)" stroke="none" stroke-width="1" stroke-opacity="0.5"/>
+  <polygon points="200.0,132.0 214.3,141.88 214.3,119.88 200.0,110.0" fill="url(#fa-rack-right)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="38.0,132.0 200.0,132.0 200.0,110.0 38.0,110.0" fill="url(#fa-rack-front)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <line x1="43.0" y1="115.5" x2="93.0" y2="115.5" stroke="#2B2233" stroke-width="0.8" stroke-opacity="0.3" stroke-linecap="round"/>
+  <line x1="43.0" y1="121.0" x2="93.0" y2="121.0" stroke="#2B2233" stroke-width="0.8" stroke-opacity="0.3" stroke-linecap="round"/>
+  <line x1="43.0" y1="126.5" x2="93.0" y2="126.5" stroke="#2B2233" stroke-width="0.8" stroke-opacity="0.3" stroke-linecap="round"/>
+  <circle cx="180.0" cy="121.0" r="2.2" fill="url(#fa-led-g)" stroke="none" stroke-width="1" stroke-opacity="0.5"/>
+  <circle cx="172.0" cy="121.0" r="2.2" fill="url(#fa-led-b)" stroke="none" stroke-width="1" stroke-opacity="0.5"/>
+  <circle cx="164.0" cy="121.0" r="2.2" fill="url(#fa-led-o)" stroke="none" stroke-width="1" stroke-opacity="0.5"/>
+  <polygon points="200.0,110.0 214.3,119.88 214.3,97.88 200.0,88.0" fill="url(#fa-rack-right)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <polygon points="38.0,88.0 200.0,88.0 214.3,97.88 52.3,97.88" fill="url(#fa-rack-top)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <line x1="38.0" y1="88.0" x2="200.0" y2="88.0" stroke="rgba(255,255,255,0.5)" stroke-width="2" stroke-opacity="1" stroke-linecap="round"/>
+  <polygon points="38.0,110.0 200.0,110.0 200.0,88.0 38.0,88.0" fill="url(#fa-rack-front)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.55" stroke-linejoin="round" />
+  <line x1="43.0" y1="93.5" x2="93.0" y2="93.5" stroke="#2B2233" stroke-width="0.8" stroke-opacity="0.3" stroke-linecap="round"/>
+  <line x1="43.0" y1="99.0" x2="93.0" y2="99.0" stroke="#2B2233" stroke-width="0.8" stroke-opacity="0.3" stroke-linecap="round"/>
+  <line x1="43.0" y1="104.5" x2="93.0" y2="104.5" stroke="#2B2233" stroke-width="0.8" stroke-opacity="0.3" stroke-linecap="round"/>
+  <circle cx="180.0" cy="99.0" r="2.2" fill="url(#fa-led-g)" stroke="none" stroke-width="1" stroke-opacity="0.5"/>
+  <circle cx="172.0" cy="99.0" r="2.2" fill="url(#fa-led-b)" stroke="none" stroke-width="1" stroke-opacity="0.5"/>
+  <circle cx="164.0" cy="99.0" r="2.2" fill="url(#fa-led-o)" stroke="none" stroke-width="1" stroke-opacity="0.5"/>
+</symbol>
+<symbol id="art-hub" viewBox="0 0 240 200" overflow="visible">
+  <ellipse cx="122.0" cy="178.0" rx="100.0" ry="18.0" fill="url(#fa-shadow)" stroke="none" stroke-width="1" stroke-opacity="0.5" />
+  <ellipse cx="122.0" cy="100.0" rx="105.0" ry="76.0" fill="url(#fa-hub-glow)" stroke="none" stroke-width="1" stroke-opacity="0.5" />
+  <ellipse cx="122.0" cy="100.0" rx="88.0" ry="63.0" fill="url(#fa-hub-ring2)" stroke="none" stroke-width="1" stroke-opacity="0.5" />
+  <ellipse cx="122.0" cy="100.0" rx="66.0" ry="47.0" fill="url(#fa-hub-ring1)" stroke="none" stroke-width="1" stroke-opacity="0.5" />
+  <ellipse cx="122.0" cy="100.0" rx="62.0" ry="43.0" fill="none" stroke="#D98FC0" stroke-width="1.5" stroke-opacity="0.22" />
+  <ellipse cx="122.0" cy="100.0" rx="80.0" ry="56.0" fill="none" stroke="#B59FE3" stroke-width="1.2" stroke-opacity="0.13" />
+  <polygon points="149.0,149.0 180.9,171.04 180.9,113.04 149.0,91.0" fill="url(#fa-hub-cube-right)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.48" stroke-linejoin="round" />
+  <polygon points="91.0,149.0 149.0,149.0 149.0,91.0 91.0,91.0" fill="url(#fa-hub-cube-front)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.48" stroke-linejoin="round" />
+  <polygon points="91.0,91.0 149.0,91.0 180.9,113.04 122.9,113.04" fill="url(#fa-hub-cube-top)" stroke="#2B2233" stroke-width="1.5" stroke-opacity="0.48" stroke-linejoin="round" />
+  <line x1="91.0" y1="91.0" x2="149.0" y2="91.0" stroke="rgba(255,255,255,0.60)" stroke-width="2.5" stroke-opacity="1" stroke-linecap="round"/>
+  <line x1="91.0" y1="91.0" x2="122.9" y2="113.04" stroke="rgba(255,255,255,0.38)" stroke-width="1.5" stroke-opacity="1" stroke-linecap="round"/>
+  <ellipse cx="120.0" cy="112.0" rx="38.0" ry="30.0" fill="url(#fa-hub-orb)" stroke="none" stroke-width="1" stroke-opacity="0.5" />
+  <ellipse cx="120.0" cy="112.0" rx="18.0" ry="14.0" fill="url(#fa-hub-glow)" stroke="none" stroke-width="1" stroke-opacity="0.5" />
+</symbol>
+  </defs></svg>
+
+  <section class="launch" id="launch" aria-label="Launching a job across the OneCompute fleet">
+    <div class="launch__stage">
+      <div class="launch__void" aria-hidden="true"></div>
+      <div class="launch__atmos" aria-hidden="true">
+        <span class="launch__stars"></span>
+        <span class="launch__stars launch__stars--b"></span>
+        <span class="launch__neb launch__neb--1"></span>
+        <span class="launch__neb launch__neb--2"></span>
+        <span class="launch__neb launch__neb--3"></span>
+      </div>
+
+      <div class="launch__frame">
+        <span class="eyebrow">Launch &middot; the fleet, working</span>
+        <h2>Now we put the fleet to work.</h2>
+      </div>
+
+      <div class="launch__world">
+        <div class="launch__bubble launch__bubble--ihf">
+          <span class="launch__bubble-glow" aria-hidden="true"></span>
+          <span class="launch__bubble-core" aria-hidden="true"></span>
+          <span class="launch__ring launch__ring--1" aria-hidden="true"></span>
+          <span class="launch__ring launch__ring--2" aria-hidden="true"></span>
+          <span class="launch__wire" aria-hidden="true"></span>
+          <span class="launch__wire" aria-hidden="true"></span>
+          <span class="launch__wire" aria-hidden="true"></span>
+          <span class="launch__wire" aria-hidden="true"></span>
+          <span class="launch__dev"><span class="launch__dev-orb" aria-hidden="true"></span><span class="launch__dev-label">laptops</span></span>
+          <span class="launch__dev"><span class="launch__dev-orb" aria-hidden="true"></span><span class="launch__dev-label">consoles</span></span>
+          <span class="launch__dev"><span class="launch__dev-orb" aria-hidden="true"></span><span class="launch__dev-label">desktops</span></span>
+          <span class="launch__dev"><span class="launch__dev-orb" aria-hidden="true"></span><span class="launch__dev-label">dev boxes</span></span>
+          <span class="launch__bubble-label">Internal Hardware Fleet</span>
+        </div>
+        <div class="launch__bubble launch__bubble--lc">
+          <span class="launch__bubble-glow" aria-hidden="true"></span>
+          <span class="launch__bubble-core" aria-hidden="true"></span>
+          <span class="launch__ring launch__ring--1" aria-hidden="true"></span>
+          <span class="launch__ring launch__ring--2" aria-hidden="true"></span>
+          <span class="launch__bubble-label">Launch Center</span>
+        </div>
+      </div>
+
+      <div class="launch__filmwrap">
+        <iframe class="launch__film" src="launch/index.html?paused=1&captions=0" title="OneCompute launch sequence" aria-hidden="true"></iframe>
+      </div>
+
+      <div class="launch__flash" aria-hidden="true"></div>
     </div>
   </section>
 
@@ -1135,6 +2621,387 @@ void main(){
     document.querySelectorAll("[data-count]").forEach(function(e){e.textContent=(e.getAttribute("data-prefix")||"")+e.getAttribute("data-count")+(e.getAttribute("data-suffix")||"");});
     document.querySelectorAll(".bar__fill").forEach(function(e){e.style.transform="scaleX("+(e.getAttribute("data-w")/100)+")";});
   }
+
+/* ===== Stage 2.5 vignette cinematic controller ===== */
+(function(){
+  "use strict";
+  var section = document.getElementById("why");
+  if(!section) return;
+
+  var REDUCE  = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var mqMobile= window.matchMedia ? window.matchMedia("(max-width:760px)") : {matches:false};
+  var hasGsap = !!(window.gsap && window.ScrollTrigger);
+
+  var stageBg = section.querySelector(".narr__bg");
+  var vigs    = [].slice.call(section.querySelectorAll(".vig"));
+
+  /* Default DOM is already the static, fully-visible grid (no class needed).
+     Enhance to cinema ONLY when it can run well. */
+  if(REDUCE || !hasGsap || mqMobile.matches){
+    return; /* leave the static, legible baseline in place */
+  }
+
+  gsap.registerPlugin(ScrollTrigger);
+  section.classList.add("is-cinema");
+
+  /* beat map — each vignette pops, holds, then melts (last one persists).
+     Spacing keeps at most ~3 vignettes alive at any instant. */
+  var SPACING  = 0.104;   /* gap between successive pops on the 0..1 timeline */
+  var POP_AT0  = 0.040;   /* first pop */
+  var POP_DUR  = 0.052;
+  var MELT_OFF = 0.140;   /* melt starts this far after the pop */
+  var MELT_DUR = 0.060;
+
+  /* initial hidden states (only applied in cinema mode) */
+  gsap.set(vigs, {xPercent:-50, yPercent:-50, autoAlpha:0, scale:0.72, y:26, filter:"blur(0px)"});
+
+  var tl = gsap.timeline({
+    defaults:{ease:"power3.out"},
+    scrollTrigger:{trigger:section, start:"top top", end:"bottom bottom", scrub:true}
+  });
+
+  /* ambient pastel tint arc: cream -> dusty lilac (tension 4-7) -> warm blush (8-9) -> light end */
+  tl.to(stageBg,{backgroundColor:"#F4ECF6", duration:0.18},0.06)
+    .to(stageBg,{backgroundColor:"#E6DCF1", duration:0.16},0.34)   /* tension: cooler/dustier lilac */
+    .to(stageBg,{backgroundColor:"#E3D7EE", duration:0.16},0.50)
+    .to(stageBg,{backgroundColor:"#F6DDD2", duration:0.14},0.74)   /* warming back: blush/peach */
+    .to(stageBg,{backgroundColor:"#F6EEE9", duration:0.10},0.90);  /* end light (next stage = #f6eee9) */
+
+  vigs.forEach(function(el, i){
+    var popAt  = POP_AT0 + i*SPACING;
+    var meltAt = popAt + MELT_OFF;
+    var isLast = (i === vigs.length - 1);
+
+    /* POP: scale + rise + fade in, gentle premium pop */
+    tl.fromTo(el,
+      {autoAlpha:0, scale:0.72, y:26, filter:"blur(0px)"},
+      {autoAlpha:1, scale:1, y:0, duration:POP_DUR, ease:"back.out(1.5)"},
+      popAt);
+
+    /* slow drift while held (parallax-ish life) */
+    tl.to(el, {y:(i%2?14:-14), duration:MELT_OFF, ease:"sine.inOut"}, popAt+POP_DUR);
+
+    if(!isLast){
+      /* MELT: dissolve — fade out + blur + slight scale-up & upward drift */
+      tl.to(el,
+        {autoAlpha:0, scale:1.08, y:-22, filter:"blur(12px)", duration:MELT_DUR, ease:"power2.in"},
+        meltAt);
+    } else {
+      /* climax vignette settles and stays to the end */
+      tl.to(el, {scale:1.04, duration:0.10, ease:"sine.out"}, popAt+POP_DUR)
+        .to(el, {y:0, duration:0.06}, 0.98);
+    }
+  });
+
+  /* keep positions correct through layout settle / resize */
+  addEventListener("load", function(){ ScrollTrigger.refresh(); });
+  var rz; addEventListener("resize", function(){ clearTimeout(rz); rz=setTimeout(function(){ ScrollTrigger.refresh(); },160); });
+})();
+
+  /* ===== Stage 3: internal hardware fleet — scrubbed cinematic with measured wires ===== */
+  (function(){
+    var section=document.getElementById("fleet");
+    if(!section) return;
+    var stage=section.querySelector(".fleet__stage");
+    var copy=section.querySelector(".fleet__copy");
+    var hub=section.querySelector(".fleet__hub");
+    var hubGlow=section.querySelector(".fleet__hub-glow");
+    var hubCore=section.querySelector(".fleet__hub-core");
+    var hubLabel=section.querySelector(".fleet__hub-label");
+    var wiresSvg=section.querySelector(".fleet__wires");
+    var closeLine=section.querySelector(".fleet__close");
+    var nodes=[].slice.call(section.querySelectorAll(".fleet__node"));
+    var NS="http://www.w3.org/2000/svg";
+    var mqMobile=window.matchMedia?window.matchMedia("(max-width:760px)"):{matches:false};
+    var hasGsap=!!(window.gsap&&window.ScrollTrigger);
+
+    /* build one wire (path + arrowhead) per node; geometry is measured in pixels */
+    var wires=nodes.map(function(node){
+      var path=document.createElementNS(NS,"path"); path.setAttribute("class","fleet__wire");
+      var arrow=document.createElementNS(NS,"path"); arrow.setAttribute("class","fleet__arrow");
+      arrow.setAttribute("d","M0,0 L-13,-6.5 L-13,6.5 Z");
+      wiresSvg.appendChild(path); wiresSvg.appendChild(arrow);
+      var sparks=[]; for(var i=0;i<6;i++){var c=document.createElementNS(NS,"circle");c.setAttribute("class","fleet__spark");c.setAttribute("r","3.4");wiresSvg.appendChild(c);sparks.push({el:c,active:false,t:0});}
+      return {node:node, art:node.querySelector(".fleet__node-art"), path:path, arrow:arrow, sparks:sparks,
+        len:0, sx:0, sy:0, ex:0, ey:0, ang:0, dash:0, as:1};
+    });
+
+    function applyWire(w){
+      w.path.style.strokeDashoffset=(w.len*w.dash);
+      w.arrow.setAttribute("transform","translate("+w.ex+","+w.ey+") rotate("+w.ang+") scale("+w.as+")");
+    }
+    function measure(){
+      if(mqMobile.matches){ return; }
+      var sr=stage.getBoundingClientRect();
+      wiresSvg.setAttribute("viewBox","0 0 "+sr.width+" "+sr.height);
+      var hr=hub.getBoundingClientRect();
+      var hx=hr.left+hr.width/2-sr.left, hy=hr.top+hr.height/2-sr.top, hubR=hr.width/2;
+      wires.forEach(function(w){
+        var ar=w.art.getBoundingClientRect();
+        var nx=ar.left+ar.width/2-sr.left, ny=ar.top+ar.height/2-sr.top;
+        var dx=nx-hx, dy=ny-hy, d=Math.sqrt(dx*dx+dy*dy)||1, ux=dx/d, uy=dy/d;
+        var nodeGap=Math.min(ar.width,ar.height)*0.42;
+        w.sx=hx+ux*(hubR*0.92); w.sy=hy+uy*(hubR*0.92);
+        w.ex=nx-ux*nodeGap; w.ey=ny-uy*nodeGap;
+        w.len=Math.sqrt((w.ex-w.sx)*(w.ex-w.sx)+(w.ey-w.sy)*(w.ey-w.sy));
+        w.ang=Math.atan2(w.ey-w.sy,w.ex-w.sx)*180/Math.PI;
+        w.path.setAttribute("d","M"+w.sx+","+w.sy+" L"+w.ex+","+w.ey);
+        w.path.setAttribute("stroke-dasharray",w.len);
+        applyWire(w);
+      });
+    }
+
+    /* final, static composition (reduced-motion / no-GSAP / mobile) */
+    function renderFinal(){
+      wires.forEach(function(w){ w.dash=0; w.as=1; });
+      measure();
+      if(window.gsap){
+        gsap.set(copy,{opacity:1,y:0});
+        gsap.set(hub,{scale:1,opacity:1});
+        gsap.set(section.querySelectorAll(".fleet__node-in"),{opacity:1,y:0,scale:1});
+        gsap.set(section.querySelectorAll(".fleet__node-halo"),{opacity:1,scale:1});
+        gsap.set(closeLine,{opacity:1,y:0});
+      }
+    }
+
+    if(REDUCE || !hasGsap || mqMobile.matches){
+      renderFinal();
+      addEventListener("resize",function(){measure();});
+      setTimeout(measure,120); addEventListener("load",measure);
+      return;
+    }
+
+    /* ---- animated path: scrubbed master timeline pinned by the sticky stage ---- */
+    var prog=0;
+    gsap.set(nodes,{xPercent:-50,yPercent:-50});
+    gsap.set(copy,{opacity:0,y:24});
+    gsap.set(hub,{scale:0.6,opacity:0});
+    gsap.set(hubLabel,{opacity:0});
+    gsap.set(closeLine,{opacity:0,y:18});
+    section.querySelectorAll(".fleet__node-in").forEach(function(el){gsap.set(el,{opacity:0,y:14,scale:0.7});});
+    section.querySelectorAll(".fleet__node-halo").forEach(function(el){gsap.set(el,{opacity:0,scale:0.6});});
+    wires.forEach(function(w){ w.dash=1; w.as=0; applyWire(w); });
+
+    var tl=gsap.timeline({defaults:{ease:"power3.out"},
+      scrollTrigger:{trigger:section,start:"top top",end:"bottom bottom",scrub:true,
+        onUpdate:function(self){ prog=self.progress; measure(); },
+        onRefresh:measure}});
+
+    /* 0.00-0.10 — copy + hub orb ignite */
+    tl.to(copy,{opacity:1,y:0,duration:0.10,ease:"power3.out"},0.00)
+      .to(hub,{scale:1,opacity:1,duration:0.10},0.00)
+      .to(hubLabel,{opacity:1,duration:0.08},0.03)
+      .to(hub,{y:-26,ease:"none",duration:0.90},0.10); /* gentle hub parallax */
+
+    var beats=[0.10,0.30,0.50,0.70]; /* wire/node draw-in starts */
+    var drifts=[-16,-16,16,16];      /* per-node parallax (upper rise, lower sink) */
+    wires.forEach(function(w,i){
+      var t=beats[i], dur=(i<3?0.20:0.18);
+      var ni=w.node.querySelector(".fleet__node-in");
+      var halo=w.node.querySelector(".fleet__node-halo");
+      tl.to(w,{dash:0,duration:dur*0.8,ease:"power2.inOut",onUpdate:function(){applyWire(w);}},t)
+        .to(w,{as:1,duration:0.06,ease:"back.out(1.6)",onUpdate:function(){applyWire(w);}},t+dur*0.7)
+        .to(ni,{opacity:1,y:0,scale:1,duration:dur*0.7,ease:"back.out(1.4)"},t+dur*0.32)
+        .to(halo,{opacity:1,scale:1,duration:dur*0.8,ease:"power2.out"},t+dur*0.32)
+        .to(w.node,{y:drifts[i],ease:"none",duration:0.9-t},t+dur*0.5);
+    });
+
+    /* 0.88-1.00 — harvest: hub glow intensifies, closing line settles */
+    tl.to(hubGlow,{opacity:1,scale:1.16,duration:0.12,ease:"power2.out"},0.88)
+      .to(hubCore,{scale:1.05,duration:0.12,ease:"power2.out"},0.88)
+      .to(closeLine,{opacity:1,y:0,duration:0.12,ease:"power3.out"},0.88);
+
+    /* infinite hub pulse, independent of scrub */
+    gsap.to(hubGlow,{opacity:0.6,scale:1.1,duration:3.2,ease:"sine.inOut",yoyo:true,repeat:-1});
+    gsap.to(hubCore,{scale:1.03,duration:3.8,ease:"sine.inOut",yoyo:true,repeat:-1});
+
+    /* ---- harvest particles: cheap rAF loop, gated by IntersectionObserver + scroll zone ---- */
+    var running=false,rafId=0,last=0,spawnT=0;
+    function freeSpark(w){ for(var i=0;i<w.sparks.length;i++){ if(!w.sparks[i].active) return w.sparks[i]; } return null; }
+    function pstep(dt){
+      spawnT-=dt;
+      if(spawnT<=0){ spawnT=0.17; wires.forEach(function(w){ var s=freeSpark(w); if(s){ s.active=true; s.t=Math.random()*0.08; s.w=w; } }); }
+      wires.forEach(function(w){ w.sparks.forEach(function(s){
+        if(!s.active) return;
+        s.t+=dt*0.9;
+        if(s.t>=1){ s.active=false; s.el.style.opacity=0; return; }
+        var x=w.ex+(w.sx-w.ex)*s.t, y=w.ey+(w.sy-w.ey)*s.t; /* node -> hub */
+        s.el.setAttribute("cx",x); s.el.setAttribute("cy",y);
+        s.el.style.opacity=Math.sin(s.t*Math.PI)*0.9;
+      }); });
+    }
+    function clearSparks(){ wires.forEach(function(w){ w.sparks.forEach(function(s){ s.active=false; s.el.style.opacity=0; }); }); }
+    function frame(now){ if(!running) return; var dt=Math.min((now-last)/1000,0.05); last=now;
+      if(!document.hidden && prog>0.84){ pstep(dt); } else { clearSparks(); }
+      rafId=requestAnimationFrame(frame); }
+    function startLoop(){ if(running) return; running=true; last=performance.now(); rafId=requestAnimationFrame(frame); }
+    function stopLoop(){ running=false; if(rafId) cancelAnimationFrame(rafId); rafId=0; clearSparks(); }
+    if("IntersectionObserver" in window){
+      new IntersectionObserver(function(es){ es.forEach(function(e){ e.isIntersecting?startLoop():stopLoop(); }); },{threshold:0}).observe(section);
+    } else { startLoop(); }
+
+    /* keep wires glued through layout settle + debounced resize */
+    var rz=0; addEventListener("resize",function(){ clearTimeout(rz); rz=setTimeout(function(){ measure(); ScrollTrigger.refresh(); },160); });
+    setTimeout(measure,120); setTimeout(measure,500); addEventListener("load",function(){ measure(); ScrollTrigger.refresh(); });
+  })();
+
+  /* ===== Stage 4: Launch — merge-back, two-bubble reveal, zoom, then scrub the embedded film ===== */
+  (function(){
+    var section=document.getElementById("launch");
+    if(!section) return;
+    var stage=section.querySelector(".launch__stage");
+    var voidBg=section.querySelector(".launch__void");
+    var atmos=section.querySelector(".launch__atmos");
+    var frame=section.querySelector(".launch__frame");
+    var world=section.querySelector(".launch__world");
+    var ihf=section.querySelector(".launch__bubble--ihf");
+    var lc=section.querySelector(".launch__bubble--lc");
+    var devs=[].slice.call(section.querySelectorAll(".launch__dev"));
+    var wires=[].slice.call(section.querySelectorAll(".launch__wire"));
+    var filmWrap=section.querySelector(".launch__filmwrap");
+    var iframe=section.querySelector(".launch__film");
+    var flash=section.querySelector(".launch__flash");
+    var eyebrowEl=section.querySelector(".launch__frame .eyebrow");
+    var h2El=section.querySelector(".launch__frame h2");
+    var devLabels=[].slice.call(section.querySelectorAll(".launch__dev-label"));
+    var hasGsap=!!(window.gsap&&window.ScrollTrigger);
+    var mqMobile=window.matchMedia?window.matchMedia("(max-width:760px)"):{matches:false};
+    var staticMode=REDUCE||!hasGsap||mqMobile.matches;
+    function clamp(v,a,b){return v<a?a:(v>b?b:v);}
+    function smooth(t){return t*t*(3-2*t);}
+    /* text colours start dark (readable on the cream top) and brighten as the plum void
+       fades in (set inline at runtime so each label is always legible over its real backdrop) */
+    function hx2(n){n=Math.round(n<0?0:(n>255?255:n));return (n<16?"0":"")+n.toString(16);}
+    function mixc(a,b,t){return "#"+hx2(a[0]+(b[0]-a[0])*t)+hx2(a[1]+(b[1]-a[1])*t)+hx2(a[2]+(b[2]-a[2])*t);}
+    var C_PLUM=[43,34,51],C_CREAM=[247,239,233],C_BLUSH=[248,204,221],C_LILAC=[201,184,240];
+    function tintText(g){
+      if(h2El) h2El.style.color=mixc(C_PLUM,C_CREAM,g);
+      if(eyebrowEl) eyebrowEl.style.color=mixc(C_PLUM,C_BLUSH,g);
+      for(var li=0;li<devLabels.length;li++) devLabels[li].style.color=mixc(C_PLUM,C_LILAC,g);
+    }
+
+    /* unit directions for the four device-nodes around the hub (screen coords, y down) */
+    var L=Math.sqrt(1+0.85*0.85);
+    var DIR=[[-1/L,-0.85/L],[1/L,-0.85/L],[-1/L,0.85/L],[1/L,0.85/L]];
+    var R=0, bubbleR=0;
+    function measure(){
+      var br=ihf.getBoundingClientRect();
+      bubbleR=br.width/2||90;
+      R=br.width*1.32||240;
+      fitFilm();
+    }
+    /* render the film at native 1920x1080 and scale the iframe to COVER the wrap */
+    function fitFilm(){
+      var w=filmWrap.clientWidth||window.innerWidth;
+      var h=filmWrap.clientHeight||window.innerHeight;
+      var s=Math.max(w/1920,h/1080);
+      iframe.style.transform="translate(-50%,-50%) scale("+s.toFixed(4)+")";
+    }
+
+    /* merge 0 -> spread + visible, 1 -> collapsed into the hub centre */
+    function devLayout(merge){
+      var f=1-merge;
+      var devScale=0.55+0.45*f;
+      var dist=R*f;
+      for(var i=0;i<devs.length;i++){
+        var d=devs[i], dir=DIR[i];
+        var x=dir[0]*dist, y=dir[1]*dist;
+        d.style.transform="translate(-50%,-50%) translate("+x.toFixed(1)+"px,"+y.toFixed(1)+"px) scale("+devScale.toFixed(3)+")";
+        d.style.opacity=(merge<0.78?1:clamp(1-(merge-0.78)/0.22,0,1)).toFixed(3);
+        var w=wires[i];
+        if(w){
+          var ang=Math.atan2(dir[1],dir[0])*180/Math.PI;
+          var wlen=Math.max(0,dist-bubbleR*0.6);
+          w.style.width=wlen.toFixed(1)+"px";
+          w.style.transform="rotate("+ang.toFixed(2)+"deg)";
+          w.style.opacity=(0.65*f).toFixed(3);
+        }
+      }
+    }
+
+    /* ---- film control: poll the same-origin iframe for its master timeline ---- */
+    var film=null, filmReady=false, pollId=0, lastP=0, applied=false;
+    function applyStatic(){ if(filmReady && staticMode){ try{ film.progress(0.4); }catch(e){} } }
+    function tryFilm(){
+      try{
+        var w=iframe.contentWindow;
+        if(w && w.__film){
+          film=w.__film; film.pause(0); filmReady=true;
+          if(pollId){clearInterval(pollId);pollId=0;}
+          fitFilm();
+          if(staticMode){ applyStatic(); } else { render(lastP); }
+          return true;
+        }
+      }catch(e){}
+      return false;
+    }
+    function initFilm(){
+      if(tryFilm()) return;
+      if(pollId) return;
+      pollId=setInterval(tryFilm,50);
+      setTimeout(function(){ if(pollId){clearInterval(pollId);pollId=0;} },20000);
+    }
+    iframe.addEventListener("load",function(){ fitFilm(); initFilm(); });
+    initFilm();
+
+    /* ---- scrubbed render, driven by the sticky-pinned ScrollTrigger ---- */
+    function render(p){
+      lastP=p;
+      var merge=clamp(p/0.12,0,1);
+      devLayout(merge);
+
+      var voidGrow=clamp(p/0.16,0,1);
+      var voidFade=1-clamp((p-0.90)/0.10,0,1);
+      var voidA=voidGrow*voidFade;
+      voidBg.style.opacity=voidA.toFixed(3);
+      atmos.style.opacity=(voidA*0.92).toFixed(3);
+      tintText(voidGrow);
+
+      var pan=smooth(clamp((p-0.12)/0.08,0,1));
+      lc.style.opacity=clamp((p-0.12)/0.06,0,1).toFixed(3);
+      var panY=-pan*window.innerHeight*0.34;
+      var zoom=smooth(clamp((p-0.20)/0.06,0,1));
+      var zoomS=1+zoom*6.2;
+      world.style.transform="translateY("+panY.toFixed(1)+"px) scale("+zoomS.toFixed(3)+")";
+      world.style.opacity=(1-clamp((p-0.235)/0.025,0,1)).toFixed(3);
+
+      var frameA=clamp(p/0.03,0,1)*(1-clamp((p-0.105)/0.045,0,1));
+      frame.style.opacity=frameA.toFixed(3);
+
+      var fl=0;
+      if(p>0.20&&p<0.262){ var fp=(p-0.20)/0.062; fl=fp<0.5?(fp/0.5):(1-(fp-0.5)/0.5); }
+      flash.style.opacity=Math.max(0,fl).toFixed(3);
+
+      var filmA=clamp((p-0.232)/0.03,0,1);
+      var filmOut=1-clamp((p-0.95)/0.05,0,1);
+      filmWrap.style.opacity=(filmA*filmOut).toFixed(3);
+
+      if(filmReady){
+        var fpp=clamp((p-0.26)/(0.90-0.26),0,1);
+        try{ film.progress(fpp); }catch(e){}
+      }
+    }
+
+    if(staticMode){
+      section.classList.add("launch--static");
+      tintText(1);
+      measure();
+      applyStatic();
+      return;
+    }
+
+    gsap.registerPlugin(ScrollTrigger);
+    measure();
+    devLayout(0);
+    render(0);
+    ScrollTrigger.create({trigger:section,start:"top top",end:"bottom bottom",scrub:true,
+      onUpdate:function(self){ render(self.progress); },
+      onRefresh:function(){ measure(); render(lastP); }});
+
+    var rz=0; addEventListener("resize",function(){ clearTimeout(rz); rz=setTimeout(function(){ measure(); ScrollTrigger.refresh(); },160); });
+    setTimeout(function(){ measure(); render(lastP); },300);
+    addEventListener("load",function(){ measure(); ScrollTrigger.refresh(); });
+  })();
 
   /* ===== custom cursor: smooth follow, tighten on click, grow on interactive ===== */
   (function(){
