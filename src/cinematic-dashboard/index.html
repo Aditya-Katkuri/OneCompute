@@ -146,13 +146,21 @@
   /* LAUNCHER — the click target */
   .launcher { margin-top: 46px; }
   .launcher .l-cap { font-size: 22px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--text-soft); margin-bottom: 20px; }
-  .l-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-  .l-btn { position: relative; border: 1px solid var(--border-strong); border-radius: 18px; padding: 18px 20px; background: var(--surface);
+  .l-row { display: grid; grid-template-columns: minmax(0,.92fr) minmax(0,1.08fr); gap: 24px; align-items: stretch; }
+  .l-group { min-width: 0; padding: 18px; border-radius: 24px; border: 1px solid var(--border);
+             background: color-mix(in srgb, var(--surface) 78%, var(--surface-soft));
+             box-shadow: 0 14px 28px -22px rgba(43,34,51,.45); }
+  .l-group.ai { border-color: rgba(178,61,128,.24);
+                background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 82%, var(--surface-soft)), color-mix(in srgb, var(--surface) 72%, var(--surface-soft))); }
+  .l-group-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  .l-group-title { font-size: 23px; font-weight: 850; color: var(--text); letter-spacing: -.01em; }
+  .l-group-count { font-size: 14px; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; color: var(--text-soft); }
+  .l-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+  .l-btn { min-width: 0; min-height: 72px; display: flex; align-items: center; position: relative;
+           border: 1px solid var(--border-strong); border-radius: 18px; padding: 16px 18px; background: var(--surface);
            text-align: left; overflow: hidden; }
-  .l-btn .l-kind { font-size: 15px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--text-soft); }
-  .l-btn .l-name { font-size: 22px; font-weight: 800; color: var(--text); margin-top: 5px; letter-spacing: -.01em; }
+  .l-btn .l-name { font-size: 21px; line-height: 1.22; font-weight: 850; color: var(--text); letter-spacing: -.01em; overflow-wrap: anywhere; }
   .l-btn.primary { border-color: transparent; color: #fff; background: var(--accent); box-shadow: 0 18px 40px -16px rgba(178,61,128,.6); }
-  .l-btn.primary .l-kind { color: rgba(255,255,255,.8); }
   .l-btn.primary .l-name { color: #fff; }
   .l-btn .ripple { position: absolute; left: 50%; top: 50%; width: 24px; height: 24px; border-radius: 50%;
                    background: rgba(255,255,255,.7); transform: translate(-50%,-50%) scale(0); opacity: 0; }
@@ -277,16 +285,32 @@
 
         <div class="launcher">
           <div class="l-cap">Run a workload across the fleet</div>
-          <div class="l-row">
-            <button class="l-btn"><span class="l-kind">Non-AI</span><div class="l-name">Fractal render</div></button>
-            <button class="l-btn"><span class="l-kind">Non-AI</span><div class="l-name">Param sweep</div></button>
-            <button class="l-btn"><span class="l-kind">Non-AI</span><div class="l-name">Monte-Carlo risk</div></button>
-            <button class="l-btn"><span class="l-kind">Non-AI</span><div class="l-name">Hash crack</div></button>
-            <button class="l-btn primary" id="runBtn"><span class="l-kind">AI</span><div class="l-name">Run AI job</div><span class="ripple" id="ripple"></span></button>
-            <button class="l-btn"><span class="l-kind">AI</span><div class="l-name">Local LLM</div></button>
-            <button class="l-btn"><span class="l-kind">AI</span><div class="l-name">Synth data</div></button>
-            <button class="l-btn"><span class="l-kind">AI</span><div class="l-name">Model eval</div></button>
-            <button class="l-btn"><span class="l-kind">AI</span><div class="l-name">Knowledge graph</div></button>
+          <div class="l-row" aria-label="Workload launcher">
+            <section class="l-group non-ai" aria-labelledby="nonAiWorkloads">
+              <div class="l-group-head">
+                <div class="l-group-title" id="nonAiWorkloads">Non-AI Workloads</div>
+                <span class="l-group-count">4 jobs</span>
+              </div>
+              <div class="l-grid">
+                <button class="l-btn" type="button"><div class="l-name">Mandelbrot Bloom</div></button>
+                <button class="l-btn" type="button"><div class="l-name">Parameter Hunt</div></button>
+                <button class="l-btn" type="button"><div class="l-name">Risk Dice</div></button>
+                <button class="l-btn" type="button"><div class="l-name">Hash Breaker</div></button>
+              </div>
+            </section>
+            <section class="l-group ai" aria-labelledby="aiWorkloads">
+              <div class="l-group-head">
+                <div class="l-group-title" id="aiWorkloads">AI Workloads</div>
+                <span class="l-group-count">5 jobs</span>
+              </div>
+              <div class="l-grid">
+                <button class="l-btn primary" id="runBtn" type="button"><div class="l-name">Inference Burst</div><span class="ripple" id="ripple"></span></button>
+                <button class="l-btn" type="button"><div class="l-name">Edge LLM</div></button>
+                <button class="l-btn" type="button"><div class="l-name">Data Forge</div></button>
+                <button class="l-btn" type="button"><div class="l-name">Model Trials</div></button>
+                <button class="l-btn" type="button"><div class="l-name">Fact Weave</div></button>
+              </div>
+            </section>
           </div>
         </div>
       </div>
@@ -351,6 +375,24 @@ const SHOT = {
 };
 // place the world at the opening shot immediately (no blank first frame)
 gsap.set("#world", SHOT.hero);
+
+// Keep the cursor locked to the selected chip even if the launcher layout changes.
+function worldCenter(el) {
+  let x = el.offsetWidth / 2, y = el.offsetHeight / 2;
+  for (let n = el; n; n = n.offsetParent) {
+    x += n.offsetLeft || 0;
+    y += n.offsetTop || 0;
+    if (n === $("world")) break;
+  }
+  return { x, y };
+}
+function cursorPointFor(el) {
+  const p = worldCenter(el);
+  return { x: p.x * SHOT.launch.scale + SHOT.launch.x - 16, y: p.y * SHOT.launch.scale + SHOT.launch.y - 12 };
+}
+const runBtnClick = cursorPointFor($("runBtn"));
+function refreshRunBtnClick() { Object.assign(runBtnClick, cursorPointFor($("runBtn"))); }
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(refreshRunBtnClick);
 
 /* ---- workload nodes: fan out from the hub, each a different piece of the job ---- */
 const HUB = { x: 960, y: 640 };
@@ -423,10 +465,10 @@ tl.to('[data-bar]', { width: (i, t) => getComputedStyle(t).getPropertyValue("--t
                       duration: 1.1, stagger: 0.06, ease: "power2.out" }, 3.9);
 caption(tl, 4.1, "Connected", "Thousands of idle machines, ready.", 2.6);
 
-// ACT 3 — zoom to the launcher; the giant cursor glides in and clicks "Run AI job"
+// ACT 3 — zoom to the launcher; the giant cursor glides in and clicks the selected AI workload
 tl.to("#world", { ...SHOT.launch, duration: 1.8 }, 6.2);
 tl.set("#cursor", { opacity: 1, x: 1560, y: 180 }, 6.4);
-tl.to("#cursor", { x: 944, y: 443, duration: 1.5, ease: "power2.inOut" }, 6.6);
+tl.to("#cursor", { x: () => runBtnClick.x, y: () => runBtnClick.y, duration: 1.5, ease: "power2.inOut" }, 6.6);
 caption(tl, 6.7, "One click", "Launch a job across the fleet.", 2.0);
 // the click
 tl.to("#cursor", { scale: 0.86, duration: 0.12, ease: "power2.in" }, 8.25)
