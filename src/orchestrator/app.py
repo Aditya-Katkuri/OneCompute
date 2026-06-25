@@ -179,6 +179,49 @@ WORKLOAD_CATALOG: list[dict] = [
 ]
 
 
+def _aggregate_workload(kind: str, outputs: list[dict]) -> dict | None:
+    """Render-ready merged summary for a workload, computed server-side from its completed
+    tiles' outputs, so the dashboard draws it instead of re-implementing each merge in JS.
+
+    Returns None when nothing has completed, or for kinds the dashboard reads tile-by-tile
+    (fractal pixel bands are returned per tile for canvas reassembly). Never raises; lazy imports
+    keep the workload deps out of the orchestrator's import path."""
+    if not outputs:
+        return None
+    try:
+        if kind == "montecarlo":
+            from workloads.montecarlo import aggregate_montecarlo
+            return aggregate_montecarlo(outputs)
+        if kind == "hashcrack":
+            from workloads.hashcrack import aggregate_hashcrack
+            return aggregate_hashcrack(outputs)
+        if kind == "optimize":
+            from workloads.optimize import aggregate_optimize
+            return aggregate_optimize(outputs)
+        if kind == "ai.eval":
+            from workloads.eval import aggregate_eval
+            return aggregate_eval(outputs)
+        if kind == "ai.graph":
+            from workloads.graph import aggregate_graph
+            return aggregate_graph(outputs)
+        if kind in ("ai.infer", "ai.batch_infer"):
+            results = [r for out in outputs for r in (out.get("results") or [])]
+            return {"count": len(results), "backend": outputs[0].get("backend"), "results": results[:200]}
+        if kind == "ai.synth":
+            from workloads.synth import merge_synth
+            rows = merge_synth(outputs)
+            return {"count": len(rows), "backend": outputs[0].get("backend"), "rows": rows[:500]}
+        if kind == "fractal":
+            return {
+                "width": outputs[0].get("width"),
+                "max_iter": outputs[0].get("max_iter"),
+                "rows_done": sum(len(out.get("rows") or []) for out in outputs),
+            }
+    except Exception:
+        return None
+    return None
+
+
 def _lease_deadline() -> str:
     return (datetime.now(UTC) + timedelta(seconds=20)).isoformat()
 
@@ -623,12 +666,15 @@ def create_app(db_path: str = ":memory:", signer=None, require_approval: bool = 
             raise HTTPException(status_code=404, detail="workload not found")
         jobs = [_job_detail(row) for row in rows]
         completed = sum(1 for row in rows if row["state"] == "completed")
+        outputs = [job.output for job in jobs if job.state == "completed" and job.output]
+        summary = _aggregate_workload(rows[0]["kind"], outputs)
         return WorkloadView(
             workload_id=workload_id,
             kind=rows[0]["kind"],
             total=len(rows),
             completed=completed,
             jobs=jobs,
+            summary=summary,
         )
 
     @app.get("/events")

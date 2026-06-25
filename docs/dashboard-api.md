@@ -80,23 +80,36 @@ Launch one across the fleet in a single call:
 
 - `GET /workloads/{workload_id}` →
   ```jsonc
-  { "workload_id": "…", "kind": "fractal", "total": 3, "completed": 2,
-    "jobs": [{ "job_id": "…", "kind": "fractal", "state": "completed",
-               "assigned_worker": "dev-box", "units": 160, "workload_id": "…",
-               "output": { … }, "created_at": "…", "updated_at": "…" }] }
+  { "workload_id": "…", "kind": "montecarlo", "total": 3, "completed": 2,
+    "jobs": [{ "job_id": "…", "state": "completed", "assigned_worker": "dev-box",
+               "units": 1000000, "workload_id": "…", "output": { … } }],
+    "summary": { … }   // render-ready merged result, computed server-side (null until a tile finishes)
+  }
   ```
   Poll until `completed === total`. `completed/total` drives a progress bar; per-job `state` +
   `assigned_worker` show which machine ran which tile.
 - `GET /jobs/{job_id}` → the same single-job shape (incl. `output`).
 
-### Output shape + suggested visualization per kind
+### Just draw `summary` — the server merges the tiles for you
 
-| kind | per-job `output` | suggested visual |
+The orchestrator runs each workload's aggregator and returns a **render-ready `summary`** on the
+workload view, so the UI never re-implements the merge in JS. `summary` is `null` until ≥1 tile
+completes, then:
+
+| kind | `summary` shape | suggested visual |
 |---|---|---|
-| `fractal` | `{ width, row_start, row_end, max_iter, rows: [[int per pixel], …] }` (image `height` is the launch param, not echoed in output) | draw to a `<canvas>`: place each row at `y = row_start + i`, color each escape count (`>= max_iter` → black, else a ramp). Redraw as tiles complete → image fills in band-by-band. |
-| `optimize` | `{ best_score, best_params: [float…], best_index, evaluated }` | reduce to the global best (max `best_score`); show the winning machine + score; a small bar of per-tile scores. |
-| `ai.batch_infer` | `{ results: [{ prompt, completion, tokens }], backend }` | a list of prompt → completion cards; tag the `backend`. |
-| `ai.synth` | `{ rows: [{ name, role, team, summary }, …], backend }` | a table of the merged rows across all tiles. |
+| `montecarlo` | `{ paths, mean_return, stdev, worst_return, var_95, cvar_95, var_99, cvar_99, hist: [int…], hist_lo, hist_hi }` | a return-distribution bar chart (`hist` over `[hist_lo, hist_hi]`) with VaR markers; headline the VaR/CVaR. |
+| `hashcrack` | `{ found, target_prefix, nonce, hash, hashes_tried, tiles }` | a big hash-rate (`hashes_tried` / elapsed) + the winning nonce/hash when `found`. |
+| `optimize` | `{ best_score, best_params: [float…], best_index, evaluated }` | the global best score + which machine + params. |
+| `ai.infer` / `ai.batch_infer` | `{ count, backend, results: [{ prompt, completion, tokens }] }` (capped 200) | a scrolling list of prompt → completion cards; tag `backend`. |
+| `ai.eval` | `{ n, mean_score, leaderboard: [{ label, mean_score, n }], distribution: [11 ints] }` | a **leaderboard** (sorted) + a 0-10 score histogram. |
+| `ai.synth` | `{ count, backend, rows: [{ … }] }` (capped 500) | a data **table** of the merged rows. |
+| `ai.graph` | `{ nodes: [str], edges: [{ source, relation, target }], node_count, edge_count }` | a **node-link graph** (e.g. SVG/force layout); label edges with `relation`. |
+| `fractal` | `{ width, max_iter, rows_done }` — pixel bands stay per tile | reassemble from each `jobs[].output.rows` on a `<canvas>` (place rows at `row_start + i`); `summary` just tracks progress. |
+
+> For `fractal` only, draw from the per-tile `output.rows` (place each row at `y = row_start + i`,
+> color the escape count: `>= max_iter` → black, else a ramp) so the image fills in band-by-band.
+> Every other kind: render `summary` directly.
 
 ## Endpoint summary
 

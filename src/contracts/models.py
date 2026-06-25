@@ -231,3 +231,7 @@ class WorkloadView(BaseModel):
     total: int = 0
     completed: int = 0
     jobs: list[JobDetail] = Field(default_factory=list)
+    # Render-ready merged result computed server-side over the completed tiles (None until any
+    # tile finishes). Shape depends on kind -- see docs/dashboard-api.md. The dashboard draws
+    # this directly instead of re-implementing each workload's aggregation in the browser.
+    summary: dict[str, Any] | None = None

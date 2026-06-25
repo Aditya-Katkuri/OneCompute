@@ -142,6 +142,56 @@ def test_workloads_catalog_lists_launchable_examples():
         assert launched.status_code == 200
 
 
+def _drain(client: TestClient, worker_id: str, auth: dict[str, str], rounds: int = 8) -> None:
+    for _ in range(rounds):
+        if _complete_next(client, worker_id, auth) is None:
+            break
+
+
+def test_workload_summary_montecarlo_has_var_and_histogram():
+    client = TestClient(create_app(":memory:"))
+    auth = _register(client, worker_id="w1", cpus=4)
+    body = client.post(
+        "/workloads",
+        json={"kind": "montecarlo", "n_tiles": 2, "params": {"total_paths": 4_000, "horizon_days": 20}},
+    ).json()
+    _drain(client, "w1", auth)
+    view = client.get(f"/workloads/{body['workload_id']}").json()
+    assert view["completed"] == 2
+    summary = view["summary"]
+    assert summary and summary["paths"] == 4_000
+    assert "var_95" in summary and "var_99" in summary and "hist" in summary
+
+
+def test_workload_summary_ai_eval_is_a_leaderboard():
+    client = TestClient(create_app(":memory:"))
+    auth = _register(client, worker_id="w1", cpus=4)
+    body = client.post("/workloads", json={"kind": "ai.eval", "n_tiles": 2, "params": {}}).json()
+    _drain(client, "w1", auth)
+    summary = client.get(f"/workloads/{body['workload_id']}").json()["summary"]
+    assert summary and summary["n"] > 0
+    assert isinstance(summary["leaderboard"], list) and len(summary["distribution"]) == 11
+
+
+def test_workload_summary_ai_graph_is_nodes_and_edges():
+    client = TestClient(create_app(":memory:"))
+    auth = _register(client, worker_id="w1", cpus=4)
+    body = client.post("/workloads", json={"kind": "ai.graph", "n_tiles": 2, "params": {}}).json()
+    _drain(client, "w1", auth)
+    summary = client.get(f"/workloads/{body['workload_id']}").json()["summary"]
+    assert summary and "nodes" in summary and "edges" in summary
+    assert summary["node_count"] == len(summary["nodes"]) > 0
+
+
+def test_workload_summary_is_none_before_any_tile_completes():
+    client = TestClient(create_app(":memory:"))
+    body = client.post(
+        "/workloads", json={"kind": "hashcrack", "n_tiles": 2, "params": {"keyspace": 1_000}}
+    ).json()
+    view = client.get(f"/workloads/{body['workload_id']}").json()
+    assert view["completed"] == 0 and view["summary"] is None
+
+
 def test_heartbeat_usage_is_exposed_in_state():
     # The dashboard's per-device usage graph reads cpu_pct/gpu_pct/free_ram_gb from /state;
     # confirm a heartbeat carrying live usage is reflected there.
