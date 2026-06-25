@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>OneCompute — Let your compute work when you are not.</title>
 <meta name="description" content="OneCompute harvests the idle CPUs and GPUs of your existing PC fleet into a private, opt-in compute grid. Switch it on tonight.">
+<link rel="icon" type="image/png" href="onecompute-mark.png">
+<link rel="apple-touch-icon" href="onecompute-mark.png">
 <!--
   OneCompute marketing site. Self-contained: vendored GSAP + one vendored serif (woff2); everything else
   is system fonts + inline SVG/canvas + a raw-WebGL background shader (no libraries).
@@ -107,8 +109,12 @@
   .nav{position:fixed;top:0;left:0;right:0;z-index:40;transition:background .4s var(--ease-out),box-shadow .4s var(--ease-out)}
   .nav.scrolled{background:rgba(247,239,233,.7);backdrop-filter:saturate(1.4) blur(12px);box-shadow:0 1px 0 var(--line)}
   .nav__in{max-width:1280px;margin:0 auto;padding:0 clamp(22px,5vw,90px);height:74px;display:flex;align-items:center;justify-content:space-between}
-  .brand{display:flex;align-items:center;gap:12px;font-family:var(--disp);font-weight:700;font-size:19px;letter-spacing:-.02em}
-  .brand svg{width:30px;height:30px}
+  .brand{display:flex;align-items:center;gap:11px}
+  .brand svg,.brand img{width:34px;height:34px}
+  .brand img{display:block;object-fit:contain;filter:drop-shadow(0 5px 14px rgba(178,61,128,.28))}
+  .brand__wm{font-family:var(--serif);font-weight:400;font-size:24px;line-height:1;letter-spacing:-.01em}
+  .brand__wm b{font-weight:400;color:var(--plum)}
+  .brand__wm span{color:var(--magenta-ink)}
   .nav__links{display:flex;align-items:center;gap:30px}
   .nav__links a{font-size:14px;color:var(--ink);font-weight:500}
   .nav__links a.nh{padding:12px 6px}
@@ -217,7 +223,10 @@
   @media(max-width:760px){.cta{padding:56px 22px}}
   footer{padding:70px 0 64px;border-top:1px solid var(--line);margin-top:30px}
   .foot{display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.04em}
-  .foot .mk{font-family:var(--disp);font-weight:700;font-size:21px;letter-spacing:-.02em;color:var(--magenta-ink)}
+  .foot .mk{display:inline-flex;align-items:center;gap:9px;font-family:var(--serif);font-weight:400;font-size:22px;letter-spacing:-.01em;color:var(--plum)}
+  .foot .mk img{width:26px;height:26px;object-fit:contain;display:block;filter:drop-shadow(0 4px 11px rgba(178,61,128,.26))}
+  .foot .mk b{font-weight:400;color:var(--plum)}
+  .foot .mk i{font-style:normal;color:var(--magenta-ink)}
   .foot__dis{margin-top:18px;font-family:var(--mono);font-size:12px;color:var(--muted);max-width:80ch;line-height:1.8;letter-spacing:.02em;text-wrap:pretty}
 
   /* reveals default VISIBLE; the hidden start only engages once JS confirms it's running (html.js),
@@ -455,6 +464,15 @@
     background:linear-gradient(90deg, rgba(201,184,240,0) 0%, rgba(201,184,240,.7) 100%);
     border-radius:2px;pointer-events:none;will-change:width,opacity}
 
+  /* surge (Launch Center -> fleet) + green return (fleet -> Launch Center) arrows */
+  .launch__arrows{position:absolute;inset:0;z-index:3;pointer-events:none;overflow:visible}
+  .launch__arrow-line{fill:none;stroke-width:5.5;stroke-linecap:round;will-change:stroke-dashoffset,opacity}
+  .launch__arrow-line--surge{stroke:#F4A6D2;filter:drop-shadow(0 0 7px rgba(244,166,210,.92))}
+  .launch__arrow-line--return{stroke:#5BD6A4;filter:drop-shadow(0 0 7px rgba(91,214,164,.95))}
+  .launch__arrow-head{stroke:none;will-change:transform,opacity}
+  .launch__arrow-head--surge{fill:#F8B6DD;filter:drop-shadow(0 0 6px rgba(244,166,210,.95))}
+  .launch__arrow-head--return{fill:#79E3BC;filter:drop-shadow(0 0 6px rgba(91,214,164,1))}
+
   /* embedded launch film — rendered at its native 1920x1080 and scaled to cover the
      stage, so the film's own fitFrame stays at 1:1 (its grid-centring misbehaves at other sizes) */
   .launch__filmwrap{position:absolute;inset:0;z-index:5;opacity:0;overflow:hidden;will-change:opacity}
@@ -605,14 +623,8 @@
 <header class="nav" id="nav">
   <div class="nav__in">
     <a class="brand" href="#top" aria-label="OneCompute home">
-      <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
-        <rect x="1.4" y="1.4" width="29.2" height="29.2" rx="9" stroke="#2B2233" stroke-width="1.6"/>
-        <circle cx="16" cy="16" r="4.2" fill="#D98FC0"/>
-        <circle cx="7.4" cy="7.4" r="2" fill="#2B2233"/><circle cx="24.6" cy="7.4" r="2" fill="#2B2233"/>
-        <circle cx="7.4" cy="24.6" r="2" fill="#2B2233"/><circle cx="24.6" cy="24.6" r="2" fill="#2B2233"/>
-        <path d="M9.2 9.2l4.3 4.3M22.8 9.2l-4.3 4.3M9.2 22.8l4.3-4.3M22.8 22.8l-4.3-4.3" stroke="#2B2233" stroke-width="1.1" opacity=".4"/>
-      </svg>
-      OneCompute
+      <img src="onecompute-mark.png" width="34" height="34" alt="" aria-hidden="true">
+      <span class="brand__wm"><b>One</b><span>Compute</span></span>
     </a>
     <nav class="nav__links" aria-label="Primary">
       <a class="nh" href="#problem">The problem</a>
@@ -1780,19 +1792,12 @@
       </div>
 
       <div class="launch__world">
+        <svg class="launch__arrows" aria-hidden="true"></svg>
         <div class="launch__bubble launch__bubble--ihf">
           <span class="launch__bubble-glow" aria-hidden="true"></span>
           <span class="launch__bubble-core" aria-hidden="true"></span>
           <span class="launch__ring launch__ring--1" aria-hidden="true"></span>
           <span class="launch__ring launch__ring--2" aria-hidden="true"></span>
-          <span class="launch__wire" aria-hidden="true"></span>
-          <span class="launch__wire" aria-hidden="true"></span>
-          <span class="launch__wire" aria-hidden="true"></span>
-          <span class="launch__wire" aria-hidden="true"></span>
-          <span class="launch__dev"><span class="launch__dev-orb" aria-hidden="true"></span><span class="launch__dev-label">laptops</span></span>
-          <span class="launch__dev"><span class="launch__dev-orb" aria-hidden="true"></span><span class="launch__dev-label">consoles</span></span>
-          <span class="launch__dev"><span class="launch__dev-orb" aria-hidden="true"></span><span class="launch__dev-label">desktops</span></span>
-          <span class="launch__dev"><span class="launch__dev-orb" aria-hidden="true"></span><span class="launch__dev-label">dev boxes</span></span>
           <span class="launch__bubble-label">Internal Hardware Fleet</span>
         </div>
         <div class="launch__bubble launch__bubble--lc">
@@ -1969,7 +1974,7 @@
 
   <footer>
     <div class="foot">
-      <span class="mk">OneCompute</span>
+      <span class="mk"><img src="onecompute-mark.png" width="26" height="26" alt="" aria-hidden="true"><b>One</b><i>Compute</i></span>
       <span>Let your compute work when you are not.</span>
       <span>Warm pastels &middot; a living field &middot; honest numbers</span>
     </div>
@@ -2721,7 +2726,7 @@ void main(){
       wiresSvg.appendChild(path); wiresSvg.appendChild(arrow);
       var sparks=[]; for(var i=0;i<6;i++){var c=document.createElementNS(NS,"circle");c.setAttribute("class","fleet__spark");c.setAttribute("r","3.4");wiresSvg.appendChild(c);sparks.push({el:c,active:false,t:0});}
       return {node:node, art:node.querySelector(".fleet__node-art"), path:path, arrow:arrow, sparks:sparks,
-        len:0, sx:0, sy:0, ex:0, ey:0, ang:0, dash:0, as:1};
+        len:0, sx:0, sy:0, ex:0, ey:0, ang:0, dash:0, as:1, nx:0, ny:0};
     });
 
     function applyWire(w){
@@ -2743,6 +2748,11 @@ void main(){
         w.ex=nx-ux*nodeGap; w.ey=ny-uy*nodeGap;
         w.len=Math.sqrt((w.ex-w.sx)*(w.ex-w.sx)+(w.ey-w.sy)*(w.ey-w.sy));
         w.ang=Math.atan2(w.ey-w.sy,w.ex-w.sx)*180/Math.PI;
+        /* resting vector from the node slot's centre to the hub centre — drives reabsorption.
+           read from the OUTER .fleet__node box so it stays stable while node-in collapses */
+        var nr=w.node.getBoundingClientRect();
+        w.nx=hx-(nr.left+nr.width/2-sr.left);
+        w.ny=hy-(nr.top+nr.height/2-sr.top);
         w.path.setAttribute("d","M"+w.sx+","+w.sy+" L"+w.ex+","+w.ey);
         w.path.setAttribute("stroke-dasharray",w.len);
         applyWire(w);
@@ -2779,35 +2789,51 @@ void main(){
     section.querySelectorAll(".fleet__node-in").forEach(function(el){gsap.set(el,{opacity:0,y:14,scale:0.7});});
     section.querySelectorAll(".fleet__node-halo").forEach(function(el){gsap.set(el,{opacity:0,scale:0.6});});
     wires.forEach(function(w){ w.dash=1; w.as=0; applyWire(w); });
+    measure(); /* populate resting node->hub vectors (w.nx/w.ny) before the timeline locks reabsorption targets */
 
     var tl=gsap.timeline({defaults:{ease:"power3.out"},
       scrollTrigger:{trigger:section,start:"top top",end:"bottom bottom",scrub:true,
         onUpdate:function(self){ prog=self.progress; measure(); },
         onRefresh:measure}});
 
-    /* 0.00-0.10 — copy + hub orb ignite */
-    tl.to(copy,{opacity:1,y:0,duration:0.10,ease:"power3.out"},0.00)
+    /* 0.00-0.08 — copy + hub orb ignite */
+    tl.to(copy,{opacity:1,y:0,duration:0.08,ease:"power3.out"},0.00)
       .to(hub,{scale:1,opacity:1,duration:0.10},0.00)
-      .to(hubLabel,{opacity:1,duration:0.08},0.03)
-      .to(hub,{y:-26,ease:"none",duration:0.90},0.10); /* gentle hub parallax */
+      .to(hubLabel,{opacity:1,duration:0.07},0.03)
+      .to(hub,{y:-22,ease:"none",duration:0.54},0.08); /* gentle hub parallax, settled before reabsorption */
 
-    var beats=[0.10,0.30,0.50,0.70]; /* wire/node draw-in starts */
-    var drifts=[-16,-16,16,16];      /* per-node parallax (upper rise, lower sink) */
+    /* device nodes branch OUT of the hub (compressed so reabsorption gets room) */
+    var beats=[0.08,0.20,0.32,0.44];
+    var drifts=[-12,-12,12,12];      /* per-node parallax (upper rise, lower sink) */
     wires.forEach(function(w,i){
-      var t=beats[i], dur=(i<3?0.20:0.18);
+      var t=beats[i], dur=0.15;
       var ni=w.node.querySelector(".fleet__node-in");
       var halo=w.node.querySelector(".fleet__node-halo");
       tl.to(w,{dash:0,duration:dur*0.8,ease:"power2.inOut",onUpdate:function(){applyWire(w);}},t)
         .to(w,{as:1,duration:0.06,ease:"back.out(1.6)",onUpdate:function(){applyWire(w);}},t+dur*0.7)
-        .to(ni,{opacity:1,y:0,scale:1,duration:dur*0.7,ease:"back.out(1.4)"},t+dur*0.32)
-        .to(halo,{opacity:1,scale:1,duration:dur*0.8,ease:"power2.out"},t+dur*0.32)
-        .to(w.node,{y:drifts[i],ease:"none",duration:0.9-t},t+dur*0.5);
+        .to(ni,{opacity:1,y:0,scale:1,duration:dur*0.8,ease:"back.out(1.4)"},t+dur*0.30)
+        .to(halo,{opacity:1,scale:1,duration:dur*0.85,ease:"power2.out"},t+dur*0.30)
+        .to(w.node,{y:drifts[i],ease:"none",duration:0.40-t*0.4},t+dur*0.5);
     });
 
-    /* 0.88-1.00 — harvest: hub glow intensifies, closing line settles */
-    tl.to(hubGlow,{opacity:1,scale:1.16,duration:0.12,ease:"power2.out"},0.88)
-      .to(hubCore,{scale:1.05,duration:0.12,ease:"power2.out"},0.88)
-      .to(closeLine,{opacity:1,y:0,duration:0.12,ease:"power3.out"},0.88);
+    /* 0.62-1.00 — REABSORPTION: the fleet folds its four device groups back into ONE bubble.
+       each node-in slides into the hub centre (w.nx/w.ny), shrinks + fades; its wire retracts and
+       the hub swells brighter as it swallows them, leaving a single Internal Hardware Fleet bubble. */
+    tl.to(hub,{scale:1.07,duration:0.36,ease:"power2.out"},0.62)
+      .to(hubGlow,{opacity:1,scale:1.24,duration:0.38,ease:"power2.out"},0.62)
+      .to(hubCore,{scale:1.12,duration:0.38,ease:"power2.out"},0.62)
+      .to(closeLine,{opacity:1,y:0,duration:0.12,ease:"power3.out"},0.86);
+    var rbeats=[0.64,0.69,0.74,0.79];
+    wires.forEach(function(w,i){
+      var t=rbeats[i];
+      var ni=w.node.querySelector(".fleet__node-in");
+      var halo=w.node.querySelector(".fleet__node-halo");
+      var NX=w.nx*0.94, NY=w.ny*0.94;
+      tl.to(ni,{x:NX,y:NY,scale:0.12,opacity:0,duration:0.13,ease:"power2.in"},t)
+        .to(halo,{opacity:0,duration:0.09,ease:"power1.in"},t)
+        .to(w.path,{opacity:0,duration:0.11,ease:"power1.in"},t+0.02)
+        .to(w.arrow,{opacity:0,duration:0.07,ease:"power1.in"},t);
+    });
 
     /* infinite hub pulse, independent of scrub */
     gsap.to(hubGlow,{opacity:0.6,scale:1.1,duration:3.2,ease:"sine.inOut",yoyo:true,repeat:-1});
@@ -2830,7 +2856,7 @@ void main(){
     }
     function clearSparks(){ wires.forEach(function(w){ w.sparks.forEach(function(s){ s.active=false; s.el.style.opacity=0; }); }); }
     function frame(now){ if(!running) return; var dt=Math.min((now-last)/1000,0.05); last=now;
-      if(!document.hidden && prog>0.84){ pstep(dt); } else { clearSparks(); }
+      if(!document.hidden && prog>0.55){ pstep(dt); } else { clearSparks(); }
       rafId=requestAnimationFrame(frame); }
     function startLoop(){ if(running) return; running=true; last=performance.now(); rafId=requestAnimationFrame(frame); }
     function stopLoop(){ running=false; if(rafId) cancelAnimationFrame(rafId); rafId=0; clearSparks(); }
@@ -2859,6 +2885,7 @@ void main(){
     var filmWrap=section.querySelector(".launch__filmwrap");
     var iframe=section.querySelector(".launch__film");
     var flash=section.querySelector(".launch__flash");
+    var arrowsSvg=section.querySelector(".launch__arrows");
     var eyebrowEl=section.querySelector(".launch__frame .eyebrow");
     var h2El=section.querySelector(".launch__frame h2");
     var devLabels=[].slice.call(section.querySelectorAll(".launch__dev-label"));
@@ -2886,6 +2913,14 @@ void main(){
       var br=ihf.getBoundingClientRect();
       bubbleR=br.width/2||90;
       R=br.width*1.32||240;
+      if(arrowsSvg){
+        var sw=stage.clientWidth||window.innerWidth, sh=stage.clientHeight||window.innerHeight;
+        arrowsSvg.setAttribute("viewBox","0 0 "+sw+" "+sh);
+        var r=(ihf.offsetWidth/2)||90, off=Math.max(13,r*0.17);
+        var ix=sw*0.5, iy=sh*0.34, lx=sw*0.5, ly=sh*0.84;
+        surgeSX=lx-off; surgeSY=ly-r*0.92; surgeEX=ix-off; surgeEY=iy+r*0.92;
+        returnSX=ix+off; returnSY=iy+r*0.92; returnEX=lx+off; returnEY=ly-r*0.92;
+      }
       fitFilm();
     }
     /* render the film at native 1920x1080 and scale the iframe to COVER the wrap */
@@ -2894,6 +2929,31 @@ void main(){
       var h=filmWrap.clientHeight||window.innerHeight;
       var s=Math.max(w/1920,h/1080);
       iframe.style.transform="translate(-50%,-50%) scale("+s.toFixed(4)+")";
+    }
+
+    /* ---- surge + green-return arrows (built once; geometry computed in measure) ---- */
+    var SVGNS="http://www.w3.org/2000/svg";
+    var surgeLine,surgeHead,returnLine,returnHead;
+    var surgeSX=0,surgeSY=0,surgeEX=0,surgeEY=0,returnSX=0,returnSY=0,returnEX=0,returnEY=0;
+    function mkArrowPath(cls,d){var e=document.createElementNS(SVGNS,"path");e.setAttribute("class",cls);if(d)e.setAttribute("d",d);return e;}
+    if(arrowsSvg && !staticMode){
+      arrowsSvg.setAttribute("preserveAspectRatio","none");
+      surgeLine=mkArrowPath("launch__arrow-line launch__arrow-line--surge");
+      returnLine=mkArrowPath("launch__arrow-line launch__arrow-line--return");
+      surgeHead=mkArrowPath("launch__arrow-head launch__arrow-head--surge","M0,-11 L22,0 L0,11 Z");
+      returnHead=mkArrowPath("launch__arrow-head launch__arrow-head--return","M0,-11 L22,0 L0,11 Z");
+      arrowsSvg.appendChild(surgeLine); arrowsSvg.appendChild(returnLine);
+      arrowsSvg.appendChild(surgeHead); arrowsSvg.appendChild(returnHead);
+    }
+    function bell(t){ t=clamp(t,0,1); return Math.sin(t*Math.PI); }
+    function applyArrow(line,head,sx,sy,ex,ey,t){
+      if(!line) return;
+      var dx=ex-sx, dy=ey-sy, len=Math.sqrt(dx*dx+dy*dy)||1;
+      line.setAttribute("d","M"+sx.toFixed(1)+","+sy.toFixed(1)+" L"+ex.toFixed(1)+","+ey.toFixed(1));
+      line.setAttribute("stroke-dasharray",len.toFixed(1));
+      line.setAttribute("stroke-dashoffset",(len*(1-t)).toFixed(1));
+      var tx=sx+dx*t, ty=sy+dy*t, ang=Math.atan2(dy,dx)*180/Math.PI;
+      head.setAttribute("transform","translate("+tx.toFixed(1)+","+ty.toFixed(1)+") rotate("+ang.toFixed(1)+")");
     }
 
     /* merge 0 -> spread + visible, 1 -> collapsed into the hub centre */
@@ -2945,39 +3005,60 @@ void main(){
     /* ---- scrubbed render, driven by the sticky-pinned ScrollTrigger ---- */
     function render(p){
       lastP=p;
-      var merge=clamp(p/0.12,0,1);
-      devLayout(merge);
 
-      var voidGrow=clamp(p/0.16,0,1);
-      var voidFade=1-clamp((p-0.90)/0.10,0,1);
+      /* deep-plum void grows in, holds, then fades back to cream for the Cinema seam */
+      var voidGrow=clamp(p/0.14,0,1);
+      var voidFade=1-clamp((p-0.95)/0.05,0,1);
       var voidA=voidGrow*voidFade;
       voidBg.style.opacity=voidA.toFixed(3);
       atmos.style.opacity=(voidA*0.92).toFixed(3);
       tintText(voidGrow);
 
-      var pan=smooth(clamp((p-0.12)/0.08,0,1));
-      lc.style.opacity=clamp((p-0.12)/0.06,0,1).toFixed(3);
-      var panY=-pan*window.innerHeight*0.34;
-      var zoom=smooth(clamp((p-0.20)/0.06,0,1));
-      var zoomS=1+zoom*6.2;
-      world.style.transform="translateY("+panY.toFixed(1)+"px) scale("+zoomS.toFixed(3)+")";
-      world.style.opacity=(1-clamp((p-0.235)/0.025,0,1)).toFixed(3);
-
-      var frameA=clamp(p/0.03,0,1)*(1-clamp((p-0.105)/0.045,0,1));
+      /* framing copy fades in, then clears before the surge */
+      var frameA=clamp(p/0.03,0,1)*(1-clamp((p-0.135)/0.05,0,1));
       frame.style.opacity=frameA.toFixed(3);
 
+      /* Launch Center bubble drops in below the single fleet bubble */
+      lc.style.opacity=clamp((p-0.10)/0.06,0,1).toFixed(3);
+
+      /* zoom INTO the Launch Center (film), hold, then zoom back OUT to the bubbles */
+      var zoomIn=smooth(clamp((p-0.27)/0.06,0,1));
+      var zoomOut=smooth(clamp((p-0.82)/0.06,0,1));
+      var net=zoomIn-zoomOut;                       /* 0 bubbles -> 1 film -> 0 bubbles */
+      var panY=-net*window.innerHeight*0.34;
+      var zoomS=1+net*6.2;
+      world.style.transform="translateY("+panY.toFixed(1)+"px) scale("+zoomS.toFixed(3)+")";
+      var worldHidden=clamp((p-0.30)/0.018,0,1)*(1-clamp((p-0.82)/0.02,0,1));
+      var worldEnd=clamp((p-0.95)/0.05,0,1);
+      world.style.opacity=((1-worldHidden)*(1-worldEnd)).toFixed(3);
+
+      /* surge arrow: shoots out of the Launch Center up into the fleet bubble */
+      var surgeT=smooth(clamp((p-0.17)/0.085,0,1));
+      applyArrow(surgeLine,surgeHead,surgeSX,surgeSY,surgeEX,surgeEY,surgeT);
+      var surgeVis=clamp((p-0.16)/0.015,0,1)*(1-clamp((p-0.275)/0.02,0,1));
+      if(surgeLine){ surgeLine.style.opacity=surgeVis.toFixed(3); surgeHead.style.opacity=(surgeVis*(surgeT>0.03?1:0)).toFixed(3); }
+      ihf.style.transform="translate(-50%,-50%) scale("+(1+0.10*bell(clamp((p-0.232)/0.04,0,1))).toFixed(3)+")";
+
+      /* dark flash masks the cross-fade into the film */
       var fl=0;
-      if(p>0.20&&p<0.262){ var fp=(p-0.20)/0.062; fl=fp<0.5?(fp/0.5):(1-(fp-0.5)/0.5); }
+      if(p>0.27&&p<0.335){ var fp=(p-0.27)/0.065; fl=fp<0.5?(fp/0.5):(1-(fp-0.5)/0.5); }
       flash.style.opacity=Math.max(0,fl).toFixed(3);
 
-      var filmA=clamp((p-0.232)/0.03,0,1);
-      var filmOut=1-clamp((p-0.95)/0.05,0,1);
+      /* embedded launch film */
+      var filmA=clamp((p-0.30)/0.03,0,1);
+      var filmOut=1-clamp((p-0.82)/0.03,0,1);
       filmWrap.style.opacity=(filmA*filmOut).toFixed(3);
-
       if(filmReady){
-        var fpp=clamp((p-0.26)/(0.90-0.26),0,1);
+        var fpp=clamp((p-0.33)/(0.82-0.33),0,1);
         try{ film.progress(fpp); }catch(e){}
       }
+
+      /* green return arrow: routes the finished result back to the Launch Center (fires on the dark void, then fades) */
+      var returnT=smooth(clamp((p-0.87)/0.055,0,1));
+      applyArrow(returnLine,returnHead,returnSX,returnSY,returnEX,returnEY,returnT);
+      var returnVis=clamp((p-0.865)/0.015,0,1)*(1-clamp((p-0.965)/0.02,0,1));
+      if(returnLine){ returnLine.style.opacity=returnVis.toFixed(3); returnHead.style.opacity=(returnVis*(returnT>0.03?1:0)).toFixed(3); }
+      lc.style.transform="translate(-50%,-50%) scale("+(1+0.10*bell(clamp((p-0.92)/0.04,0,1))).toFixed(3)+")";
     }
 
     if(staticMode){
@@ -2990,7 +3071,6 @@ void main(){
 
     gsap.registerPlugin(ScrollTrigger);
     measure();
-    devLayout(0);
     render(0);
     ScrollTrigger.create({trigger:section,start:"top top",end:"bottom bottom",scrub:true,
       onUpdate:function(self){ render(self.progress); },
