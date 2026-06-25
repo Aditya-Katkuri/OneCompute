@@ -985,6 +985,7 @@
     const YIELD_WINDOW_MS = 5000;        // how long a worker reads as "yielded" after the event
     const MAX_EVENTS = 24;               // cap rendered feed – no unbounded growth
     const SPARK_SAMPLES = 48;            // cap throughput-sparkline history
+    const RATE_WINDOW_MIN_S = 60;        // floor for the credits/min window – never extrapolate a rate from < 1 min of data
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     let firstSeenAt = null;
@@ -996,6 +997,7 @@
     const yieldedUntil = new Map();
     const completedJobIds = new Set();
     let completedAtPageOpen = null;
+    let creditsAtPageOpen = null;  // total_credits when this dashboard opened, so throughput measures only NEW work
     const sparkHistory = [];
     let lastWorkers = [];          // latest /state workers, for the harvest terrain
     let harvestOnData = null;      // set by the harvest renderer; called each poll
@@ -1359,6 +1361,7 @@
       }
       const completedJobs = completedJobIds.size;
       if (completedAtPageOpen === null) completedAtPageOpen = completedJobs;
+      if (creditsAtPageOpen === null) creditsAtPageOpen = state.total_credits || 0;
       const sessionCompleted = Math.max(0, completedJobs - completedAtPageOpen);
       const busyWorkers = workers.filter((w) => w.busy).length;
       const gpuWorkers = workers.filter((w) => w.has_gpu).length;
@@ -1371,7 +1374,12 @@
       tweenTo(E.creditsHero, state.total_credits, fmtInt);
       tweenTo(E.statJobs, completedJobs, fmtInt);
 
-      const perMin = elapsed > 0 ? (state.total_credits || 0) / (elapsed / 60) : 0;
+      // Honest live throughput: credits earned SINCE this dashboard opened, averaged over the
+      // observation window. Before a full minute of data we divide by a full minute (not the few
+      // seconds actually elapsed), so the figure ramps up from 0 toward the real rate instead of
+      // extrapolating a wild number from a tiny sample.
+      const sessionCredits = Math.max(0, (state.total_credits || 0) - (creditsAtPageOpen || 0));
+      const perMin = sessionCredits / (Math.max(elapsed, RATE_WINDOW_MIN_S) / 60);
       E.measuredFigure.textContent = `${fmt1(perMin)} credits/min`;
       if (elapsed > 2.5) renderSpark(perMin); // skip the t→0 warm-up so the trend isn't a spike
 
