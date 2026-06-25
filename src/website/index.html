@@ -3780,6 +3780,7 @@ html.js .chest__items          { opacity: 0; transform: translateY(44px); }
 </section>
 
   <section id="finale" class="finale" aria-label="OneCompute — closing brand card">
+  <div class="finale__sky" aria-hidden="true"></div>
   <div class="finale__halo" aria-hidden="true"></div>
   <div class="finale__inner">
     <img class="finale__mark" src="onecompute-mark.png" width="130" height="130"
@@ -3803,6 +3804,47 @@ html.js .chest__items          { opacity: 0; transform: translateY(44px); }
   background: var(--cream, #F7EFE9);
 }
 
+/* Higgsfield dawn-sky backdrop — a soft atmospheric callback to the opening lake+sky
+   that bookends the page. Layered over the cream base, which stays the graceful
+   fallback if the image fails to load. A cream scrim fades the edges into the card and
+   lifts the centre so the wordmark always wins on contrast. */
+.finale__sky {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url("textures/finale-dawn.jpg");
+  background-size: cover;
+  background-position: center 58%;
+  background-repeat: no-repeat;
+  opacity: .92;
+  animation: finale-sky-drift 30s ease-in-out infinite alternate;
+  will-change: transform;
+}
+.finale__sky::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(62% 54% at 50% 47%, rgba(247,239,233,.32) 0%, rgba(247,239,233,.05) 44%, rgba(247,239,233,0) 70%),
+    linear-gradient(180deg,
+      var(--cream, #F7EFE9) 0%,
+      rgba(247,239,233,.20) 13%,
+      rgba(247,239,233,0) 36%,
+      rgba(247,239,233,0) 62%,
+      rgba(247,239,233,.22) 82%,
+      var(--cream, #F7EFE9) 100%);
+}
+
+@keyframes finale-sky-drift {
+  0%   { transform: scale(1.05) translate3d(-1.2%, -0.6%, 0); }
+  100% { transform: scale(1.10) translate3d(1.2%,  0.6%, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .finale__sky { animation: none; transform: scale(1.04); }
+}
+
 /* Soft multi-layer pastel halo — lilac + pink + peach at rest, blooms on reveal */
 .finale__halo {
   position: absolute;
@@ -3812,7 +3854,7 @@ html.js .chest__items          { opacity: 0; transform: translateY(44px); }
   width: min(1100px, 140vw);
   height: min(800px, 110vh);
   pointer-events: none;
-  z-index: 0;
+  z-index: 1;
   background:
     radial-gradient(50% 50% at 48% 44%, rgba(201,184,240,.52) 0%, rgba(201,184,240,0) 60%),
     radial-gradient(44% 44% at 54% 58%, rgba(242,181,212,.44) 0%, rgba(242,181,212,0) 58%),
@@ -4922,6 +4964,24 @@ void main(){
   }, { threshold: 0.35 });
 
   io.observe(inner);
+
+  /* Failsafe — never ship the brand card blank. IntersectionObserver can stall in
+     background tabs and headless renderers; if the card is on screen but the observer
+     hasn't fired, reveal it. Real scrolls still hit the IO first, so the fade-up
+     entrance is preserved for normal viewing; this only catches the stalled case. */
+  function _inView(){
+    var r = inner.getBoundingClientRect();
+    var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    return r.top < vh * 0.9 && r.bottom > vh * 0.1;
+  }
+  var _fs = setInterval(function(){
+    if(inner.classList.contains("in")){ clearInterval(_fs); return; }
+    if(_inView()){ inner.classList.add("in"); io.disconnect(); if(window.gsap) _layerGsapShine(); clearInterval(_fs); }
+  }, 350);
+  setTimeout(function(){
+    clearInterval(_fs);
+    if(!inner.classList.contains("in")){ inner.classList.add("in"); io.disconnect(); if(window.gsap) _layerGsapShine(); }
+  }, 9000);
 
   function _layerGsapShine(){
     var mark = document.querySelector("#finale .finale__mark");
