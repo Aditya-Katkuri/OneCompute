@@ -3310,7 +3310,7 @@ void main(){
     if(!vw || !vh) return;
     var srcA = vw/vh, tA = dw/dh, sx, sy, sw, sh;
     if(tA > srcA){ sw = vw; sh = vw / tA; sx = 0; sy = (vh - sh) / 2; }
-    else         { sh = vh; sw = vh * tA; sy = 0; sx = (vw - sw) / 2; }
+    else         { sh = vh; sw = vh * tA; sy = 0; sx = 0; }   /* anchor crop to the LEFT so the OneCompute logos stay in every tile */
     try{ ctx.drawImage(video, sx, sy, sw, sh, dx, dy, dw, dh); }catch(e){}
   }
 
