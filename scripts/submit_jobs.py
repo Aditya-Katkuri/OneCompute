@@ -25,8 +25,11 @@ Kinds:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
+
+import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -64,9 +67,35 @@ def build_jobs(args: argparse.Namespace) -> list[dict]:
     return [SubmitRequest(kind="challenge", input=challenge_input, units=1).model_dump()]
 
 
+def launch_workload(url: str, kind: str, n_tiles: int, params: dict) -> int:
+    """One-call launch of any catalog workload across the fleet via POST /workloads."""
+    resp = httpx.post(
+        f"{url}/workloads", json={"kind": kind, "n_tiles": n_tiles, "params": params}, timeout=30
+    )
+    if resp.status_code != 200:
+        print(f"launch failed ({resp.status_code}): {resp.text}", file=sys.stderr)
+        return 1
+    body = resp.json()
+    print(f"launched workload {body['kind']} = {body['workload_id']} "
+          f"({len(body['job_ids'])} tiles) on {url}")
+    print(f"  poll: GET {url}/workloads/{body['workload_id']}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Submit jobs to a running OneCompute orchestrator.")
     parser.add_argument("--url", required=True, help="Orchestrator base URL (e.g. http://<dev-box-ip>:8080)")
+    parser.add_argument(
+        "--workload",
+        default=None,
+        help="One-call launch any catalog kind across the fleet via POST /workloads "
+             "(e.g. montecarlo, hashcrack, ai.infer, ai.eval, ai.graph, ai.synth, fractal, optimize). "
+             "Use --n for tiles and --params for sizing.",
+    )
+    parser.add_argument(
+        "--params", default="{}",
+        help='JSON sizing overrides for --workload, e.g. \'{"total_paths": 5000000}\'',
+    )
     parser.add_argument(
         "--kind",
         choices=("fractal", "optimize", "ai", "synth", "fanout", "gpu", "challenge"),
@@ -87,6 +116,14 @@ def main() -> int:
     parser.add_argument("--op", choices=("square", "sha256", "upper"), default="square",
                         help="Fan-out op (sha256 is heavier -> longer jobs, good for the yield test)")
     args = parser.parse_args()
+
+    if args.workload:
+        try:
+            params = json.loads(args.params)
+        except json.JSONDecodeError as exc:
+            print(f"--params is not valid JSON: {exc}", file=sys.stderr)
+            return 1
+        return launch_workload(args.url, args.workload, args.n, params)
 
     jobs = build_jobs(args)
     try:

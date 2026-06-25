@@ -85,7 +85,34 @@ one dataset. Real LLM-generated rows when keyed, a deterministic disclosed fallb
   params); `POST /workloads {kind, n_tiles, params}` launches one across the fleet;
   `GET /workloads/{id}` returns per-tile status + outputs. See [`dashboard-api.md`](./dashboard-api.md).
 
-## Adding a 5th workload
+---
+
+## Long-running workloads (CPU fleet) — the 15-minute, full-utilisation set
+
+A second set, added for a **CPU-only, no-API** fleet (e.g. a dev box + Snapdragon laptops). They
+**saturate every core** (multi-core engine) or run on a **local model via Ollama** (no GPU, no
+cloud), are sized to run for many minutes, and the worker **renews its lease while a tile runs**
+so a 15-min job isn't reaped. Setup + sizing: [`fleet-setup.md`](./fleet-setup.md).
+
+| Workload | Kind | AI? | Engine | Input (size knob) | Output (per tile) | Aggregator |
+|---|---|---|---|---|---|---|
+| Monte-Carlo finance risk | `montecarlo` | no | multi-core stdlib | `n_paths`, `horizon_days`, `mu`, `sigma` | `{paths, mean_return, stdev, worst_return, hist, hist_lo, hist_hi}` | `workloads.montecarlo.aggregate_montecarlo` → VaR/CVaR + `render_risk_chart` |
+| Hash crack / PoW | `hashcrack` | no | multi-core stdlib | `nonce_start/_end` (`keyspace`), `target_prefix` | `{found, nonce, hash, hashes_tried}` | `workloads.hashcrack.aggregate_hashcrack` → winner + fleet hash-rate |
+| Local LLM inference | `ai.infer` | yes | local model (Ollama) | `prompts` (`n_prompts`) | `{results:[{prompt,completion,tokens}], backend}` | concatenate |
+| Model evaluation (judge) | `ai.eval` | yes | local model (Ollama) | `items:[{question,answer,label?}]`, `rubric` | `{results:[{question,score,verdict,label?}], backend}` | `workloads.eval.aggregate_eval` → leaderboard + distribution |
+| Knowledge graph | `ai.graph` | yes | local model (Ollama) | `docs:[str]` | `{nodes:[str], edges:[{source,relation,target}], backend}` | `workloads.graph.aggregate_graph` → `render_graph_png` |
+
+**Engine notes.**
+- **Multi-core (`jobkit._parallel_map`).** A single `montecarlo`/`hashcrack` tile fans across all
+  cores (fork in a Linux sandbox, spawn on Windows); `ONECOMPUTE_MAX_WORKERS` caps it. Many small
+  chunks keep it yield-able and load-balanced.
+- **Local model.** `ai.*` executors pick a backend in `jobkit.execute._detect_ai_backend`: local
+  **Ollama** (`ONECOMPUTE_LLM_URL` / `ONECOMPUTE_LLM_MODEL`) → cloud SDK key → disclosed fallback
+  (`ONECOMPUTE_NO_LLM=1` forces it). AI kinds run **host-side** so they can reach the local server.
+- **Builders** live in `src/workloads/{montecarlo,hashcrack,infer,eval,graph}.py`; all are
+  launchable via `GET /workloads/catalog` → `POST /workloads`.
+
+## Adding another workload
 
 1. Add the new string to the `JobKind` literal in `src/contracts/models.py`.
 2. Add a stdlib executor to `src/jobkit/execute.py` (pure stdlib if it must run in the Docker
