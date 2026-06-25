@@ -24,6 +24,11 @@ logs/*
 onecompute-fractal.png
 demo_out.txt
 
+# Local orchestrator state
+*.db
+*.sqlite
+*.sqlite3
+
 # IDE / tools
 .vscode/
 .idea/
@@ -36,8 +41,45 @@ Thumbs.db
 # Jupyter
 .ipynb_checkpoints/
 
-# pytest cache
+# Lint / test caches
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
 
 # PyInstaller generated spec
 onecompute-worker.spec
+
+# ---------------------------------------------------------------------------
+# Submission excludes — kept on disk for local use / the launch video, but NOT
+# part of the public technical submission a judge clones.
+# ---------------------------------------------------------------------------
+
+# Launch-video assets: hardcoded marketing/cinematic surfaces built for the
+# 3-minute demo film (a real distributed run can't complete inside that window).
+# Not the technical product; the live console is src/dashboard/.
+src/website/
+src/cinematic-dashboard/
+
+# Third-party design tooling (the "impeccable" design skill) + its hook
+.github/skills/impeccable/
+.github/hooks/impeccable.json
+
+# Internal team/process & design-system docs (not for a public submission)
+.github/agents/
+.github/copilot-instructions.md
+docs/website/
+docs/DESIGN.md
+docs/PRODUCT.md
+docs/harness.md
+docs/design-harness.md
+docs/design-toolkit.md
+docs/demo-script.md
+docs/execution-plan.md
+docs/deploy.md
+docs/soc2-alignment.md
+docs/pilot-champion-email.md
+docs/pilot-consent.md
+docs/pilot-it-sanction.md
+docs/pilot-plan.md
+docs/pilot-phase0-runbook.md
+docs/pilot-security-approval.md

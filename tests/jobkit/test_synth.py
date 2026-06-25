@@ -8,6 +8,7 @@ from workloads.synth import build_synth_jobs, merge_synth
 def test_fallback_yields_n_rows_with_requested_fields(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ONECOMPUTE_NO_LLM", "1")  # force the disclosed fallback (ignore any local Ollama)
     fields = ["name", "role", "team", "summary"]
     out = execute("ai.synth", {"n_rows": 5, "fields": fields, "start_index": 0})
     assert out["backend"] == "fallback"
@@ -22,6 +23,7 @@ def test_fallback_yields_n_rows_with_requested_fields(monkeypatch):
 def test_fallback_is_deterministic(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ONECOMPUTE_NO_LLM", "1")  # force the disclosed fallback (ignore any local Ollama)
     a = execute("ai.synth", {"n_rows": 4, "start_index": 10})
     b = execute("ai.synth", {"n_rows": 4, "start_index": 10})
     assert a["rows"] == b["rows"]

@@ -40,6 +40,7 @@ def test_yield_between_chunks():
 def test_ai_fallback_without_key(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ONECOMPUTE_NO_LLM", "1")  # force the disclosed fallback (ignore any local Ollama)
     out = execute("ai.batch_infer", {"prompts": ["hello world"], "max_tokens": 8})
     assert out["backend"] == "fallback"
     assert out["results"][0]["tokens"] == 8
