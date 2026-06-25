@@ -3332,6 +3332,9 @@ html.js .chest__interior-glow { opacity: 0; }
 html.js .chest__rays           { opacity: 0; }
 html.js .chest__items          { opacity: 0; transform: translateY(44px); }
 
+/* ---- Microsoft merch (Higgsfield cartoon SVGs) inside the chest ---- */
+.chest__merch { filter: drop-shadow(0 7px 11px rgba(43,34,51,.30)); }
+
 /* ---- Sweeping light beams (CSS loop) ---- */
 .chest__sweep {
   animation: ch-sweep 5s cubic-bezier(.22,1,.36,1) 0.3s infinite;
@@ -3619,204 +3622,14 @@ html.js .chest__items          { opacity: 0; transform: translateY(44px); }
 
         <!-- 4. Items group ─ items peek above the chest opening; body covers their bases -->
         <g class="chest__items">
-
-          <!-- ── Surface Laptop ── (left, cx≈133) -->
-          <g class="chest__item-laptop">
-            <!-- Screen panel (open lid) -->
-            <polygon points="84,192 178,192 178,262 84,262"
-                     fill="url(#ch-lap-screen)"
-                     stroke="#2B2233" stroke-width="1.4" stroke-opacity=".50" stroke-linejoin="round"/>
-            <!-- Screen inner glow -->
-            <polygon points="89,197 173,197 173,257 89,257" fill="url(#ch-lap-glow)"/>
-            <!-- Abstract UI lines on screen -->
-            <rect x="96" y="210" width="58" height="5"  rx="2.5" fill="#B59FE3" opacity=".52"/>
-            <rect x="96" y="220" width="42" height="4"  rx="2"   fill="#D98FC0" opacity=".42"/>
-            <rect x="96" y="229" width="52" height="4"  rx="2"   fill="#B59FE3" opacity=".36"/>
-            <rect x="96" y="238" width="34" height="4"  rx="2"   fill="#C9B8F0" opacity=".28"/>
-            <!-- OC logo hint on screen -->
-            <circle cx="154" cy="240" r="10" fill="none" stroke="#9F86C9" stroke-width="1.2" stroke-opacity=".30"/>
-            <text x="154" y="244" text-anchor="middle" font-family="system-ui,sans-serif"
-                  font-size="8" font-weight="700" fill="#9F86C9" opacity=".35">OC</text>
-            <!-- Keyboard top (parallelogram) -->
-            <polygon points="76,262 182,262 188,272 82,272"
-                     fill="url(#ch-lap-kbd)"
-                     stroke="#2B2233" stroke-width="1.2" stroke-opacity=".46" stroke-linejoin="round"/>
-            <!-- Keyboard front face -->
-            <rect x="82" y="272" width="106" height="11" rx="2"
-                  fill="url(#ch-lap-kbd-front)"
-                  stroke="#2B2233" stroke-width="1.0" stroke-opacity=".42"/>
-            <!-- Screen top-edge highlight -->
-            <line x1="84"  y1="192" x2="178" y2="192"
-                  stroke="rgba(255,255,255,.65)" stroke-width="2.5" stroke-linecap="round"/>
-            <!-- Hinge line -->
-            <line x1="84"  y1="262" x2="178" y2="262"
-                  stroke="#9F86C9" stroke-width="3.2" stroke-opacity=".62" stroke-linecap="round"/>
-          </g>
-
-          <!-- ── Trophy ── (left-centre, cx≈210) -->
-          <g class="chest__item-trophy">
-            <!-- Top star -->
-            <path d="M210,143 L213,151 L221,151 L215,156 L218,165 L210,160 L202,165 L205,156 L199,151 L207,151 Z"
-                  fill="#F2D49B" stroke="#C99048" stroke-width=".75"/>
-            <!-- Cup bowl -->
-            <path d="M186,244 C183,228 180,211 188,184 L196,164 L224,164 L232,184 C240,211 237,228 234,244 Z"
-                  fill="url(#ch-trophy)"
-                  stroke="#2B2233" stroke-width="1.3" stroke-opacity=".50" stroke-linejoin="round"/>
-            <path d="M186,244 C183,228 180,211 188,184 L196,164 L224,164 L232,184 C240,211 237,228 234,244 Z"
-                  fill="url(#ch-trophy-glow)"/>
-            <!-- Left handle -->
-            <path d="M188,188 Q173,205 188,222"
-                  fill="none" stroke="#E0B870" stroke-width="9" stroke-linecap="round"/>
-            <path d="M188,188 Q173,205 188,222"
-                  fill="none" stroke="#2B2233" stroke-width="1.2" stroke-opacity=".38" stroke-linecap="round"/>
-            <!-- Right handle -->
-            <path d="M232,188 Q247,205 232,222"
-                  fill="none" stroke="#E0B870" stroke-width="9" stroke-linecap="round"/>
-            <path d="M232,188 Q247,205 232,222"
-                  fill="none" stroke="#2B2233" stroke-width="1.2" stroke-opacity=".38" stroke-linecap="round"/>
-            <!-- Stem -->
-            <rect x="206" y="244" width="8" height="22" rx="3"
-                  fill="#D4A860" stroke="#2B2233" stroke-width="1.0" stroke-opacity=".42"/>
-            <!-- Base plate -->
-            <rect x="194" y="264" width="32" height="11" rx="4"
-                  fill="#D4A860" stroke="#2B2233" stroke-width="1.1" stroke-opacity=".46"/>
-            <!-- Base top highlight -->
-            <line x1="195" y1="265" x2="225" y2="265"
-                  stroke="rgba(255,255,255,.55)" stroke-width="1.5" stroke-linecap="round"/>
-            <!-- Cup rim highlight -->
-            <line x1="196" y1="164" x2="224" y2="164"
-                  stroke="rgba(255,255,255,.60)" stroke-width="2" stroke-linecap="round"/>
-          </g>
-
-          <!-- ── Hoodie pile ── (centre, cx≈278) -->
-          <g class="chest__item-hoodie">
-            <!-- Hood pouch above body -->
-            <path d="M250,232 C253,218 263,213 278,213 C293,213 303,218 306,232"
-                  fill="url(#ch-hoodie)"
-                  stroke="#2B2233" stroke-width="1.2" stroke-opacity=".40"/>
-            <!-- Main body -->
-            <rect x="222" y="230" width="112" height="54" rx="14"
-                  fill="url(#ch-hoodie)"
-                  stroke="#2B2233" stroke-width="1.3" stroke-opacity=".40"/>
-            <!-- Fold crease -->
-            <path d="M232,258 C255,252 302,252 323,258"
-                  fill="none" stroke="#E8A38C" stroke-width="1.2" stroke-opacity=".50"/>
-            <!-- Front pocket -->
-            <rect x="263" y="258" width="30" height="20" rx="8"
-                  fill="none" stroke="#E8A38C" stroke-width="1.0" stroke-opacity=".40"/>
-            <!-- Sleeve hint left -->
-            <path d="M222,238 C208,236 204,248 212,260 L222,260"
-                  fill="url(#ch-hoodie)"
-                  stroke="#2B2233" stroke-width="1.1" stroke-opacity=".35"/>
-          </g>
-
-          <!-- ── Gift cards ── (centre-right, cx≈328) -->
-          <g class="chest__item-cards">
-            <!-- Card 1 back (warm gold, rotated -8°) -->
-            <g transform="rotate(-8,326,252)">
-              <rect x="291" y="230" width="70" height="48" rx="6"
-                    fill="url(#ch-card-a)"
-                    stroke="#2B2233" stroke-width="1.2" stroke-opacity=".44"/>
-              <rect x="291" y="230" width="70" height="48" rx="6" fill="rgba(255,255,255,.12)"/>
-              <text x="326" y="258" text-anchor="middle"
-                    font-family="system-ui,sans-serif" font-size="13" font-weight="700"
-                    fill="rgba(43,34,51,.35)">OC</text>
-            </g>
-            <!-- Card 2 front (lilac, rotated +5°) -->
-            <g transform="rotate(5,330,256)">
-              <rect x="297" y="236" width="70" height="48" rx="6"
-                    fill="url(#ch-card-b)"
-                    stroke="#2B2233" stroke-width="1.2" stroke-opacity=".44"/>
-              <rect x="297" y="236" width="70" height="48" rx="6" fill="rgba(255,255,255,.10)"/>
-              <text x="332" y="264" text-anchor="middle"
-                    font-family="system-ui,sans-serif" font-size="13" font-weight="700"
-                    fill="rgba(247,239,233,.55)">OC</text>
-            </g>
-          </g>
-
-          <!-- ── Coffee mug ── (right, cx≈452) -->
-          <g class="chest__item-mug">
-            <!-- Steam wisps -->
-            <path class="chest__steam"
-                  d="M443,218 C445,210 441,202 443,193"
-                  fill="none" stroke="#F8D3BC" stroke-width="2.2" stroke-linecap="round" opacity=".70"/>
-            <path class="chest__steam chest__steam--b"
-                  d="M456,215 C458,206 454,197 456,188"
-                  fill="none" stroke="#F8D3BC" stroke-width="2.2" stroke-linecap="round" opacity=".60"/>
-            <path class="chest__steam chest__steam--c"
-                  d="M469,218 C471,210 467,202 469,193"
-                  fill="none" stroke="#F8D3BC" stroke-width="2.2" stroke-linecap="round" opacity=".70"/>
-            <!-- Mug body -->
-            <rect x="430" y="224" width="52" height="56" rx="10"
-                  fill="url(#ch-mug)"
-                  stroke="#2B2233" stroke-width="1.2" stroke-opacity=".46"/>
-            <!-- Handle -->
-            <path d="M482,234 C501,234 501,264 482,264"
-                  fill="none" stroke="#E8A38C" stroke-width="9" stroke-linecap="round"/>
-            <path d="M482,234 C501,234 501,264 482,264"
-                  fill="none" stroke="#2B2233" stroke-width="1.2" stroke-opacity=".32" stroke-linecap="round"/>
-            <!-- Rim ellipse -->
-            <ellipse cx="456" cy="226" rx="24" ry="6"
-                     fill="#FAE9C0" stroke="#2B2233" stroke-width=".9" stroke-opacity=".36"/>
-            <!-- Coffee surface -->
-            <ellipse cx="456" cy="230" rx="21" ry="4.5" fill="#C99048" opacity=".40"/>
-            <!-- Top edge highlight -->
-            <line x1="430" y1="224" x2="482" y2="224"
-                  stroke="rgba(255,255,255,.52)" stroke-width="1.5" stroke-linecap="round"/>
-          </g>
-
-          <!-- ── Xbox controller ── (far right, cx≈406) -->
-          <g class="chest__item-xbox">
-            <!-- Grip left (hangs down) -->
-            <ellipse cx="379" cy="257" rx="22" ry="27"
-                     fill="url(#ch-xbox)"
-                     stroke="#2B2233" stroke-width="1.3" stroke-opacity=".48"/>
-            <!-- Grip right -->
-            <ellipse cx="433" cy="257" rx="22" ry="27"
-                     fill="url(#ch-xbox)"
-                     stroke="#2B2233" stroke-width="1.3" stroke-opacity=".48"/>
-            <!-- Main body oval -->
-            <ellipse cx="406" cy="222" rx="50" ry="40"
-                     fill="url(#ch-xbox)"
-                     stroke="#2B2233" stroke-width="1.3" stroke-opacity=".50"/>
-            <!-- Body inner glow -->
-            <ellipse cx="399" cy="214" rx="32" ry="24" fill="url(#ch-xbox-glow)"/>
-            <!-- Left thumbstick -->
-            <circle cx="390" cy="220" r="10"
-                    fill="#B59FE3" stroke="#2B2233" stroke-width=".9" stroke-opacity=".44"/>
-            <circle cx="390" cy="220" r="5" fill="#9F86C9"/>
-            <!-- Right thumbstick -->
-            <circle cx="420" cy="231" r="10"
-                    fill="#B59FE3" stroke="#2B2233" stroke-width=".9" stroke-opacity=".44"/>
-            <circle cx="420" cy="231" r="5" fill="#9F86C9"/>
-            <!-- ABXY buttons -->
-            <circle cx="420" cy="208" r="5" fill="#F2B5D4" stroke="#2B2233" stroke-width=".7" stroke-opacity=".40"/>
-            <circle cx="427" cy="215" r="5" fill="#F2D49B" stroke="#2B2233" stroke-width=".7" stroke-opacity=".40"/>
-            <circle cx="420" cy="222" r="5" fill="#A8E8C0" stroke="#2B2233" stroke-width=".7" stroke-opacity=".40"/>
-            <circle cx="413" cy="215" r="5" fill="#A0C8F0" stroke="#2B2233" stroke-width=".7" stroke-opacity=".40"/>
-            <!-- Centre Xbox/guide button -->
-            <circle cx="406" cy="205" r="9"
-                    fill="#F3E7EE" stroke="#2B2233" stroke-width="1.0" stroke-opacity=".44"/>
-            <circle cx="406" cy="205" r="5.5" fill="#C9B8F0"/>
-            <!-- Top arc highlight -->
-            <path d="M362,215 Q406,196 450,215"
-                  fill="none" stroke="rgba(255,255,255,.50)" stroke-width="2" stroke-linecap="round"/>
-          </g>
-
-          <!-- ── Stickers (scattered) ── -->
-          <!-- Hex OC sticker -->
-          <polygon points="108,252 116,244 126,244 134,252 126,260 116,260"
-                   fill="#C9B8F0" stroke="#2B2233" stroke-width="1.0" stroke-opacity=".44"/>
-          <text x="121" y="256" text-anchor="middle"
-                font-family="system-ui,sans-serif" font-size="7" font-weight="700"
-                fill="#2B2233" opacity=".55">OC</text>
-          <!-- Pink star sticker -->
-          <path d="M353,244 L356,237 L359,244 L366,244 L360,248 L362,255 L355,250 L348,255 L350,248 L344,244 Z"
-                fill="#F2B5D4" stroke="#2B2233" stroke-width=".8" stroke-opacity=".38"/>
-          <!-- Gold diamond sticker -->
-          <polygon points="463,248 470,241 477,248 470,255"
-                   fill="#F2D49B" stroke="#2B2233" stroke-width=".8" stroke-opacity=".38"/>
-
+          <!-- Microsoft merch (Higgsfield-generated cartoon SVGs) spilling from the chest. Drawn back->front. -->
+          <image class="chest__merch chest__merch--surface" href="media/merch/surface.svg"  x="118" y="134" width="140" height="146" transform="rotate(-4 188 207)"/>
+          <image class="chest__merch chest__merch--bottle"  href="media/merch/bottle.svg"   x="352" y="118" width="120" height="160" transform="rotate(5 412 198)"/>
+          <image class="chest__merch chest__merch--gift"    href="media/merch/giftcard.svg" x="206" y="122" width="150" height="120" transform="rotate(-10 281 182)"/>
+          <image class="chest__merch chest__merch--hoodie"  href="media/merch/hoodie.svg"   x="320" y="150" width="158" height="158" transform="rotate(4 399 229)"/>
+          <image class="chest__merch chest__merch--tshirt"  href="media/merch/tshirt.svg"   x="244" y="158" width="156" height="156" transform="rotate(-3 322 236)"/>
+          <image class="chest__merch chest__merch--xbox"    href="media/merch/xbox.svg"     x="94"  y="150" width="168" height="168"/>
+          <image class="chest__merch chest__merch--plushie" href="media/merch/plushie.svg"  x="166" y="182" width="122" height="122"/>
         </g><!-- /items -->
 
         <!-- 5. Chest BODY (always visible, painted over bases of items below opening) -->
