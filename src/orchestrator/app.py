@@ -42,6 +42,13 @@ from trust import Signer, check_challenge
 # 720x480 single-worker tile is ~0.8 MB and higher-res split tiles run to a few MB. 8 MiB keeps
 # the flagship fractal workload working with any fleet size while still bounding abuse.
 MAX_RESULT_OUTPUT_BYTES = 8 * 1024 * 1024
+
+# Least-utilized-first routing. When a worker polls for fresh work, briefly let a clearly
+# less-loaded, live, free peer claim it instead, so load flows to the most idle machines first.
+# Bounded by the job's age so a worker is never starved if the lighter peer doesn't poll.
+LOAD_PRIORITY_GRACE_S = 1.5   # only defer while a job is this fresh (seconds)
+LOAD_PRIORITY_MARGIN = 15.0   # a peer must be at least this many load-points (%) lighter to win priority
+LIVE_PEER_WINDOW_S = 3.0      # a peer only counts as a live competitor if it heartbeat within this window
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
@@ -156,6 +163,50 @@ def reap_expired(conn: sqlite3.Connection) -> None:
         conn.commit()
 
 
+def _load_score(cpu_pct, gpu_pct) -> float:
+    """A worker's current utilization on a 0..100 scale: the busier of its CPU and GPU."""
+    return max(float(cpu_pct or 0.0), float(gpu_pct or 0.0))
+
+
+def _age_seconds(iso_ts: str | None, now: datetime) -> float:
+    if not iso_ts:
+        return 1e9
+    try:
+        return (now - datetime.fromisoformat(iso_ts)).total_seconds()
+    except ValueError:
+        return 1e9
+
+
+def _defer_to_less_loaded(conn: sqlite3.Connection, worker_id: str, job_created_at: str) -> bool:
+    """Least-utilized-first: True if this polling worker should let a clearly lighter, live, free
+    peer take this fresh job first. Returns False once the job ages past the grace window, so a
+    worker is never starved if the lighter peer never polls."""
+    now = datetime.now(UTC)
+    if _age_seconds(job_created_at, now) >= LOAD_PRIORITY_GRACE_S:
+        return False
+    me = conn.execute(
+        "SELECT cpu_pct, gpu_pct FROM workers WHERE worker_id = ?", (worker_id,)
+    ).fetchone()
+    if me is None:
+        return False
+    my_load = _load_score(me["cpu_pct"], me["gpu_pct"])
+    live_cutoff = (now - timedelta(seconds=LIVE_PEER_WINDOW_S)).isoformat()
+    peers = conn.execute(
+        """
+        SELECT w.cpu_pct, w.gpu_pct FROM workers w
+        WHERE w.worker_id != ? AND w.approved = 1 AND w.blacklisted = 0
+          AND w.last_heartbeat IS NOT NULL AND w.last_heartbeat >= ?
+          AND NOT EXISTS (
+              SELECT 1 FROM jobs j WHERE j.assigned_worker = w.worker_id AND j.state = 'leased'
+          )
+        """,
+        (worker_id, live_cutoff),
+    ).fetchall()
+    return any(
+        my_load - _load_score(p["cpu_pct"], p["gpu_pct"]) >= LOAD_PRIORITY_MARGIN for p in peers
+    )
+
+
 def _worker_or_404(conn: sqlite3.Connection, worker_id: str) -> sqlite3.Row:
     worker = conn.execute("SELECT * FROM workers WHERE worker_id = ?", (worker_id,)).fetchone()
     if worker is None:
@@ -183,7 +234,11 @@ def _require_worker_token(
         token_matches = bool(token) and compare_digest(token, stored_token)
         if worker is not None and token_matches:
             return worker
-    _emit(conn, "auth_failed", worker_id=worker_id, detail=detail)
+    # A request for a worker we don't have (e.g. one an admin disconnected, or one that never
+    # registered) isn't a credential attack — fail it quietly so a removed-but-still-running agent
+    # can't flood the activity feed. Only a token mismatch on a KNOWN worker is worth surfacing.
+    if worker is not None:
+        _emit(conn, "auth_failed", worker_id=worker_id, detail=detail)
     raise HTTPException(status_code=401, detail=detail)
 
 
@@ -295,6 +350,10 @@ def create_app(db_path: str = ":memory:", signer=None, require_approval: bool = 
             job = pick_job_for(conn, cap, free_ram_gb=worker["free_ram_gb"])
             if job is None:
                 return Response(status_code=204)
+            # Least-utilized-first: hold this fresh job back if a clearly lighter, live, free peer
+            # is around to take it. Bounded by the job's age, so loaded machines still get work.
+            if _defer_to_less_loaded(conn, worker_id, job["created_at"]):
+                return Response(status_code=204)
             deadline = _lease_deadline()
             now = _now()
             conn.execute(
@@ -378,6 +437,28 @@ def create_app(db_path: str = ":memory:", signer=None, require_approval: bool = 
             )
             conn.commit()
         _emit(conn, "approved", worker_id=worker_id, detail="admitted via dashboard")
+        return {"ok": True, "worker_id": worker_id}
+
+    @app.delete("/workers/{worker_id}")
+    def disconnect_worker(worker_id: str) -> dict:
+        """Disconnect a device from the fleet (admin action from the dashboard, same gate as
+        approve). Any job it currently holds is re-queued immediately so work isn't stuck until
+        the lease expires, then the worker is dropped. A still-running agent simply fails auth on
+        its next call; restarting it rejoins as a fresh pending device."""
+        _worker_or_404(conn, worker_id)
+        now = _now()
+        with write_lock:
+            conn.execute(
+                """
+                UPDATE jobs
+                SET state = 'queued', assigned_worker = NULL, lease_expires = NULL, updated_at = ?
+                WHERE assigned_worker = ? AND state = 'leased'
+                """,
+                (now, worker_id),
+            )
+            conn.execute("DELETE FROM workers WHERE worker_id = ?", (worker_id,))
+            conn.commit()
+        _emit(conn, "removed", worker_id=worker_id, detail="disconnected via dashboard")
         return {"ok": True, "worker_id": worker_id}
 
     @app.post("/results/{job_id}", response_model=ResultResponse)
