@@ -358,6 +358,38 @@
     }
     @keyframes sweep { from { left: -40%; } to { left: 100%; } }
 
+    /* Disconnect (×) control + inline "are you sure?" confirm overlay on a device tile */
+    .tile-x {
+      position: absolute; top: 9px; right: 9px; z-index: 3;
+      width: 22px; height: 22px; padding: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      border: 1px solid var(--border); border-radius: 6px; background: var(--surface);
+      color: var(--text-soft); font-size: 15px; line-height: 1; cursor: pointer;
+      opacity: 0; transition: opacity .14s var(--ease), color .14s var(--ease),
+                  background .14s var(--ease), border-color .14s var(--ease);
+    }
+    .tile:hover .tile-x, .tile:focus-within .tile-x, .tile-x:focus-visible { opacity: 1; }
+    .tile-x:hover { color: #fff; background: var(--danger); border-color: var(--danger); }
+    .tile-confirm {
+      position: absolute; inset: 0; z-index: 4;
+      display: grid; place-content: center; gap: 13px; padding: 18px; text-align: center;
+      background: color-mix(in srgb, var(--surface) 94%, var(--danger));
+      border-radius: inherit;
+    }
+    .tile-confirm[hidden] { display: none; }
+    .tile-confirm p { margin: 0; font-weight: 650; font-size: 13.5px; line-height: 1.45; color: var(--text); }
+    .tile-confirm p b { color: var(--danger); word-break: break-all; }
+    .tile-confirm-actions { display: flex; gap: 9px; justify-content: center; }
+    .tile-confirm button {
+      padding: 7px 15px; border-radius: 8px; font-weight: 650; font-size: 13px; cursor: pointer;
+      border: 1px solid var(--border);
+    }
+    .tc-cancel { background: var(--surface); color: var(--text); }
+    .tc-cancel:hover { border-color: var(--text-soft); }
+    .tc-go { background: var(--danger); color: #fff; border-color: var(--danger); }
+    .tc-go:hover { filter: brightness(1.07); }
+    .tc-go:disabled { opacity: .6; cursor: progress; }
+
     .tile-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
     .worker-id {
       font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
@@ -1107,6 +1139,30 @@
       }
     }
 
+    // DELETE a worker (admin disconnect). On success the tile is removed at once; the
+    // pendingRemoval guard stops an in-flight /state poll from briefly re-adding it.
+    const disconnectingWorkers = new Set();
+    const pendingRemoval = new Set();
+    async function disconnectWorker(workerId, confirmEl, goBtn) {
+      if (!workerId || disconnectingWorkers.has(workerId)) return;
+      disconnectingWorkers.add(workerId);
+      if (goBtn) { goBtn.disabled = true; goBtn.textContent = "Disconnecting…"; }
+      try {
+        const res = await fetch(`/workers/${encodeURIComponent(workerId)}`, { method: "DELETE", cache: "no-store" });
+        if (!res.ok && res.status !== 404) throw new Error(`disconnect ${res.status}`);
+        pendingRemoval.add(workerId);
+        const tile = tileEls.get(workerId);
+        if (tile) { tweens.delete(tile._refs.credits); tile.remove(); tileEls.delete(workerId); }
+        usageHistory.delete(workerId);
+      } catch {
+        // Failed: re-enable so the admin can retry, and close the confirm.
+        if (goBtn) { goBtn.disabled = false; goBtn.textContent = "Disconnect"; }
+        if (confirmEl) confirmEl.hidden = true;
+      } finally {
+        disconnectingWorkers.delete(workerId);
+      }
+    }
+
     // ---- Worker tiles: keyed in-place update (no per-poll DOM churn) ----
     const tileEls = new Map();
 
@@ -1115,6 +1171,7 @@
       tile.className = "tile";
       tile.innerHTML = `
         <div class="flourish" aria-hidden="true">⚡ Yielded, requeued</div>
+        <button type="button" class="tile-x" title="Disconnect this device" aria-label="Disconnect this device">×</button>
         <div class="tile-head">
           <span class="dev-icon" aria-hidden="true"></span>
           <span class="tile-id-wrap">
@@ -1150,6 +1207,13 @@
           </div>
           <button type="button" class="approve-btn">Approve</button>
         </div>
+        <div class="tile-confirm" hidden role="alertdialog" aria-label="Confirm disconnect">
+          <p>Disconnect <b class="tc-name"></b> from the fleet?</p>
+          <div class="tile-confirm-actions">
+            <button type="button" class="tc-cancel">Cancel</button>
+            <button type="button" class="tc-go">Disconnect</button>
+          </div>
+        </div>
       `;
       tile._refs = {
         id: tile.querySelector(".worker-id"),
@@ -1162,6 +1226,11 @@
         approveBlock: tile.querySelector(".approve-block"),
         deviceCode: tile.querySelector(".ab-code"),
         approveBtn: tile.querySelector(".approve-btn"),
+        disconnectBtn: tile.querySelector(".tile-x"),
+        confirm: tile.querySelector(".tile-confirm"),
+        confirmName: tile.querySelector(".tc-name"),
+        confirmCancel: tile.querySelector(".tc-cancel"),
+        confirmGo: tile.querySelector(".tc-go"),
         devIcon: tile.querySelector(".dev-icon"),
         devType: tile.querySelector(".dev-type"),
         cpuArea: tile.querySelector(".usage-cpu-area"),
@@ -1172,6 +1241,15 @@
       // Wire the Approve action once; the handler reads the tile's current worker_id.
       tile._refs.approveBtn.addEventListener("click", () => {
         approveWorker(tile.dataset.workerId, tile._refs.approveBtn);
+      });
+      // Disconnect: × opens an inline "are you sure?" confirm; confirm removes the device.
+      tile._refs.disconnectBtn.addEventListener("click", () => {
+        tile._refs.confirmName.textContent = tile.dataset.workerId || "this device";
+        tile._refs.confirm.hidden = false;
+      });
+      tile._refs.confirmCancel.addEventListener("click", () => { tile._refs.confirm.hidden = true; });
+      tile._refs.confirmGo.addEventListener("click", () => {
+        disconnectWorker(tile.dataset.workerId, tile._refs.confirm, tile._refs.confirmGo);
       });
       return tile;
     }
@@ -1201,6 +1279,7 @@
       const seen = new Set();
       for (const w of workers) {
         seen.add(w.worker_id);
+        if (pendingRemoval.has(w.worker_id)) continue; // just disconnected — don't rebuild its tile
         let tile = tileEls.get(w.worker_id);
         if (!tile) { tile = buildTile(w); tileEls.set(w.worker_id, tile); E.tiles.appendChild(tile); }
 
@@ -1263,6 +1342,8 @@
         }
       }
       workers.forEach((w) => { const t = tileEls.get(w.worker_id); if (t) E.tiles.appendChild(t); });
+      // Drop the removal guard once the server stops reporting a disconnected worker.
+      for (const id of pendingRemoval) if (!seen.has(id)) pendingRemoval.delete(id);
     }
 
     // ---- Workloads run: completed-job tally per kind (the four demo workloads) ----
