@@ -680,17 +680,146 @@ def _hashcrack(input: dict, should_yield: YieldFn) -> dict:
     }
 
 
+# --- AI: model evaluation (LLM-as-judge) -- local model, host-side --------------------------
+
+def _ai_eval_one(
+    backend: str | None, question: str, answer: str, rubric: str, model: str, max_tokens: int
+) -> tuple[int, str]:
+    """Grade one answer 0-10 against a rubric -> (score, short verdict)."""
+    if backend is None:
+        # Disclosed deterministic heuristic so the workload runs with no model present.
+        score = int(sha256_hex(question + "||" + answer)[:4], 16) % 11
+        return score, "[fallback heuristic score — no model]"
+    prompt = (
+        "Grade the ANSWER to the QUESTION from 0-10 using the RUBRIC. Reply with ONLY a JSON "
+        'object: {"score": <integer 0-10>, "verdict": "<one short sentence>"}.\n'
+        f"RUBRIC: {rubric}\nQUESTION: {question}\nANSWER: {answer}"
+    )
+    import json
+
+    text, _ = _ai_one(backend, prompt, model, max_tokens)
+    score, verdict = 0, text[:200]
+    try:
+        start, end = text.find("{"), text.rfind("}")
+        obj = json.loads(text[start : end + 1])
+        score = int(round(float(obj.get("score", 0))))
+        verdict = str(obj.get("verdict", ""))[:200]
+    except Exception:
+        pass
+    return max(0, min(10, score)), verdict
+
+
+def _ai_eval(input: dict, should_yield: YieldFn) -> dict:
+    """Score a batch of (question, answer) items with an LLM judge (AI, local model).
+
+    Each item may carry a ``label`` (which system produced the answer) so the aggregator can
+    build a leaderboard. Chunked per item; a yield returns the partial scores.
+    """
+    items = input.get("items", [])
+    rubric = input.get("rubric", "correctness, clarity, and completeness")
+    model = input.get("model", "")
+    max_tokens = int(input.get("max_tokens", 120))
+    backend = _detect_ai_backend()
+    results: list = []
+    for item in items:
+        if should_yield():
+            return {"results": results, "backend": backend or "fallback", "yielded": True}
+        score, verdict = _ai_eval_one(
+            backend, str(item.get("question", "")), str(item.get("answer", "")),
+            rubric, model, max_tokens,
+        )
+        row = {"question": item.get("question", ""), "score": score, "verdict": verdict}
+        if "label" in item:
+            row["label"] = item["label"]
+        results.append(row)
+    return {"results": results, "backend": backend or "fallback", "yielded": False}
+
+
+# --- AI: knowledge-graph extraction -- local model, host-side -------------------------------
+
+def _ai_graph_one(
+    backend: str | None, doc: str, model: str, max_tokens: int
+) -> tuple[list[str], list[dict]]:
+    """Extract (entities, relations) from one document. relations are {source,relation,target}."""
+    if backend is None:
+        # Disclosed fallback: capitalized-token entities chained by an 'related_to' edge.
+        import re
+
+        entities: list[str] = []
+        for word in re.findall(r"\b[A-Z][a-zA-Z]{2,}\b", doc):
+            if word not in entities:
+                entities.append(word)
+        entities = entities[:8]
+        relations = [
+            {"source": entities[i], "relation": "related_to", "target": entities[i + 1]}
+            for i in range(len(entities) - 1)
+        ]
+        return entities, relations
+    prompt = (
+        "Extract a knowledge graph from the TEXT. Reply with ONLY JSON: "
+        '{"entities": ["..."], "relations": [{"source":"...","relation":"...","target":"..."}]}.\n'
+        f"TEXT: {doc}"
+    )
+    import json
+
+    text, _ = _ai_one(backend, prompt, model, max_tokens)
+    try:
+        start, end = text.find("{"), text.rfind("}")
+        obj = json.loads(text[start : end + 1])
+        entities = [str(e) for e in obj.get("entities", []) if e][:24]
+        relations = [
+            {
+                "source": str(r.get("source", "")),
+                "relation": str(r.get("relation", "")),
+                "target": str(r.get("target", "")),
+            }
+            for r in obj.get("relations", [])
+            if isinstance(r, dict) and r.get("source") and r.get("target")
+        ][:48]
+        return entities, relations
+    except Exception:
+        return [], []
+
+
+def _ai_graph(input: dict, should_yield: YieldFn) -> dict:
+    """Build a knowledge graph from a batch of documents (AI, local model).
+
+    Each fleet tile processes a slice of docs; the aggregator merges nodes/edges into one graph
+    and renders it. Chunked per doc; a yield returns the partial graph.
+    """
+    docs = input.get("docs", [])
+    model = input.get("model", "")
+    max_tokens = int(input.get("max_tokens", 220))
+    backend = _detect_ai_backend()
+    nodes: list[str] = []
+    seen: set[str] = set()
+    edges: list[dict] = []
+    for doc in docs:
+        if should_yield():
+            return {"nodes": nodes, "edges": edges, "backend": backend or "fallback", "yielded": True}
+        entities, relations = _ai_graph_one(backend, str(doc), model, max_tokens)
+        for entity in entities:
+            if entity and entity not in seen:
+                seen.add(entity)
+                nodes.append(entity)
+        edges.extend(relations)
+    return {"nodes": nodes, "edges": edges, "backend": backend or "fallback", "yielded": False}
+
+
 EXECUTORS: dict[str, Callable[[dict, YieldFn], dict]] = {
     "data.transform": _data_transform,
     "render": _render,
     "challenge": _challenge,
     "ai.batch_infer": _ai_batch_infer,
+    "ai.infer": _ai_batch_infer,  # AI: distributed local-model inference (alias, demo headline)
     "eval": _data_transform,   # eval reuses the deterministic transform path in the PoC
     "fractal": _fractal,       # NON-AI: distributed Mandelbrot tile (pure stdlib)
     "optimize": _optimize,     # NON-AI: distributed param-sweep slice (pure stdlib)
     "montecarlo": _montecarlo, # NON-AI: distributed portfolio-risk simulation (multi-core)
     "hashcrack": _hashcrack,   # NON-AI: distributed proof-of-work search (multi-core)
     "ai.synth": _ai_synth,     # AI: distributed synthetic-data slice (local model / host-side)
+    "ai.eval": _ai_eval,       # AI: distributed model evaluation / LLM-as-judge (local model)
+    "ai.graph": _ai_graph,     # AI: distributed knowledge-graph extraction (local model)
 }
 
 

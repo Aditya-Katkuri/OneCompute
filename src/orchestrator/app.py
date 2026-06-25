@@ -114,6 +114,15 @@ def _build_workload_jobs(kind: str, n_tiles: int, params: dict) -> list[dict]:
     if kind == "hashcrack":
         from workloads.hashcrack import build_hashcrack_jobs
         return build_hashcrack_jobs(n_tiles=n_tiles, **params)
+    if kind == "ai.infer":
+        from workloads.infer import build_infer_jobs
+        return build_infer_jobs(n_tiles=n_tiles, **params)
+    if kind == "ai.eval":
+        from workloads.eval import build_eval_jobs
+        return build_eval_jobs(n_tiles=n_tiles, **params)
+    if kind == "ai.graph":
+        from workloads.graph import build_graph_jobs
+        return build_graph_jobs(n_tiles=n_tiles, **params)
     raise ValueError(f"unknown or non-launchable workload kind: {kind!r}")
 
 
@@ -151,6 +160,21 @@ WORKLOAD_CATALOG: list[dict] = [
         "kind": "hashcrack", "label": "Hash crack (proof-of-work)", "category": "non-AI", "ai": False,
         "blurb": "The fleet brute-forces a SHA-256 with a target prefix; live hash-rate, then the winning nonce.",
         "default_params": {"keyspace": 300_000_000, "target_prefix": "000000"}, "split": "per_machine",
+    },
+    {
+        "kind": "ai.infer", "label": "Local LLM inference", "category": "AI", "ai": True,
+        "blurb": "A big batch of prompts runs through the on-device model on every machine — no cloud.",
+        "default_params": {"n_prompts": 120}, "split": "per_machine",
+    },
+    {
+        "kind": "ai.eval", "label": "Model evaluation (LLM judge)", "category": "AI", "ai": True,
+        "blurb": "The fleet grades answers with a local-model judge into a leaderboard + score chart.",
+        "default_params": {}, "split": "per_machine",
+    },
+    {
+        "kind": "ai.graph", "label": "Knowledge graph", "category": "AI", "ai": True,
+        "blurb": "The fleet extracts entities + relations from a corpus into one rendered graph.",
+        "default_params": {}, "split": "per_machine",
     },
 ]
 
