@@ -1887,7 +1887,558 @@ html.js .signoff__inner.in{opacity:1;transform:none}
     </div>
   </section>
 
-  <!-- ===== Reclaim · the multiply — one reclaimed machine fans out into the whole fleet ===== -->
+  
+  <!-- ===== Reach · the math — drops of compute fill a lake; the calc as pop-ups (inserted) ===== -->
+  <style>
+/* ================================================================
+   calc — "Drops of compute, a lake of compute"
+   Scroll-scrubbed section: falling drops fill a rising pastel lake;
+   six calculation pop-up cards; climax: 9.45 ExaOPS monospace figure.
+   All classes prefixed .calc__ — no collisions with other sections.
+   ================================================================ */
+
+/* ── Outer wrapper: always cream so seams with Launch + Multiply hold ── */
+.calc {
+  position: relative;
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  /* overflow:clip clips without creating a scroll container —
+     overflow:hidden would break position:sticky on .calc__stage */
+  overflow: clip;
+  background: var(--cream);
+}
+
+/* ── Cinema mode: section becomes a 500vh scroll container ── */
+.calc.is-cinema { height: 500vh; }
+
+/* ── Stage ── */
+.calc__stage {
+  position: relative;
+  width: 100%;
+  background: var(--cream);
+}
+.calc.is-cinema .calc__stage {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  overflow: hidden;
+}
+
+/* ── Animated background layer (only shown in cinema mode) ── */
+.calc__bg {
+  display: none;
+}
+.calc.is-cinema .calc__bg {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-color: var(--cream);
+}
+.calc.is-cinema .calc__bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 80% at 50% 10%, rgba(255,255,255,.5), rgba(255,255,255,0) 58%);
+  pointer-events: none;
+}
+
+/* ── Canvas covers the stage (drops + lake) ── */
+.calc__canvas {
+  display: none;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none;
+}
+.calc.is-cinema .calc__canvas { display: block; }
+
+/* ── Section heading ── */
+.calc__head {
+  position: relative;
+  z-index: 6;
+  padding: clamp(72px,11vh,110px) clamp(22px,5vw,90px) clamp(32px,5vh,54px);
+  max-width: 1280px;
+  margin: 0 auto;
+}
+.calc.is-cinema .calc__head {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  margin: 0;
+  padding: clamp(48px,7vh,80px) clamp(22px,5vw,90px) 0;
+  max-width: none;
+  pointer-events: none;
+}
+.calc__head h2 {
+  font-size: clamp(26px,3.4vw,48px);
+  color: var(--plum);
+  max-width: 24ch;
+  text-wrap: balance;
+  margin-top: 12px;
+  font-family: var(--disp);
+  font-weight: 700;
+  letter-spacing: -.025em;
+  line-height: 1.02;
+}
+.calc__head-sub {
+  margin-top: 14px;
+  font-size: clamp(15px,1.45vw,18px);
+  color: var(--ink);
+  max-width: 52ch;
+  line-height: 1.6;
+  font-family: var(--serif);
+  font-style: italic;
+}
+/* hide sub-headline in cinema (the cards tell the story) */
+.calc.is-cinema .calc__head-sub { display: none; }
+
+/* ── Static cap text (like .narr__cap — visible in non-cinema only) ── */
+.calc__cap {
+  text-align: center;
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: clamp(20px,2.8vw,30px);
+  color: var(--plum);
+  padding: clamp(64px,10vh,100px) clamp(22px,5vw,90px) 0;
+  margin: 0;
+}
+.calc__cap-sub {
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  font-family: var(--mono);
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  margin: 8px 0 0;
+}
+.calc.is-cinema .calc__cap,
+.calc.is-cinema .calc__cap-sub { display: none; }
+
+/* ── Popup / vstage: grid in static, scattered in cinema ── */
+.calc__vstage {
+  position: relative;
+  z-index: 4;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: clamp(28px,5vh,54px) clamp(22px,5vw,90px) clamp(36px,6vh,64px);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  gap: clamp(14px,1.8vw,20px);
+  align-items: start;
+}
+.calc.is-cinema .calc__vstage {
+  position: absolute;
+  inset: 0;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  display: block;
+}
+
+/* ── Pop-up cards ── */
+.calc__card {
+  background: rgba(247,239,233,.94);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: clamp(14px,2vh,20px) clamp(16px,1.8vw,22px);
+  box-shadow: 0 12px 38px -24px rgba(43,34,51,.30),
+              inset 0 1px 0 rgba(255,255,255,.72);
+}
+/* math card spans both columns in static grid */
+.calc__card[data-beat="3"] { grid-column: 1 / -1; }
+
+/* Cinema mode: cards are absolutely scattered */
+.calc.is-cinema .calc__card {
+  position: absolute;
+  left: var(--cx);
+  top: var(--cy);
+  width: calc(clamp(210px, 19vw, 275px) * var(--s, 1));
+  max-width: none;
+  transform: translate(-50%, -50%);
+  will-change: transform, opacity, filter;
+}
+.calc.is-cinema .calc__card--math {
+  width: calc(clamp(240px, 23vw, 320px) * var(--s, 1));
+}
+
+/* Card text styles */
+.calc__card-kicker {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .26em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+.calc__card-body {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: clamp(14px,1.35vw,17px);
+  color: var(--plum);
+  line-height: 1.48;
+}
+.calc__card-figure {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: clamp(28px,3.4vw,42px);
+  color: var(--plum);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.03em;
+  line-height: 1.0;
+  margin-bottom: 2px;
+}
+.calc__card-unit {
+  font-size: 0.52em;
+  font-weight: 700;
+  letter-spacing: .01em;
+  color: var(--magenta-ink);
+}
+.calc__card-label {
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--magenta-ink);
+  letter-spacing: .01em;
+  margin-bottom: 7px;
+}
+.calc__card-detail {
+  font-family: var(--sans);
+  font-size: clamp(12px,1.1vw,13.5px);
+  color: var(--ink);
+  line-height: 1.52;
+  max-width: 30ch;
+  text-wrap: pretty;
+  margin-top: 6px;
+}
+/* monospace math formula */
+.calc__math {
+  font-family: var(--mono);
+  font-size: clamp(12px,1.1vw,13.5px);
+  color: var(--plum);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.75;
+  white-space: pre;
+  margin: 0 0 5px;
+}
+.calc__math-note {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: .02em;
+  margin: 0 0 6px;
+}
+
+/* ── Running tally ── */
+.calc__tally {
+  position: relative;
+  z-index: 5;
+  padding: 0 clamp(22px,5vw,90px) clamp(24px,4vh,40px);
+  max-width: 900px;
+  margin: 0 auto;
+}
+.calc.is-cinema .calc__tally {
+  position: absolute;
+  bottom: clamp(32px,4.5vh,56px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0;
+  margin: 0;
+  max-width: none;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0; /* faded in by JS */
+}
+.calc__tally-label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .28em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+.calc__tally-num {
+  font-family: var(--mono);
+  font-size: clamp(26px,3vw,40px);
+  font-weight: 700;
+  color: var(--plum);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.03em;
+}
+.calc__tally-unit {
+  font-family: var(--mono);
+  font-size: clamp(13px,1.4vw,18px);
+  color: var(--magenta-ink);
+  letter-spacing: .02em;
+  margin-left: 5px;
+}
+
+/* ── Climax figure ── */
+.calc__climax {
+  position: relative;
+  z-index: 5;
+  text-align: center;
+  padding: clamp(32px,5vh,64px) clamp(22px,5vw,90px) clamp(64px,10vh,110px);
+  max-width: 900px;
+  margin: 0 auto;
+}
+.calc.is-cinema .calc__climax {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 0 clamp(22px,5vw,90px);
+  max-width: 780px;
+  margin: 0;
+  width: 100%;
+  /* offset upward so climax sits in sky above the lake */
+  margin-top: -8vh;
+}
+.calc__climax-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(10px,1.6vh,18px);
+}
+.calc__climax-eyebrow {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .28em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.calc__bignum {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: clamp(46px,7.5vw,98px);
+  color: var(--plum);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.045em;
+  line-height: 1.0;
+}
+.calc__bigcap {
+  font-family: var(--disp);
+  font-weight: 700;
+  font-size: clamp(15px,1.9vw,24px);
+  color: var(--ink);
+  letter-spacing: -.018em;
+}
+.calc__climax-tag {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: clamp(14px,1.5vw,19px);
+  color: var(--ink);
+  line-height: 1.4;
+}
+
+/* ── Reduced-motion: static, full layout, no cinema mode ── */
+@media (prefers-reduced-motion: reduce) {
+  .calc.is-cinema { height: auto; }
+  .calc.is-cinema .calc__stage {
+    position: relative; top: auto; height: auto;
+    width: 100%; margin-left: 0; overflow: visible;
+  }
+  .calc.is-cinema .calc__bg { display: none; }
+  .calc.is-cinema .calc__canvas { display: none; }
+  .calc.is-cinema .calc__vstage {
+    position: relative; inset: auto; display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+    padding: clamp(28px,5vh,54px) clamp(22px,5vw,90px) clamp(36px,6vh,64px);
+    max-width: 900px; margin: 0 auto;
+  }
+  .calc.is-cinema .calc__card {
+    position: relative; left: auto; top: auto;
+    transform: none; width: auto; opacity: 1 !important;
+    visibility: visible !important; filter: none !important;
+  }
+  .calc.is-cinema .calc__card[data-beat="3"] { grid-column: 1 / -1; }
+  .calc.is-cinema .calc__tally {
+    position: relative; bottom: auto; left: auto;
+    transform: none; text-align: left; opacity: 1 !important;
+    padding: 0 clamp(22px,5vw,90px) clamp(24px,4vh,40px);
+    max-width: 900px; margin: 0 auto;
+  }
+  .calc.is-cinema .calc__climax {
+    position: relative; inset: auto; transform: none;
+    opacity: 1 !important; margin: 0 auto;
+  }
+}
+
+/* ── Mobile (<= 760px): always static ── */
+@media (max-width: 760px) {
+  .calc.is-cinema { height: auto; }
+  .calc.is-cinema .calc__stage {
+    position: relative; top: auto; height: auto;
+    width: 100%; margin-left: 0; overflow: visible;
+  }
+  .calc.is-cinema .calc__bg { display: none; }
+  .calc.is-cinema .calc__canvas { display: none; }
+  .calc.is-cinema .calc__vstage {
+    position: relative; inset: auto; display: grid;
+    grid-template-columns: 1fr;
+    padding: clamp(24px,4vh,40px) clamp(18px,5vw,32px);
+    max-width: 600px; margin: 0 auto;
+  }
+  .calc.is-cinema .calc__card {
+    position: relative; left: auto; top: auto;
+    transform: none; width: auto; opacity: 1 !important;
+    visibility: visible !important; filter: none !important;
+  }
+  .calc.is-cinema .calc__card[data-beat="3"] { grid-column: 1; }
+  .calc.is-cinema .calc__tally {
+    position: relative; bottom: auto; left: auto;
+    transform: none; text-align: left; opacity: 1 !important;
+    padding: 0 clamp(18px,5vw,32px) clamp(20px,4vh,36px);
+    max-width: 600px; margin: 0 auto;
+  }
+  .calc.is-cinema .calc__climax {
+    position: relative; inset: auto; transform: none;
+    opacity: 1 !important; margin: 0 auto;
+  }
+  .calc__head h2 { font-size: clamp(22px,6vw,34px); }
+  .calc__bignum { font-size: clamp(38px,10vw,56px); }
+}
+
+/* REVEAL RULE: content visible by default.
+   Hidden-start only activates when html.js is present (JS is running)
+   AND cinema mode is active — so headless/hidden tabs never ship blank. */
+html.js .calc.is-cinema .calc__card {
+  opacity: 0;
+  visibility: hidden;
+}
+html.js .calc.is-cinema .calc__climax {
+  opacity: 0;
+  visibility: hidden;
+}
+html.js .calc.is-cinema .calc__tally {
+  opacity: 0;
+}
+</style>
+
+<section class="calc" id="calc" aria-label="The math behind Microsoft's NPU compute ceiling: 9.45 ExaOPS of on-device inference capacity across 210,000 Copilot+ devices — five times what the dashboard tracks today, most of it idle.">
+
+  <!-- screen-reader summary always present -->
+  <p class="vh" style="position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0">
+    Each Snapdragon Copilot+ laptop at Microsoft ships a 45 TOPS NPU. Across 210,000 such devices, that is 9,450,000 TOPS, or 9.45 ExaOPS of on-device INT8 inference — roughly five times the 1.8 ExaOPS our dashboard tracks today. Most of it sits idle.
+  </p>
+
+  <!-- static-mode section heading (hidden in cinema) -->
+  <p class="calc__cap">Drops of compute, gathered into a lake.</p>
+  <p class="calc__cap-sub">scroll to count the drops</p>
+
+  <div class="calc__stage">
+    <div class="calc__bg" aria-hidden="true"></div>
+    <canvas class="calc__canvas" aria-hidden="true"></canvas>
+
+    <!-- Section heading: visible in static layout; overlaid in cinema -->
+    <div class="calc__head reveal">
+      <span class="eyebrow">Reach &middot; the math</span>
+      <h2>9.45 ExaOPS, one drop at a time.</h2>
+      <p class="calc__head-sub"><em>And we&rsquo;re only scratching the surface.</em></p>
+    </div>
+
+    <!-- Six calculation beats ─── scattered in cinema, grid in static -->
+    <div class="calc__vstage" aria-label="Calculation breakdown">
+
+      <!-- Beat 0: opening line -->
+      <figure class="calc__card" data-beat="0" style="--cx:29%;--cy:32%;--s:1.0"
+        aria-label="Opening: and we're only scratching the surface">
+        <figcaption>
+          <p class="calc__card-kicker">Reach &middot; the math</p>
+          <p class="calc__card-body"><em>&ldquo;And we&rsquo;re only scratching the surface.&rdquo;</em></p>
+        </figcaption>
+      </figure>
+
+      <!-- Beat 1: 45 TOPS NPU -->
+      <figure class="calc__card" data-beat="1" style="--cx:70%;--cy:24%;--s:1.05"
+        aria-label="Input A: 45 TOPS NPU per Copilot+ laptop">
+        <figcaption>
+          <p class="calc__card-label">On-device inference &middot; per device</p>
+          <p class="calc__card-figure">45 <span class="calc__card-unit">TOPS</span></p>
+          <p class="calc__card-detail">
+            Each Snapdragon Copilot+ laptop ships a 45&nbsp;TOPS NPU &mdash; a neural engine
+            built for INT8 on-device inference. No cloud, no queue.
+          </p>
+        </figcaption>
+      </figure>
+
+      <!-- Beat 2: × 210,000 -->
+      <figure class="calc__card" data-beat="2" style="--cx:20%;--cy:57%;--s:0.95"
+        aria-label="Input B: 210,000 Copilot+ devices at Microsoft">
+        <figcaption>
+          <p class="calc__card-label">Copilot+ devices at Microsoft</p>
+          <p class="calc__card-figure">&times; <span class="calc__card-unit">210,000</span></p>
+          <p class="calc__card-detail">
+            Snapdragon (Copilot+) laptops across the Microsoft employee fleet.
+          </p>
+        </figcaption>
+      </figure>
+
+      <!-- Beat 3: the math — full multiplication shown cleanly -->
+      <figure class="calc__card calc__card--math" data-beat="3" style="--cx:52%;--cy:46%;--s:1.2"
+        aria-label="The math: 45 TOPS times 210,000 equals 9.45 ExaOPS">
+        <figcaption>
+          <p class="calc__card-label">The multiplication</p>
+          <pre class="calc__math">   45 TOPS / device
+&times;  210,000 devices
+ &#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;
+  9,450,000 TOPS
+=      9.45 ExaOPS</pre>
+          <p class="calc__math-note">(1 ExaOPS = 10<sup>6</sup> TOPS &mdash; on-device INT8 inference)</p>
+        </figcaption>
+      </figure>
+
+      <!-- Beat 4: ≈ 5× today's ceiling -->
+      <figure class="calc__card" data-beat="4" style="--cx:72%;--cy:62%;--s:1.05"
+        aria-label="Context: 5 times today's tracked ceiling of 1.8 ExaOPS">
+        <figcaption>
+          <p class="calc__card-label">vs. today&rsquo;s tracked ceiling</p>
+          <p class="calc__card-figure">&approx; 5<span class="calc__card-unit">&times;</span></p>
+          <p class="calc__card-detail">
+            Our dashboard tracks &sim;1.8&nbsp;ExaOPS. The real fleet holds 5&times; that &mdash;
+            uncounted, unmeasured.
+          </p>
+        </figcaption>
+      </figure>
+
+      <!-- Beat 5: most idle -->
+      <figure class="calc__card" data-beat="5" style="--cx:26%;--cy:41%;--s:0.95"
+        aria-label="The gap: most of this capacity is idle and underutilized">
+        <figcaption>
+          <p class="calc__card-kicker">The gap</p>
+          <p class="calc__card-body">
+            <em>Most of it idle.<br>Underutilized.<br>Invisible to any scheduler.</em>
+          </p>
+        </figcaption>
+      </figure>
+
+    </div><!-- /.calc__vstage -->
+
+    <!-- Running tally: counts 0 → 9.45 ExaOPS as lake fills -->
+    <div class="calc__tally" aria-live="polite" aria-atomic="true">
+      <span class="calc__tally-label">NPU inference</span>
+      <span class="calc__tally-num">0.00</span><span class="calc__tally-unit">ExaOPS</span>
+    </div>
+
+    <!-- Climax: the big figure -->
+    <div class="calc__climax" aria-label="Climax: 9.45 ExaOPS total">
+      <div class="calc__climax-inner">
+        <span class="calc__climax-eyebrow">Reach &middot; the math</span>
+        <div class="calc__bignum" aria-label="Nine point four five ExaOPS">9.45 ExaOPS</div>
+        <p class="calc__bigcap">5&times; today&rsquo;s tracked ceiling (&sim;1.8&nbsp;ExaOPS)</p>
+        <p class="calc__climax-tag"><em>and we&rsquo;re only scratching the surface.</em></p>
+      </div>
+    </div>
+
+  </div><!-- /.calc__stage -->
+</section>
+
+<!-- ===== Reclaim · the multiply — one reclaimed machine fans out into the whole fleet ===== -->
   <section class="multiply" id="multiply" aria-label="One reclaimed machine multiplies across the fleet">
     <div class="multiply__glow" aria-hidden="true"></div>
     <div class="multiply__stage">
@@ -1908,7 +2459,1657 @@ html.js .signoff__inner.in{opacity:1;transform:none}
     </div>
   </section>
 
-  <!-- ===== Cinema (routing) — moved to follow the launch journey; closes the cinematic arc ===== -->
+  
+  <!-- ===== GitHub deep-dive (placeholder) · treasure-chest payback · OneCompute finale (inserted) ===== -->
+  <style>
+/* ===================================================================
+   ghdive — "Deep dive into the compute-grid repo" placeholder animation
+   All selectors scoped to .gh__ — zero collisions with existing prefixes
+   =================================================================== */
+
+/* ── scroll track ─────────────────────────────────────────────────── */
+#ghdive {
+  position: relative;
+  height: 320vh;
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  /* overflow:clip clips without creating a scroll container —
+     overflow:hidden would break position:sticky on .gh__stage */
+  overflow: clip;
+}
+@media (prefers-reduced-motion: reduce) {
+  #ghdive { height: auto; overflow: visible; }
+}
+
+/* ── sticky stage (100 vh viewport) ──────────────────────────────── */
+.gh__stage {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--cream);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gh__stage {
+    position: relative;
+    top: auto;
+    height: auto;
+    overflow: visible;
+    flex-direction: column;
+    align-items: center;
+    padding: 96px clamp(22px,5vw,90px) 96px;
+    gap: 40px;
+    background: linear-gradient(180deg, var(--cream) 0%, #1a1228 14%, #1a1228 86%, var(--cream) 100%);
+  }
+}
+
+/* ── dark code-editor void overlay ───────────────────────────────── */
+.gh__void {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0;
+  will-change: opacity;
+  pointer-events: none;
+  background:
+    radial-gradient(140% 110% at 50% 20%, #231930 0%, #1a1228 42%, #0f0b16 100%);
+}
+/* reduced-motion: void is always on so the panel is legible */
+@media (prefers-reduced-motion: reduce) {
+  .gh__void { position: static; display: none; }
+}
+
+/* ── copy block (eyebrow + headline) ─────────────────────────────── */
+.gh__copy {
+  position: absolute;
+  top: clamp(82px, 11vh, 118px);
+  left: clamp(22px, 5vw, 90px);
+  z-index: 4;
+  max-width: 28ch;
+  pointer-events: none;
+}
+.gh__copy .eyebrow {
+  display: block;
+  margin-bottom: 10px;
+  /* eyebrow on cream; GSAP will update color once void is visible */
+}
+.gh__hed {
+  font-family: var(--disp);
+  font-weight: 700;
+  font-size: clamp(22px, 3vw, 40px);
+  letter-spacing: -.025em;
+  line-height: 1.0;
+  color: var(--plum);
+  text-wrap: balance;
+  text-shadow: 0 1px 22px rgba(247,239,233,.72);
+}
+@media (prefers-reduced-motion: reduce) {
+  .gh__copy {
+    position: relative;
+    top: auto; left: auto;
+    max-width: 40ch;
+    text-align: center;
+  }
+  .gh__copy .eyebrow { color: rgba(201,184,240,.75); }
+  .gh__hed { color: var(--cream); text-shadow: 0 2px 28px rgba(16,12,26,.7); }
+}
+
+/* ── outer panel (browser + commit stream) ───────────────────────── */
+.gh__panel {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  will-change: transform, opacity;
+}
+/* hidden-start: only when JS is active (GSAP will animate in) */
+html.js .gh__panel {
+  transform: scale(.52) translateY(52px);
+  opacity: .6;
+  transform-origin: center 54%;
+}
+@media (prefers-reduced-motion: reduce) {
+  html.js .gh__panel { transform: none !important; opacity: 1 !important; }
+  .gh__panel { flex-direction: column; align-items: center; width: min(840px,92vw); }
+}
+
+/* ── browser window chrome ───────────────────────────────────────── */
+.gh__win {
+  width: min(820px, 86vw);
+  flex-shrink: 0;
+  border-radius: 11px;
+  overflow: hidden;
+  background: #1a1228;
+  border: 1px solid rgba(201,184,240,.18);
+  box-shadow:
+    0 44px 100px -40px rgba(10,7,20,.82),
+    0 0 0 1px rgba(201,184,240,.10),
+    inset 0 1px 0 rgba(255,255,255,.05);
+}
+@media (max-width: 700px) {
+  .gh__win { width: min(600px, 96vw); border-radius: 8px; }
+}
+
+/* titlebar */
+.gh__chrome {
+  height: 36px;
+  background: #21193a;
+  border-bottom: 1px solid rgba(201,184,240,.12);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 10px;
+}
+.gh__dots { display: flex; gap: 6px; }
+.gh__dot {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.gh__dot--r { background: #e8a38c; }
+.gh__dot--y { background: #f8d3bc; }
+.gh__dot--g { background: #9f86c9; }
+
+.gh__urlbar {
+  flex: 1;
+  height: 20px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(201,184,240,.13);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: rgba(237,230,252,.58);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.gh__urlbar b { color: rgba(237,230,252,.88); font-weight: 500; }
+
+/* ── repo banner ─────────────────────────────────────────────────── */
+.gh__repobar {
+  height: 42px;
+  background: #1d1535;
+  border-bottom: 1px solid rgba(201,184,240,.12);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  gap: 12px;
+}
+.gh__repoid {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+.gh__ricon { width: 14px; height: 14px; flex-shrink: 0; color: rgba(201,184,240,.6); }
+.gh__rowner { font-family: var(--sans); font-size: 13px; color: rgba(237,230,252,.7); }
+.gh__rsep   { color: rgba(201,184,240,.3); font-size: 13px; }
+.gh__rname  { font-family: var(--sans); font-size: 13px; font-weight: 600; color: #ede6fc; }
+.gh__rpub   {
+  font-family: var(--sans);
+  font-size: 10px;
+  color: rgba(181,159,227,.9);
+  border: 1px solid rgba(181,159,227,.35);
+  border-radius: 999px;
+  padding: 1px 7px;
+  flex-shrink: 0;
+}
+.gh__repometa { display: flex; gap: 14px; flex-shrink: 0; }
+.gh__rstat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: rgba(237,230,252,.6);
+}
+.gh__rstat svg { width: 13px; height: 13px; flex-shrink: 0; }
+.gh__rstat-n { font-weight: 600; color: rgba(237,230,252,.88); }
+
+/* ── tab bar ─────────────────────────────────────────────────────── */
+.gh__tabbar {
+  height: 38px;
+  background: #1d1535;
+  border-bottom: 1px solid rgba(201,184,240,.12);
+  display: flex;
+  align-items: flex-end;
+  padding: 0 10px;
+  gap: 2px;
+  overflow: hidden;
+}
+.gh__tab {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 12px;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: rgba(237,230,252,.5);
+  border-radius: 6px 6px 0 0;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  cursor: default;
+  letter-spacing: .01em;
+}
+.gh__tab--active {
+  color: #ede6fc;
+  background: #1a1228;
+  border-color: rgba(201,184,240,.16);
+  border-bottom-color: #1a1228;
+}
+.gh__tbadge {
+  font-family: var(--mono);
+  font-size: 10px;
+  background: rgba(201,184,240,.15);
+  color: rgba(201,184,240,.82);
+  border-radius: 999px;
+  padding: 1px 5px;
+}
+.gh__tab-icon { width: 13px; height: 13px; flex-shrink: 0; }
+
+/* ── body (file tree + code) ─────────────────────────────────────── */
+.gh__body {
+  display: grid;
+  grid-template-columns: 178px 1fr;
+  height: min(400px, calc(100vh - 340px));
+  min-height: 260px;
+  overflow: hidden;
+}
+@media (max-width: 700px) {
+  .gh__body { grid-template-columns: 0 1fr; }
+  .gh__tree  { display: none; }
+}
+
+/* ── file tree ───────────────────────────────────────────────────── */
+.gh__tree {
+  background: #1d1535;
+  border-right: 1px solid rgba(201,184,240,.1);
+  overflow: hidden;
+  padding: 6px 0;
+}
+.gh__tree-commit {
+  padding: 6px 10px 10px;
+  border-bottom: 1px solid rgba(201,184,240,.1);
+  margin-bottom: 4px;
+}
+.gh__tc-hash {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: rgba(201,184,240,.75);
+  letter-spacing: .04em;
+}
+.gh__tc-msg {
+  display: block;
+  font-family: var(--sans);
+  font-size: 10px;
+  color: rgba(237,230,252,.45);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gh__ti {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: rgba(237,230,252,.68);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: 5px;
+  margin: 0 4px;
+  cursor: default;
+}
+.gh__ti-icon { width: 12px; height: 12px; flex-shrink: 0; opacity: .7; }
+.gh__ti--l1 { padding-left: 20px; }
+.gh__ti--l2 { padding-left: 34px; }
+.gh__ti--active {
+  background: rgba(201,184,240,.18);
+  color: #ede6fc;
+}
+.gh__ti--active .gh__ti-icon { opacity: 1; color: var(--lilac); }
+
+/* ── code pane ───────────────────────────────────────────────────── */
+.gh__codepane {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #1a1228;
+}
+
+/* file breadcrumb + diff stat header */
+.gh__filehdr {
+  height: 34px;
+  background: #1d1535;
+  border-bottom: 1px solid rgba(201,184,240,.1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  flex-shrink: 0;
+  gap: 10px;
+  overflow: hidden;
+}
+.gh__fpath {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: rgba(237,230,252,.52);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gh__fpath b { color: #ede6fc; font-weight: 500; }
+.gh__fmeta { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.gh__fhash {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: rgba(201,184,240,.62);
+  letter-spacing: .04em;
+}
+.gh__fstat-a { font-family: var(--mono); font-size: 11px; color: #6ee7a0; font-weight: 600; }
+.gh__fstat-d { font-family: var(--mono); font-size: 11px; color: #fca5a5; font-weight: 600; }
+
+/* ── code lines ──────────────────────────────────────────────────── */
+.gh__code {
+  flex: 1;
+  overflow: hidden;
+  padding: 8px 0 2px;
+  /* fade-out at bottom hides the hard clip edge */
+  -webkit-mask: linear-gradient(#000 82%, transparent 100%);
+          mask: linear-gradient(#000 82%, transparent 100%);
+}
+.gh__line {
+  display: flex;
+  align-items: baseline;
+  min-height: 20px;
+  line-height: 20px;
+  position: relative;
+}
+.gh__line--add { background: rgba(74,222,128,.08); }
+.gh__line--del { background: rgba(248,113,113,.09); }
+
+/* diff marker (+/-) — always same width so code stays aligned */
+.gh__ldiff {
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 700;
+  font-family: var(--mono);
+  user-select: none;
+}
+.gh__line--add .gh__ldiff { color: #6ee7a0; }
+.gh__line--del .gh__ldiff { color: #fca5a5; }
+.gh__line:not(.gh__line--add):not(.gh__line--del) .gh__ldiff { opacity: 0; }
+
+/* line number */
+.gh__lnum {
+  flex-shrink: 0;
+  width: 34px;
+  text-align: right;
+  padding-right: 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 20px;
+  /* secondary/decorative UI — 3.3:1 intentional for metadata */
+  color: #8b7aaa;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* code text (primary — verified ≥4.5:1 on #1a1228 bg) */
+.gh__lcode {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 20px;
+  color: #ede6fc;        /* ~11:1 on #1a1228 */
+  white-space: pre;
+  overflow: hidden;
+  flex: 1;
+  padding-right: 14px;
+}
+
+/* ── syntax token colors (all ≥4.5:1 on #1a1228) ─────────────────── */
+.gh__kw  { color: #c9b8f0; }   /* keywords — ~7:1 */
+.gh__str { color: #f8ccdd; }   /* strings  — ~9:1 */
+.gh__cmt { color: #c0b3d4; }   /* comments — ~5:1 */
+.gh__cls { color: #f8d3bc; }   /* classes  — ~10:1 */
+.gh__fn  { color: #f2b5d4; }   /* functions— ~6:1 */
+.gh__num { color: #e8a38c; }   /* numbers  — ~5.3:1 */
+.gh__dec { color: #f2b5d4; }   /* decorators */
+.gh__op  { color: rgba(237,230,252,.72); }  /* operators */
+
+/* diff-line code overrides — keep readable against tinted bg */
+.gh__line--add .gh__lcode { color: #d4f8e4; }
+.gh__line--del .gh__lcode { color: #fde0e0; }
+
+/* diff lines: JS hidden-start, revealed by GSAP */
+html.js .gh__line--add,
+html.js .gh__line--del { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  html.js .gh__line--add,
+  html.js .gh__line--del { opacity: 1 !important; }
+}
+
+/* ── blinking cursor ─────────────────────────────────────────────── */
+.gh__cursor {
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  background: #c9b8f0;
+  border-radius: 1px;
+  margin-left: 1px;
+  vertical-align: -2px;
+  animation: gh-blink 1s steps(1) infinite;
+}
+html.js .gh__cursor { opacity: 0; } /* GSAP fades it in */
+@media (prefers-reduced-motion: reduce) {
+  .gh__cursor { animation: none; }
+  html.js .gh__cursor { opacity: 1 !important; }
+}
+@keyframes gh-blink {
+  0%,49.9% { opacity: 1; }
+  50%,100%  { opacity: 0; }
+}
+
+/* ── commits stream sidebar ──────────────────────────────────────── */
+.gh__cstream {
+  width: 192px;
+  flex-shrink: 0;
+  will-change: opacity, transform;
+}
+html.js .gh__cstream {
+  opacity: 0;
+  transform: translateX(22px);
+}
+@media (prefers-reduced-motion: reduce) {
+  html.js .gh__cstream { opacity: 1 !important; transform: none !important; }
+  .gh__cstream { width: 100%; }
+}
+.gh__cstream-hd {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: rgba(201,184,240,.5);
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(201,184,240,.12);
+  margin-bottom: 6px;
+}
+.gh__ci {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(201,184,240,.08);
+  will-change: opacity, transform;
+}
+html.js .gh__ci {
+  opacity: 0;
+  transform: translateX(18px);
+}
+@media (prefers-reduced-motion: reduce) {
+  html.js .gh__ci { opacity: 1 !important; transform: none !important; }
+}
+.gh__ci-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.gh__ci-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: rgba(201,184,240,.38);
+}
+.gh__ci-hash {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: rgba(201,184,240,.78);
+  letter-spacing: .04em;
+}
+.gh__ci-msg {
+  font-family: var(--sans);
+  font-size: 11px;
+  color: #e8dff8;
+  line-height: 1.45;
+}
+.gh__ci-who {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: rgba(201,184,240,.48);
+  margin-top: 1px;
+}
+
+/* ── responsive: hide sidebar on narrow viewports ────────────────── */
+@media (max-width: 900px) {
+  .gh__cstream { display: none; }
+}
+</style>
+
+<section id="ghdive" aria-label="GitHub repository deep dive — placeholder animation">
+  <div class="gh__stage">
+
+    <!-- Dark code-editor backdrop, animated in/out by GSAP -->
+    <div class="gh__void" aria-hidden="true"></div>
+
+    <!-- Eyebrow + headline (absolutely anchored top-left; fades out as void rises) -->
+    <div class="gh__copy">
+      <span class="eyebrow">Deep dive &middot; placeholder</span>
+      <h2 class="gh__hed">Every line the fleet wrote,<br>audited.</h2>
+    </div>
+
+    <!-- The panel that "dives" in (scaled by GSAP) -->
+    <div class="gh__panel" aria-label="Stylized repository deep-dive animation">
+
+      <!-- ── browser window ─────────────────────────────────────── -->
+      <div class="gh__win" role="img" aria-label="Stylised GitHub code view of onecompute/compute-grid">
+
+        <!-- titlebar chrome -->
+        <div class="gh__chrome" aria-hidden="true">
+          <div class="gh__dots">
+            <i class="gh__dot gh__dot--r"></i>
+            <i class="gh__dot gh__dot--y"></i>
+            <i class="gh__dot gh__dot--g"></i>
+          </div>
+          <div class="gh__urlbar">
+            <!-- lock icon -->
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="3" y="7" width="10" height="8" rx="1.5" fill="rgba(201,184,240,.55)"/>
+              <path d="M5 7V5a3 3 0 016 0v2" stroke="rgba(201,184,240,.55)" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            github.com / <b>onecompute</b> / <b>compute-grid</b>
+          </div>
+        </div>
+
+        <!-- repo identity bar -->
+        <div class="gh__repobar" aria-hidden="true">
+          <div class="gh__repoid">
+            <!-- book/repo icon -->
+            <svg class="gh__ricon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path d="M2 2.5A2.5 2.5 0 014.5 0h8.75a.75.75 0 01.75.75v12.5a.75.75 0 01-.75.75h-2.5a.75.75 0 000 1.5h2.5a.75.75 0 01.75.75v.5a.75.75 0 01-.75.75H4.5A2.5 2.5 0 012 14.5v-12zm10.5-.5H4.5a1 1 0 00-1 1v9.023c.337-.09.698-.14 1.071-.14h8.929V2z"/>
+            </svg>
+            <span class="gh__rowner">onecompute</span>
+            <span class="gh__rsep">/</span>
+            <span class="gh__rname">compute-grid</span>
+            <span class="gh__rpub">Public</span>
+          </div>
+          <div class="gh__repometa">
+            <span class="gh__rstat">
+              <svg class="gh__rstat-icon" viewBox="0 0 16 16" fill="currentColor" width="13" height="13" aria-hidden="true">
+                <path d="M8 .25a.75.75 0 01.673.418l1.882 3.815 4.21.612a.75.75 0 01.416 1.279l-3.046 2.97.719 4.192a.75.75 0 01-1.088.791L8 12.347l-3.766 1.98a.75.75 0 01-1.088-.79l.72-4.194L.873 6.374a.75.75 0 01.416-1.28l4.21-.611L7.327.668A.75.75 0 018 .25z"/>
+              </svg>
+              <span class="gh__rstat-n">2,847</span>
+            </span>
+            <span class="gh__rstat">
+              <svg class="gh__rstat-icon" viewBox="0 0 16 16" fill="currentColor" width="13" height="13" aria-hidden="true">
+                <path d="M5 3.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm0 2.122a2.25 2.25 0 10-1.5 0v.878A2.25 2.25 0 005.75 8.5h1.5v2.128a2.251 2.251 0 101.5 0V8.5h1.5a2.25 2.25 0 002.25-2.25v-.878a2.25 2.25 0 10-1.5 0v.878a.75.75 0 01-.75.75h-4.5A.75.75 0 015 6.25v-.878zm3.75 7.378a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm3-8.75a.75.75 0 11-1.5 0 .75.75 0 011.5 0z"/>
+              </svg>
+              <span class="gh__rstat-n">341</span>
+            </span>
+          </div>
+        </div>
+
+        <!-- tab navigation -->
+        <div class="gh__tabbar" aria-hidden="true">
+          <span class="gh__tab gh__tab--active">
+            <svg class="gh__tab-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path d="M2 2.5A2.5 2.5 0 014.5 0h8.75a.75.75 0 01.75.75v12.5a.75.75 0 01-.75.75h-2.5a.75.75 0 000 1.5h2.5a.75.75 0 01.75.75v.5a.75.75 0 01-.75.75H4.5A2.5 2.5 0 012 14.5v-12zm10.5-.5H4.5a1 1 0 00-1 1v9.023c.337-.09.698-.14 1.071-.14h8.929V2z"/>
+            </svg>
+            Code
+          </span>
+          <span class="gh__tab">Issues <span class="gh__tbadge">3</span></span>
+          <span class="gh__tab">Pull requests <span class="gh__tbadge">2</span></span>
+          <span class="gh__tab">Actions</span>
+          <span class="gh__tab">Insights</span>
+        </div>
+
+        <!-- body: file tree + code -->
+        <div class="gh__body">
+
+          <!-- file explorer sidebar -->
+          <aside class="gh__tree" aria-hidden="true">
+            <div class="gh__tree-commit">
+              <span class="gh__tc-hash">a3f8c2d</span>
+              <span class="gh__tc-msg">feat: instant-yield on mouse-touch</span>
+            </div>
+            <!-- src/ -->
+            <div class="gh__ti">
+              <svg class="gh__ti-icon" viewBox="0 0 16 16" fill="#c9b8f0" aria-hidden="true"><path d="M1.75 1A1.75 1.75 0 000 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0016 13.25v-8.5A1.75 1.75 0 0014.25 3H7.5L6.25 1.5a.75.75 0 00-.5-.5H1.75z"/></svg>
+              src
+            </div>
+            <!-- orchestrator/ -->
+            <div class="gh__ti gh__ti--l1">
+              <svg class="gh__ti-icon" viewBox="0 0 16 16" fill="#c9b8f0" aria-hidden="true"><path d="M1.75 1A1.75 1.75 0 000 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0016 13.25v-8.5A1.75 1.75 0 0014.25 3H7.5L6.25 1.5a.75.75 0 00-.5-.5H1.75z"/></svg>
+              orchestrator
+            </div>
+            <!-- scheduler.py — ACTIVE -->
+            <div class="gh__ti gh__ti--l2 gh__ti--active" id="gh-tree-active">
+              <svg class="gh__ti-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0113.25 16h-9.5A1.75 1.75 0 012 14.25V1.75zm1.75-.25a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 019 4.25V1.5H3.75zm6.75.5v2.75c0 .138.112.25.25.25h2.75L10.5 2z"/></svg>
+              scheduler.py
+            </div>
+            <div class="gh__ti gh__ti--l2">
+              <svg class="gh__ti-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0113.25 16h-9.5A1.75 1.75 0 012 14.25V1.75zm1.75-.25a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 019 4.25V1.5H3.75zm6.75.5v2.75c0 .138.112.25.25.25h2.75L10.5 2z"/></svg>
+              models.py
+            </div>
+            <div class="gh__ti gh__ti--l2">
+              <svg class="gh__ti-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0113.25 16h-9.5A1.75 1.75 0 012 14.25V1.75zm1.75-.25a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 019 4.25V1.5H3.75zm6.75.5v2.75c0 .138.112.25.25.25h2.75L10.5 2z"/></svg>
+              database.py
+            </div>
+            <!-- worker/ -->
+            <div class="gh__ti gh__ti--l1">
+              <svg class="gh__ti-icon" viewBox="0 0 16 16" fill="rgba(201,184,240,.55)" aria-hidden="true"><path d="M1.75 1A1.75 1.75 0 000 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0016 13.25v-8.5A1.75 1.75 0 0014.25 3H7.5L6.25 1.5a.75.75 0 00-.5-.5H1.75z"/></svg>
+              worker
+            </div>
+            <!-- trust/ -->
+            <div class="gh__ti gh__ti--l1">
+              <svg class="gh__ti-icon" viewBox="0 0 16 16" fill="rgba(201,184,240,.55)" aria-hidden="true"><path d="M1.75 1A1.75 1.75 0 000 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0016 13.25v-8.5A1.75 1.75 0 0014.25 3H7.5L6.25 1.5a.75.75 0 00-.5-.5H1.75z"/></svg>
+              trust
+            </div>
+            <div class="gh__ti">
+              <svg class="gh__ti-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0113.25 16h-9.5A1.75 1.75 0 012 14.25V1.75zm1.75-.25a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 019 4.25V1.5H3.75zm6.75.5v2.75c0 .138.112.25.25.25h2.75L10.5 2z"/></svg>
+              pyproject.toml
+            </div>
+            <div class="gh__ti">
+              <svg class="gh__ti-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0113.25 16h-9.5A1.75 1.75 0 012 14.25V1.75zm1.75-.25a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 019 4.25V1.5H3.75zm6.75.5v2.75c0 .138.112.25.25.25h2.75L10.5 2z"/></svg>
+              README.md
+            </div>
+          </aside>
+
+          <!-- code editor pane -->
+          <div class="gh__codepane">
+
+            <!-- file header: breadcrumb + diff stat -->
+            <div class="gh__filehdr" aria-hidden="true">
+              <span class="gh__fpath">src / orchestrator / <b>scheduler.py</b></span>
+              <span class="gh__fmeta">
+                <span class="gh__fhash">a3f8c2d</span>
+                <span class="gh__fstat-a">+3</span>
+                <span class="gh__fstat-d">&minus;1</span>
+              </span>
+            </div>
+
+            <!-- code content -->
+            <div class="gh__code" aria-label="Source code: src/orchestrator/scheduler.py">
+
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">16</span><span class="gh__lcode"><span class="gh__kw">class</span> <span class="gh__cls">GridScheduler</span><span class="gh__op">:</span></span></div>
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">17</span><span class="gh__lcode">    <span class="gh__str">"""Route work to idle nodes; yield on mouse-touch."""</span></span></div>
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">18</span><span class="gh__lcode"> </span></div>
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">19</span><span class="gh__lcode">    <span class="gh__kw">def</span> <span class="gh__fn">__init__</span><span class="gh__op">(</span><span class="gh__kw">self</span>, store<span class="gh__op">:</span> <span class="gh__str">'Database'</span><span class="gh__op">)</span> <span class="gh__op">-&gt;</span> <span class="gh__kw">None</span><span class="gh__op">:</span></span></div>
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">20</span><span class="gh__lcode">        <span class="gh__kw">self</span>.store <span class="gh__op">=</span> store</span></div>
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">21</span><span class="gh__lcode">        <span class="gh__kw">self</span>._q<span class="gh__op">:</span> asyncio.<span class="gh__cls">Queue</span><span class="gh__op">[</span><span class="gh__cls">Job</span><span class="gh__op">]</span> <span class="gh__op">=</span> asyncio.<span class="gh__fn">Queue</span><span class="gh__op">(</span><span class="gh__num">QUEUE_CAP</span><span class="gh__op">)</span></span></div>
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">22</span><span class="gh__lcode"> </span></div>
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">23</span><span class="gh__lcode">    <span class="gh__kw">async def</span> <span class="gh__fn">submit</span><span class="gh__op">(</span><span class="gh__kw">self</span>, manifest<span class="gh__op">:</span> <span class="gh__cls">bytes</span>, sig<span class="gh__op">:</span> <span class="gh__cls">bytes</span><span class="gh__op">)</span> <span class="gh__op">-&gt;</span> <span class="gh__cls">str</span><span class="gh__op">:</span></span></div>
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">24</span><span class="gh__lcode">        <span class="gh__kw">if not</span> <span class="gh__fn">_verify_sig</span><span class="gh__op">(</span>manifest, sig<span class="gh__op">):</span></span></div>
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">25</span><span class="gh__lcode">            <span class="gh__kw">raise</span> <span class="gh__cls">PermissionError</span><span class="gh__op">(</span><span class="gh__str">"manifest signature mismatch"</span><span class="gh__op">)</span></span></div>
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">26</span><span class="gh__lcode">        job <span class="gh__op">=</span> <span class="gh__cls">Job</span><span class="gh__op">(</span>id<span class="gh__op">=</span><span class="gh__fn">_job_id</span><span class="gh__op">(</span>manifest<span class="gh__op">)</span>, manifest<span class="gh__op">=</span>manifest<span class="gh__op">)</span></span></div>
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">27</span><span class="gh__lcode">        <span class="gh__kw">await</span> <span class="gh__kw">self</span>._q.<span class="gh__fn">put</span><span class="gh__op">(</span>job<span class="gh__op">)</span></span></div>
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">28</span><span class="gh__lcode">        <span class="gh__kw">return</span> job.id</span></div>
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">29</span><span class="gh__lcode"> </span></div>
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">30</span><span class="gh__lcode">    <span class="gh__kw">async def</span> <span class="gh__fn">stream_to</span><span class="gh__op">(</span><span class="gh__kw">self</span>, wid<span class="gh__op">:</span> <span class="gh__cls">str</span><span class="gh__op">)</span> <span class="gh__op">-&gt;</span> <span class="gh__cls">AsyncIterator</span><span class="gh__op">[</span><span class="gh__cls">Job</span><span class="gh__op">]:</span></span></div>
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">31</span><span class="gh__lcode">        <span class="gh__str">"""Stream jobs; pause the moment the node reports low idle."""</span></span></div>
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">32</span><span class="gh__lcode">        node <span class="gh__op">=</span> <span class="gh__kw">await</span> <span class="gh__kw">self</span>.store.<span class="gh__fn">get_node</span><span class="gh__op">(</span>wid<span class="gh__op">)</span></span></div>
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">33</span><span class="gh__lcode">        <span class="gh__kw">while True</span><span class="gh__op">:</span></span></div>
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">34</span><span class="gh__lcode">            <span class="gh__kw">if</span> node.cpu_idle_pct <span class="gh__op">&lt;</span> <span class="gh__num">HARVEST_FLOOR</span><span class="gh__op">:</span></span></div>
+
+              <!-- diff: deleted line -->
+              <div class="gh__line gh__line--del" id="gh-diff-del">
+                <span class="gh__ldiff">&minus;</span>
+                <span class="gh__lnum">35</span>
+                <span class="gh__lcode">                <span class="gh__kw">await</span> asyncio.<span class="gh__fn">sleep</span><span class="gh__op">(</span><span class="gh__num">5.0</span><span class="gh__op">)</span>  <span class="gh__cmt"># old: poll every 5 s</span></span>
+              </div>
+
+              <!-- diff: added line -->
+              <div class="gh__line gh__line--add" id="gh-diff-add">
+                <span class="gh__ldiff">+</span>
+                <span class="gh__lnum">35</span>
+                <span class="gh__lcode">                <span class="gh__kw">await</span> node.<span class="gh__fn">yield_gracefully</span><span class="gh__op">()</span>  <span class="gh__cmt"># &larr; instant-yield</span></span>
+              </div>
+
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">36</span><span class="gh__lcode">                <span class="gh__kw">continue</span></span></div>
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">37</span><span class="gh__lcode">            <span class="gh__kw">try</span><span class="gh__op">:</span></span></div>
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">38</span><span class="gh__lcode">                job <span class="gh__op">=</span> <span class="gh__kw">await</span> asyncio.<span class="gh__fn">wait_for</span><span class="gh__op">(</span><span class="gh__kw">self</span>._q.<span class="gh__fn">get</span><span class="gh__op">(),</span> timeout<span class="gh__op">=</span><span class="gh__num">1.0</span><span class="gh__op">)</span></span></div>
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">39</span><span class="gh__lcode">                node.jobs_run <span class="gh__op">+=</span> <span class="gh__num">1</span></span></div>
+              <div class="gh__line"><span class="gh__ldiff"> </span><span class="gh__lnum">40</span><span class="gh__lcode">                <span class="gh__kw">yield</span> job<span class="gh__cursor" aria-hidden="true"></span></span></div>
+
+            </div><!-- /gh__code -->
+          </div><!-- /gh__codepane -->
+        </div><!-- /gh__body -->
+      </div><!-- /gh__win -->
+
+      <!-- ── commit stream sidebar ──────────────────────────────── -->
+      <aside class="gh__cstream" aria-label="Recent commits">
+        <div class="gh__cstream-hd">Commit history</div>
+
+        <div class="gh__ci">
+          <div class="gh__ci-row">
+            <span class="gh__ci-dot"></span>
+            <span class="gh__ci-hash">a3f8c2d</span>
+          </div>
+          <span class="gh__ci-msg">feat: instant-yield on mouse-touch signal</span>
+          <span class="gh__ci-who">@cadence &middot; 2h ago</span>
+        </div>
+
+        <div class="gh__ci">
+          <div class="gh__ci-row">
+            <span class="gh__ci-dot"></span>
+            <span class="gh__ci-hash">7d2e1b9</span>
+          </div>
+          <span class="gh__ci-msg">fix: worker drop race on graceful-yield</span>
+          <span class="gh__ci-who">@phoenix &middot; 5h ago</span>
+        </div>
+
+        <div class="gh__ci">
+          <div class="gh__ci-row">
+            <span class="gh__ci-dot"></span>
+            <span class="gh__ci-hash">c94a3f0</span>
+          </div>
+          <span class="gh__ci-msg">perf: batch queue flushes &gt; 64 items</span>
+          <span class="gh__ci-who">@meridian &middot; 11h ago</span>
+        </div>
+
+        <div class="gh__ci">
+          <div class="gh__ci-row">
+            <span class="gh__ci-dot"></span>
+            <span class="gh__ci-hash">2b8d5c3</span>
+          </div>
+          <span class="gh__ci-msg">feat: Ed25519 manifest signing</span>
+          <span class="gh__ci-who">@echo &middot; 1d ago</span>
+        </div>
+
+        <div class="gh__ci">
+          <div class="gh__ci-row">
+            <span class="gh__ci-dot"></span>
+            <span class="gh__ci-hash">f1a72e8</span>
+          </div>
+          <span class="gh__ci-msg">chore: bump anthropic SDK to 0.26.2</span>
+          <span class="gh__ci-who">@cadence &middot; 2d ago</span>
+        </div>
+      </aside>
+
+    </div><!-- /gh__panel -->
+  </div><!-- /gh__stage -->
+</section>
+
+  <style>
+/* ===== CHEST SECTION ===================================================
+   All classes/IDs prefixed chest__ / ch-   No collisions with fa-, va-, launch-, fleet- etc.
+   ===================================================================== */
+#chest {
+  position: relative;
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  overflow: hidden;
+  background: var(--cream);
+  padding: 112px 0 128px;
+}
+.chest__wrap {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 clamp(22px, 5vw, 90px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.chest__head {
+  text-align: center;
+  max-width: 520px;
+  margin-bottom: 52px;
+}
+.chest__eyebrow {
+  display: block;
+  margin-bottom: 18px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: .30em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.chest__h2 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: clamp(36px, 5.5vw, 68px);
+  color: var(--plum);
+  letter-spacing: -.025em;
+  line-height: 1.0;
+  text-wrap: balance;
+  margin-bottom: 18px;
+}
+.chest__sub {
+  font-size: clamp(15px, 1.4vw, 17px);
+  color: var(--ink);
+  line-height: 1.65;
+  max-width: 52ch;
+  margin: 0 auto;
+  text-wrap: pretty;
+}
+.chest__stage {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  position: relative;
+}
+.chest__svg {
+  width: min(620px, 90vw);
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+/* ---- LID: open by default (no JS); with html.js GSAP takes over ---- */
+#chestLid {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transform: scaleY(0);
+  opacity: 0;
+}
+html.js #chestLid {
+  transform: scaleY(1);
+  opacity: 1;
+}
+
+/* ---- Interior/items/rays: visible by default; hidden when JS present ---- */
+.chest__interior-glow { opacity: 1; }
+.chest__rays           { opacity: .84; }
+.chest__items          { opacity: 1; transform: translateY(0); }
+
+html.js .chest__interior-glow { opacity: 0; }
+html.js .chest__rays           { opacity: 0; }
+html.js .chest__items          { opacity: 0; transform: translateY(44px); }
+
+/* ---- Sweeping light beams (CSS loop) ---- */
+.chest__sweep {
+  animation: ch-sweep 5s cubic-bezier(.22,1,.36,1) 0.3s infinite;
+}
+.chest__sweep--b {
+  animation-delay: 2.4s;
+  animation-duration: 5.8s;
+}
+@keyframes ch-sweep {
+  0%   { transform: skewX(-13deg) translateX(-300px); opacity: 0; }
+  8%   { opacity: .75; }
+  70%  { opacity: .45; }
+  100% { transform: skewX(-13deg) translateX(920px);  opacity: 0; }
+}
+
+/* ---- Sparkle stars (CSS loop) ---- */
+.chest__spark {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ch-spark 2.2s var(--ease-out, cubic-bezier(.22,1,.36,1)) infinite;
+}
+.chest__spark--b { animation-delay: .45s; animation-duration: 2.5s; }
+.chest__spark--c { animation-delay: .90s; animation-duration: 1.9s; }
+.chest__spark--d { animation-delay: 1.35s; animation-duration: 2.7s; }
+.chest__spark--e { animation-delay: .65s; animation-duration: 2.1s; }
+@keyframes ch-spark {
+  0%, 100% { transform: scale(.2) rotate(0deg);   opacity: .1; }
+  50%       { transform: scale(1.1) rotate(18deg); opacity: 1;  }
+}
+
+/* ---- Twinkle glints ---- */
+.chest__glint {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ch-glint 3s ease-in-out infinite;
+}
+.chest__glint--b { animation-delay: .8s; }
+.chest__glint--c { animation-delay: 1.6s; }
+.chest__glint--d { animation-delay: 2.4s; }
+.chest__glint--e { animation-delay: .4s; }
+@keyframes ch-glint {
+  0%, 100% { opacity: 0; transform: scale(0); }
+  45%       { opacity: 1; transform: scale(1); }
+  55%       { opacity: 1; transform: scale(1); }
+}
+
+/* ---- Steam wisps ---- */
+.chest__steam {
+  animation: ch-steam 3s ease-in-out infinite;
+}
+.chest__steam--b { animation-delay: 1s; }
+.chest__steam--c { animation-delay: 2s; }
+@keyframes ch-steam {
+  0%   { opacity: 0;   transform: translateY(0px)   scaleX(1); }
+  30%  { opacity: .75; }
+  100% { opacity: 0;   transform: translateY(-22px) scaleX(1.3); }
+}
+
+/* ---- Coins: driven by GSAP; start hidden ---- */
+.chest__coin { opacity: 0; }
+
+/* ---- Reduced-motion: static open chest, no loops ---- */
+@media (prefers-reduced-motion: reduce) {
+  #chestLid                      { transform: scaleY(0) !important; opacity: 0 !important; }
+  .chest__interior-glow          { opacity: .95 !important; }
+  .chest__rays                   { opacity: .78 !important; }
+  .chest__items                  { opacity: 1 !important; transform: none !important; }
+  .chest__sweep                  { animation: none !important; }
+  .chest__spark                  { animation: none !important; opacity: .85; transform: scale(1); }
+  .chest__glint                  { animation: none !important; opacity: .7; transform: scale(1); }
+  .chest__steam                  { animation: none !important; }
+  .chest__coin                   { opacity: .75 !important; transform: translateY(-32px) !important; }
+}
+</style>
+
+<!-- ===== SECTION: chest ============================================== -->
+<section id="chest" aria-label="Win-win · the payback: rewards for lending idle compute">
+
+  <div class="chest__wrap">
+
+    <!-- ---- Text header ---- -->
+    <header class="chest__head">
+      <span class="eyebrow chest__eyebrow">Win-win · the payback</span>
+      <h2 class="chest__h2">Idle compute, <em class="it">paid back.</em></h2>
+      <p class="chest__sub">Everyone who lends headroom earns something real — gift cards, gear, and perks, credited automatically for every verified compute-hour.</p>
+    </header>
+
+    <!-- ---- Chest stage ---- -->
+    <div class="chest__stage" aria-label="Animated treasure chest opening to reveal Microsoft merch and tech rewards">
+      <svg class="chest__svg" viewBox="0 0 560 520" xmlns="http://www.w3.org/2000/svg"
+           role="img" aria-hidden="true" overflow="visible">
+
+        <defs>
+          <!-- Ground shadow -->
+          <radialGradient id="ch-shadow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%"   stop-color="#2B2233" stop-opacity=".22"/>
+            <stop offset="100%" stop-color="#2B2233" stop-opacity="0"/>
+          </radialGradient>
+
+          <!-- Chest body — warm gold tones harmonised with palette -->
+          <linearGradient id="ch-body-front" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%"   stop-color="#F5DFA0"/>
+            <stop offset="55%"  stop-color="#E8C07A"/>
+            <stop offset="100%" stop-color="#C99048"/>
+          </linearGradient>
+          <linearGradient id="ch-body-right" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%"   stop-color="#C99048"/>
+            <stop offset="100%" stop-color="#9E6E2A"/>
+          </linearGradient>
+          <linearGradient id="ch-body-top" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%"   stop-color="#F5DFA0"/>
+            <stop offset="100%" stop-color="#D4A860"/>
+          </linearGradient>
+
+          <!-- Chest lid -->
+          <linearGradient id="ch-lid-front" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%"   stop-color="#FBF0CC"/>
+            <stop offset="55%"  stop-color="#F2D49B"/>
+            <stop offset="100%" stop-color="#DEB86A"/>
+          </linearGradient>
+          <linearGradient id="ch-lid-right" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%"   stop-color="#D4A860"/>
+            <stop offset="100%" stop-color="#9E6E2A"/>
+          </linearGradient>
+          <linearGradient id="ch-lid-top" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%"   stop-color="#FBF0CC"/>
+            <stop offset="100%" stop-color="#D4A860"/>
+          </linearGradient>
+
+          <!-- Metal bands — lilac/purple matching site palette -->
+          <linearGradient id="ch-band" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%"   stop-color="#DCCFF8"/>
+            <stop offset="50%"  stop-color="#C9B8F0"/>
+            <stop offset="100%" stop-color="#B59FE3"/>
+          </linearGradient>
+          <linearGradient id="ch-band-right" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%"   stop-color="#B59FE3"/>
+            <stop offset="100%" stop-color="#9F86C9"/>
+          </linearGradient>
+
+          <!-- Lock / clasp -->
+          <radialGradient id="ch-lock" cx="35%" cy="32%" r="68%">
+            <stop offset="0%"   stop-color="#FFFAE8"/>
+            <stop offset="55%"  stop-color="#F2D49B"/>
+            <stop offset="100%" stop-color="#C99048"/>
+          </radialGradient>
+
+          <!-- Interior warm glow -->
+          <radialGradient id="ch-interior" cx="50%" cy="45%" r="65%">
+            <stop offset="0%"   stop-color="#FFFBF2"/>
+            <stop offset="35%"  stop-color="#FFF0D5" stop-opacity=".92"/>
+            <stop offset="70%"  stop-color="#F8D3BC" stop-opacity=".68"/>
+            <stop offset="100%" stop-color="#C9B8F0" stop-opacity=".25"/>
+          </radialGradient>
+          <radialGradient id="ch-interior-deep" cx="50%" cy="80%" r="60%">
+            <stop offset="0%"   stop-color="#2B2233" stop-opacity=".18"/>
+            <stop offset="100%" stop-color="#2B2233" stop-opacity="0"/>
+          </radialGradient>
+
+          <!-- Light ray (gold, fades to transparent at tip) -->
+          <linearGradient id="ch-ray" x1="0%" y1="100%" x2="0%" y2="0%">
+            <stop offset="0%"   stop-color="#FFF8E0" stop-opacity=".88"/>
+            <stop offset="60%"  stop-color="#F2D49B" stop-opacity=".35"/>
+            <stop offset="100%" stop-color="#F2D49B" stop-opacity="0"/>
+          </linearGradient>
+
+          <!-- Sweep beam -->
+          <linearGradient id="ch-sweep-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%"   stop-color="white" stop-opacity="0"/>
+            <stop offset="35%"  stop-color="white" stop-opacity=".20"/>
+            <stop offset="55%"  stop-color="white" stop-opacity=".24"/>
+            <stop offset="100%" stop-color="white" stop-opacity="0"/>
+          </linearGradient>
+
+          <!-- Coin -->
+          <radialGradient id="ch-coin" cx="34%" cy="28%" r="72%">
+            <stop offset="0%"   stop-color="#FFEFC0"/>
+            <stop offset="55%"  stop-color="#F2D49B"/>
+            <stop offset="100%" stop-color="#C99048"/>
+          </radialGradient>
+
+          <!-- ---- Item gradients (site-style pastel) ---- -->
+          <!-- Surface laptop screen -->
+          <linearGradient id="ch-lap-screen" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%"   stop-color="#F3E7EE"/>
+            <stop offset="100%" stop-color="#C9B8F0"/>
+          </linearGradient>
+          <radialGradient id="ch-lap-glow" cx="32%" cy="28%" r="72%">
+            <stop offset="0%"   stop-color="#ffffff" stop-opacity=".58"/>
+            <stop offset="55%"  stop-color="#C9B8F0" stop-opacity=".18"/>
+            <stop offset="100%" stop-color="#B59FE3" stop-opacity="0"/>
+          </radialGradient>
+          <linearGradient id="ch-lap-kbd" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%"   stop-color="#F8D3BC"/>
+            <stop offset="100%" stop-color="#F2C4A8"/>
+          </linearGradient>
+          <linearGradient id="ch-lap-kbd-front" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%"   stop-color="#F2C4A8"/>
+            <stop offset="100%" stop-color="#E8A38C"/>
+          </linearGradient>
+
+          <!-- Xbox controller -->
+          <linearGradient id="ch-xbox" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%"   stop-color="#F8CCDD"/>
+            <stop offset="100%" stop-color="#C9B8F0"/>
+          </linearGradient>
+          <radialGradient id="ch-xbox-glow" cx="34%" cy="30%" r="68%">
+            <stop offset="0%"   stop-color="#ffffff" stop-opacity=".42"/>
+            <stop offset="100%" stop-color="#F8CCDD" stop-opacity="0"/>
+          </radialGradient>
+
+          <!-- Hoodie -->
+          <linearGradient id="ch-hoodie" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%"   stop-color="#F8D3BC"/>
+            <stop offset="100%" stop-color="#F2B5D4"/>
+          </linearGradient>
+
+          <!-- Gift card A (warm gold) -->
+          <linearGradient id="ch-card-a" x1="20%" y1="0%" x2="80%" y2="100%">
+            <stop offset="0%"   stop-color="#F5DFA0"/>
+            <stop offset="100%" stop-color="#E8A38C"/>
+          </linearGradient>
+          <!-- Gift card B (lilac) -->
+          <linearGradient id="ch-card-b" x1="20%" y1="0%" x2="80%" y2="100%">
+            <stop offset="0%"   stop-color="#D4C8F8"/>
+            <stop offset="100%" stop-color="#9F86C9"/>
+          </linearGradient>
+
+          <!-- Coffee mug -->
+          <linearGradient id="ch-mug" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%"   stop-color="#F8D3BC"/>
+            <stop offset="100%" stop-color="#E8A38C"/>
+          </linearGradient>
+
+          <!-- Trophy -->
+          <linearGradient id="ch-trophy" x1="20%" y1="0%" x2="80%" y2="100%">
+            <stop offset="0%"   stop-color="#FFFAE8"/>
+            <stop offset="50%"  stop-color="#F2D49B"/>
+            <stop offset="100%" stop-color="#C99048"/>
+          </linearGradient>
+          <radialGradient id="ch-trophy-glow" cx="34%" cy="28%" r="68%">
+            <stop offset="0%"   stop-color="#ffffff" stop-opacity=".62"/>
+            <stop offset="100%" stop-color="#F2D49B" stop-opacity="0"/>
+          </radialGradient>
+
+          <!-- Glow filter for rays -->
+          <filter id="ch-ray-blur" x="-20%" y="-5%" width="140%" height="115%">
+            <feGaussianBlur stdDeviation="3" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <!-- Soft glow filter for interior -->
+          <filter id="ch-glow" x="-25%" y="-25%" width="150%" height="150%">
+            <feGaussianBlur stdDeviation="8" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+
+        <!-- ============================================================
+             SCENE (painted back → front)
+             ============================================================ -->
+
+        <!-- 1. Ground shadow -->
+        <ellipse cx="282" cy="472" rx="220" ry="26" fill="url(#ch-shadow)"/>
+
+        <!-- 2. Light rays (emanate from chest opening, burst upward) -->
+        <g class="chest__rays" filter="url(#ch-ray-blur)">
+          <!-- far-left wide ray -->
+          <polygon points="105,278 72,38 160,278"  fill="url(#ch-ray)" opacity=".50"/>
+          <!-- left ray -->
+          <polygon points="155,278 138,20 208,278" fill="url(#ch-ray)" opacity=".66"/>
+          <!-- centre-left tall ray -->
+          <polygon points="212,278 215,12 262,278" fill="url(#ch-ray)" opacity=".78"/>
+          <!-- centre-right tall ray -->
+          <polygon points="298,278 345,12 350,278" fill="url(#ch-ray)" opacity=".78"/>
+          <!-- right ray -->
+          <polygon points="352,278 422,20 412,278" fill="url(#ch-ray)" opacity=".66"/>
+          <!-- far-right wide ray -->
+          <polygon points="400,278 488,38 455,278" fill="url(#ch-ray)" opacity=".50"/>
+        </g>
+
+        <!-- 3. Interior glow (the light from inside) -->
+        <g class="chest__interior-glow" filter="url(#ch-glow)">
+          <ellipse cx="282" cy="270" rx="196" ry="82" fill="url(#ch-interior)"/>
+        </g>
+
+        <!-- 4. Items group ─ items peek above the chest opening; body covers their bases -->
+        <g class="chest__items">
+
+          <!-- ── Surface Laptop ── (left, cx≈133) -->
+          <g class="chest__item-laptop">
+            <!-- Screen panel (open lid) -->
+            <polygon points="84,192 178,192 178,262 84,262"
+                     fill="url(#ch-lap-screen)"
+                     stroke="#2B2233" stroke-width="1.4" stroke-opacity=".50" stroke-linejoin="round"/>
+            <!-- Screen inner glow -->
+            <polygon points="89,197 173,197 173,257 89,257" fill="url(#ch-lap-glow)"/>
+            <!-- Abstract UI lines on screen -->
+            <rect x="96" y="210" width="58" height="5"  rx="2.5" fill="#B59FE3" opacity=".52"/>
+            <rect x="96" y="220" width="42" height="4"  rx="2"   fill="#D98FC0" opacity=".42"/>
+            <rect x="96" y="229" width="52" height="4"  rx="2"   fill="#B59FE3" opacity=".36"/>
+            <rect x="96" y="238" width="34" height="4"  rx="2"   fill="#C9B8F0" opacity=".28"/>
+            <!-- OC logo hint on screen -->
+            <circle cx="154" cy="240" r="10" fill="none" stroke="#9F86C9" stroke-width="1.2" stroke-opacity=".30"/>
+            <text x="154" y="244" text-anchor="middle" font-family="system-ui,sans-serif"
+                  font-size="8" font-weight="700" fill="#9F86C9" opacity=".35">OC</text>
+            <!-- Keyboard top (parallelogram) -->
+            <polygon points="76,262 182,262 188,272 82,272"
+                     fill="url(#ch-lap-kbd)"
+                     stroke="#2B2233" stroke-width="1.2" stroke-opacity=".46" stroke-linejoin="round"/>
+            <!-- Keyboard front face -->
+            <rect x="82" y="272" width="106" height="11" rx="2"
+                  fill="url(#ch-lap-kbd-front)"
+                  stroke="#2B2233" stroke-width="1.0" stroke-opacity=".42"/>
+            <!-- Screen top-edge highlight -->
+            <line x1="84"  y1="192" x2="178" y2="192"
+                  stroke="rgba(255,255,255,.65)" stroke-width="2.5" stroke-linecap="round"/>
+            <!-- Hinge line -->
+            <line x1="84"  y1="262" x2="178" y2="262"
+                  stroke="#9F86C9" stroke-width="3.2" stroke-opacity=".62" stroke-linecap="round"/>
+          </g>
+
+          <!-- ── Trophy ── (left-centre, cx≈210) -->
+          <g class="chest__item-trophy">
+            <!-- Top star -->
+            <path d="M210,143 L213,151 L221,151 L215,156 L218,165 L210,160 L202,165 L205,156 L199,151 L207,151 Z"
+                  fill="#F2D49B" stroke="#C99048" stroke-width=".75"/>
+            <!-- Cup bowl -->
+            <path d="M186,244 C183,228 180,211 188,184 L196,164 L224,164 L232,184 C240,211 237,228 234,244 Z"
+                  fill="url(#ch-trophy)"
+                  stroke="#2B2233" stroke-width="1.3" stroke-opacity=".50" stroke-linejoin="round"/>
+            <path d="M186,244 C183,228 180,211 188,184 L196,164 L224,164 L232,184 C240,211 237,228 234,244 Z"
+                  fill="url(#ch-trophy-glow)"/>
+            <!-- Left handle -->
+            <path d="M188,188 Q173,205 188,222"
+                  fill="none" stroke="#E0B870" stroke-width="9" stroke-linecap="round"/>
+            <path d="M188,188 Q173,205 188,222"
+                  fill="none" stroke="#2B2233" stroke-width="1.2" stroke-opacity=".38" stroke-linecap="round"/>
+            <!-- Right handle -->
+            <path d="M232,188 Q247,205 232,222"
+                  fill="none" stroke="#E0B870" stroke-width="9" stroke-linecap="round"/>
+            <path d="M232,188 Q247,205 232,222"
+                  fill="none" stroke="#2B2233" stroke-width="1.2" stroke-opacity=".38" stroke-linecap="round"/>
+            <!-- Stem -->
+            <rect x="206" y="244" width="8" height="22" rx="3"
+                  fill="#D4A860" stroke="#2B2233" stroke-width="1.0" stroke-opacity=".42"/>
+            <!-- Base plate -->
+            <rect x="194" y="264" width="32" height="11" rx="4"
+                  fill="#D4A860" stroke="#2B2233" stroke-width="1.1" stroke-opacity=".46"/>
+            <!-- Base top highlight -->
+            <line x1="195" y1="265" x2="225" y2="265"
+                  stroke="rgba(255,255,255,.55)" stroke-width="1.5" stroke-linecap="round"/>
+            <!-- Cup rim highlight -->
+            <line x1="196" y1="164" x2="224" y2="164"
+                  stroke="rgba(255,255,255,.60)" stroke-width="2" stroke-linecap="round"/>
+          </g>
+
+          <!-- ── Hoodie pile ── (centre, cx≈278) -->
+          <g class="chest__item-hoodie">
+            <!-- Hood pouch above body -->
+            <path d="M250,232 C253,218 263,213 278,213 C293,213 303,218 306,232"
+                  fill="url(#ch-hoodie)"
+                  stroke="#2B2233" stroke-width="1.2" stroke-opacity=".40"/>
+            <!-- Main body -->
+            <rect x="222" y="230" width="112" height="54" rx="14"
+                  fill="url(#ch-hoodie)"
+                  stroke="#2B2233" stroke-width="1.3" stroke-opacity=".40"/>
+            <!-- Fold crease -->
+            <path d="M232,258 C255,252 302,252 323,258"
+                  fill="none" stroke="#E8A38C" stroke-width="1.2" stroke-opacity=".50"/>
+            <!-- Front pocket -->
+            <rect x="263" y="258" width="30" height="20" rx="8"
+                  fill="none" stroke="#E8A38C" stroke-width="1.0" stroke-opacity=".40"/>
+            <!-- Sleeve hint left -->
+            <path d="M222,238 C208,236 204,248 212,260 L222,260"
+                  fill="url(#ch-hoodie)"
+                  stroke="#2B2233" stroke-width="1.1" stroke-opacity=".35"/>
+          </g>
+
+          <!-- ── Gift cards ── (centre-right, cx≈328) -->
+          <g class="chest__item-cards">
+            <!-- Card 1 back (warm gold, rotated -8°) -->
+            <g transform="rotate(-8,326,252)">
+              <rect x="291" y="230" width="70" height="48" rx="6"
+                    fill="url(#ch-card-a)"
+                    stroke="#2B2233" stroke-width="1.2" stroke-opacity=".44"/>
+              <rect x="291" y="230" width="70" height="48" rx="6" fill="rgba(255,255,255,.12)"/>
+              <text x="326" y="258" text-anchor="middle"
+                    font-family="system-ui,sans-serif" font-size="13" font-weight="700"
+                    fill="rgba(43,34,51,.35)">OC</text>
+            </g>
+            <!-- Card 2 front (lilac, rotated +5°) -->
+            <g transform="rotate(5,330,256)">
+              <rect x="297" y="236" width="70" height="48" rx="6"
+                    fill="url(#ch-card-b)"
+                    stroke="#2B2233" stroke-width="1.2" stroke-opacity=".44"/>
+              <rect x="297" y="236" width="70" height="48" rx="6" fill="rgba(255,255,255,.10)"/>
+              <text x="332" y="264" text-anchor="middle"
+                    font-family="system-ui,sans-serif" font-size="13" font-weight="700"
+                    fill="rgba(247,239,233,.55)">OC</text>
+            </g>
+          </g>
+
+          <!-- ── Coffee mug ── (right, cx≈452) -->
+          <g class="chest__item-mug">
+            <!-- Steam wisps -->
+            <path class="chest__steam"
+                  d="M443,218 C445,210 441,202 443,193"
+                  fill="none" stroke="#F8D3BC" stroke-width="2.2" stroke-linecap="round" opacity=".70"/>
+            <path class="chest__steam chest__steam--b"
+                  d="M456,215 C458,206 454,197 456,188"
+                  fill="none" stroke="#F8D3BC" stroke-width="2.2" stroke-linecap="round" opacity=".60"/>
+            <path class="chest__steam chest__steam--c"
+                  d="M469,218 C471,210 467,202 469,193"
+                  fill="none" stroke="#F8D3BC" stroke-width="2.2" stroke-linecap="round" opacity=".70"/>
+            <!-- Mug body -->
+            <rect x="430" y="224" width="52" height="56" rx="10"
+                  fill="url(#ch-mug)"
+                  stroke="#2B2233" stroke-width="1.2" stroke-opacity=".46"/>
+            <!-- Handle -->
+            <path d="M482,234 C501,234 501,264 482,264"
+                  fill="none" stroke="#E8A38C" stroke-width="9" stroke-linecap="round"/>
+            <path d="M482,234 C501,234 501,264 482,264"
+                  fill="none" stroke="#2B2233" stroke-width="1.2" stroke-opacity=".32" stroke-linecap="round"/>
+            <!-- Rim ellipse -->
+            <ellipse cx="456" cy="226" rx="24" ry="6"
+                     fill="#FAE9C0" stroke="#2B2233" stroke-width=".9" stroke-opacity=".36"/>
+            <!-- Coffee surface -->
+            <ellipse cx="456" cy="230" rx="21" ry="4.5" fill="#C99048" opacity=".40"/>
+            <!-- Top edge highlight -->
+            <line x1="430" y1="224" x2="482" y2="224"
+                  stroke="rgba(255,255,255,.52)" stroke-width="1.5" stroke-linecap="round"/>
+          </g>
+
+          <!-- ── Xbox controller ── (far right, cx≈406) -->
+          <g class="chest__item-xbox">
+            <!-- Grip left (hangs down) -->
+            <ellipse cx="379" cy="257" rx="22" ry="27"
+                     fill="url(#ch-xbox)"
+                     stroke="#2B2233" stroke-width="1.3" stroke-opacity=".48"/>
+            <!-- Grip right -->
+            <ellipse cx="433" cy="257" rx="22" ry="27"
+                     fill="url(#ch-xbox)"
+                     stroke="#2B2233" stroke-width="1.3" stroke-opacity=".48"/>
+            <!-- Main body oval -->
+            <ellipse cx="406" cy="222" rx="50" ry="40"
+                     fill="url(#ch-xbox)"
+                     stroke="#2B2233" stroke-width="1.3" stroke-opacity=".50"/>
+            <!-- Body inner glow -->
+            <ellipse cx="399" cy="214" rx="32" ry="24" fill="url(#ch-xbox-glow)"/>
+            <!-- Left thumbstick -->
+            <circle cx="390" cy="220" r="10"
+                    fill="#B59FE3" stroke="#2B2233" stroke-width=".9" stroke-opacity=".44"/>
+            <circle cx="390" cy="220" r="5" fill="#9F86C9"/>
+            <!-- Right thumbstick -->
+            <circle cx="420" cy="231" r="10"
+                    fill="#B59FE3" stroke="#2B2233" stroke-width=".9" stroke-opacity=".44"/>
+            <circle cx="420" cy="231" r="5" fill="#9F86C9"/>
+            <!-- ABXY buttons -->
+            <circle cx="420" cy="208" r="5" fill="#F2B5D4" stroke="#2B2233" stroke-width=".7" stroke-opacity=".40"/>
+            <circle cx="427" cy="215" r="5" fill="#F2D49B" stroke="#2B2233" stroke-width=".7" stroke-opacity=".40"/>
+            <circle cx="420" cy="222" r="5" fill="#A8E8C0" stroke="#2B2233" stroke-width=".7" stroke-opacity=".40"/>
+            <circle cx="413" cy="215" r="5" fill="#A0C8F0" stroke="#2B2233" stroke-width=".7" stroke-opacity=".40"/>
+            <!-- Centre Xbox/guide button -->
+            <circle cx="406" cy="205" r="9"
+                    fill="#F3E7EE" stroke="#2B2233" stroke-width="1.0" stroke-opacity=".44"/>
+            <circle cx="406" cy="205" r="5.5" fill="#C9B8F0"/>
+            <!-- Top arc highlight -->
+            <path d="M362,215 Q406,196 450,215"
+                  fill="none" stroke="rgba(255,255,255,.50)" stroke-width="2" stroke-linecap="round"/>
+          </g>
+
+          <!-- ── Stickers (scattered) ── -->
+          <!-- Hex OC sticker -->
+          <polygon points="108,252 116,244 126,244 134,252 126,260 116,260"
+                   fill="#C9B8F0" stroke="#2B2233" stroke-width="1.0" stroke-opacity=".44"/>
+          <text x="121" y="256" text-anchor="middle"
+                font-family="system-ui,sans-serif" font-size="7" font-weight="700"
+                fill="#2B2233" opacity=".55">OC</text>
+          <!-- Pink star sticker -->
+          <path d="M353,244 L356,237 L359,244 L366,244 L360,248 L362,255 L355,250 L348,255 L350,248 L344,244 Z"
+                fill="#F2B5D4" stroke="#2B2233" stroke-width=".8" stroke-opacity=".38"/>
+          <!-- Gold diamond sticker -->
+          <polygon points="463,248 470,241 477,248 470,255"
+                   fill="#F2D49B" stroke="#2B2233" stroke-width=".8" stroke-opacity=".38"/>
+
+        </g><!-- /items -->
+
+        <!-- 5. Chest BODY (always visible, painted over bases of items below opening) -->
+        <g class="chest__body">
+          <!-- Interior depth shadow (inside the opening) -->
+          <polygon points="80,280 440,280 500,232 148,232"
+                   fill="url(#ch-interior-deep)" opacity=".5"/>
+          <!-- Body right face -->
+          <polygon points="440,280 500,232 500,355 440,402"
+                   fill="url(#ch-body-right)"
+                   stroke="#2B2233" stroke-width="1.5" stroke-opacity=".55" stroke-linejoin="round"/>
+          <!-- Body front face -->
+          <polygon points="80,280 440,280 440,402 80,402"
+                   fill="url(#ch-body-front)"
+                   stroke="#2B2233" stroke-width="1.5" stroke-opacity=".55" stroke-linejoin="round"/>
+          <!-- Body top rim/collar -->
+          <polygon points="80,272 440,272 500,224 148,224"
+                   fill="url(#ch-body-top)"
+                   stroke="#2B2233" stroke-width="1.5" stroke-opacity=".55" stroke-linejoin="round"/>
+
+          <!-- Horizontal metal band — front (lilac, ~mid body) -->
+          <rect x="80" y="326" width="360" height="10" rx="2"
+                fill="url(#ch-band)"
+                stroke="#2B2233" stroke-width=".8" stroke-opacity=".34"/>
+          <!-- Band — right face extension -->
+          <polygon points="440,326 500,282 500,292 440,336"
+                   fill="url(#ch-band-right)"
+                   stroke="#2B2233" stroke-width=".8" stroke-opacity=".34"/>
+
+          <!-- Second band — lower front -->
+          <rect x="80" y="375" width="360" height="8" rx="2"
+                fill="url(#ch-band)"
+                stroke="#2B2233" stroke-width=".8" stroke-opacity=".34"/>
+          <polygon points="440,375 500,331 500,339 440,383"
+                   fill="url(#ch-band-right)"
+                   stroke="#2B2233" stroke-width=".8" stroke-opacity=".34"/>
+
+          <!-- Front-face lock / clasp -->
+          <rect x="243" y="296" width="34" height="30" rx="6"
+                fill="url(#ch-lock)"
+                stroke="#2B2233" stroke-width="1.2" stroke-opacity=".54"/>
+          <rect x="250" y="303" width="20" height="16" rx="4"
+                fill="#C99048"
+                stroke="#2B2233" stroke-width=".8" stroke-opacity=".40"/>
+
+          <!-- Corner rivets on body -->
+          <circle cx="92"  cy="286" r="3.5" fill="url(#ch-lock)" stroke="#2B2233" stroke-width=".8" stroke-opacity=".40"/>
+          <circle cx="428" cy="286" r="3.5" fill="url(#ch-lock)" stroke="#2B2233" stroke-width=".8" stroke-opacity=".40"/>
+          <circle cx="92"  cy="395" r="3.5" fill="url(#ch-lock)" stroke="#2B2233" stroke-width=".8" stroke-opacity=".40"/>
+          <circle cx="428" cy="395" r="3.5" fill="url(#ch-lock)" stroke="#2B2233" stroke-width=".8" stroke-opacity=".40"/>
+
+          <!-- Top-rim highlight (bright white edge) -->
+          <line x1="80"  y1="272" x2="440" y2="272"
+                stroke="rgba(255,255,255,.62)" stroke-width="2.5" stroke-linecap="round"/>
+          <line x1="80"  y1="272" x2="148" y2="224"
+                stroke="rgba(255,255,255,.34)" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="440" y1="272" x2="500" y2="224"
+                stroke="rgba(255,255,255,.34)" stroke-width="1.5" stroke-linecap="round"/>
+        </g><!-- /body -->
+
+        <!-- 6. LID GROUP (animated via GSAP; starts closed with html.js, open by default) -->
+        <g id="chestLid">
+          <!-- Lid right face -->
+          <polygon points="440,180 500,132 500,224 440,272"
+                   fill="url(#ch-lid-right)"
+                   stroke="#2B2233" stroke-width="1.5" stroke-opacity=".55" stroke-linejoin="round"/>
+          <!-- Lid front face -->
+          <polygon points="80,180 440,180 440,272 80,272"
+                   fill="url(#ch-lid-front)"
+                   stroke="#2B2233" stroke-width="1.5" stroke-opacity=".55" stroke-linejoin="round"/>
+          <!-- Lid top face -->
+          <polygon points="80,180 440,180 500,132 148,132"
+                   fill="url(#ch-lid-top)"
+                   stroke="#2B2233" stroke-width="1.5" stroke-opacity=".55" stroke-linejoin="round"/>
+
+          <!-- Lid metal band — front -->
+          <rect x="80" y="218" width="360" height="10" rx="2"
+                fill="url(#ch-band)"
+                stroke="#2B2233" stroke-width=".8" stroke-opacity=".34"/>
+          <polygon points="440,218 500,174 500,184 440,228"
+                   fill="url(#ch-band-right)"
+                   stroke="#2B2233" stroke-width=".8" stroke-opacity=".34"/>
+
+          <!-- Hinge knobs (3 along back edge) -->
+          <circle cx="172" cy="230" r="5.5"
+                  fill="url(#ch-lock)" stroke="#2B2233" stroke-width="1" stroke-opacity=".44"/>
+          <circle cx="314" cy="216" r="5.5"
+                  fill="url(#ch-lock)" stroke="#2B2233" stroke-width="1" stroke-opacity=".44"/>
+          <circle cx="448" cy="226" r="5.5"
+                  fill="url(#ch-lock)" stroke="#2B2233" stroke-width="1" stroke-opacity=".44"/>
+
+          <!-- Corner rivets on lid -->
+          <circle cx="92"  cy="186" r="3.5" fill="url(#ch-lock)" stroke="#2B2233" stroke-width=".8" stroke-opacity=".40"/>
+          <circle cx="428" cy="186" r="3.5" fill="url(#ch-lock)" stroke="#2B2233" stroke-width=".8" stroke-opacity=".40"/>
+
+          <!-- Lid top-edge highlight -->
+          <line x1="80"  y1="180" x2="440" y2="180"
+                stroke="rgba(255,255,255,.65)" stroke-width="2.5" stroke-linecap="round"/>
+          <line x1="80"  y1="180" x2="148" y2="132"
+                stroke="rgba(255,255,255,.32)" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="440" y1="180" x2="500" y2="132"
+                stroke="rgba(255,255,255,.32)" stroke-width="1.5" stroke-linecap="round"/>
+
+          <!-- Subtle sheen on lid front face -->
+          <polygon points="80,180 270,180 305,272 80,272" fill="rgba(255,255,255,.06)"/>
+        </g><!-- /lid -->
+
+        <!-- 7. Sweeping light beams (CSS animated) -->
+        <rect class="chest__sweep" x="0" y="100"
+              width="175" height="420" fill="url(#ch-sweep-grad)"/>
+        <rect class="chest__sweep chest__sweep--b" x="0" y="120"
+              width="120" height="350" fill="url(#ch-sweep-grad)" opacity=".70"/>
+
+        <!-- 8. Sparkle stars + glints (CSS animated) -->
+        <g class="chest__sparkles">
+          <!-- 4-pointed stars above chest -->
+          <path class="chest__spark"
+                d="M282,90 L285.5,100 L296,103 L285.5,106 L282,116 L278.5,106 L268,103 L278.5,100 Z"
+                fill="#F2D49B"/>
+          <path class="chest__spark chest__spark--b"
+                d="M178,118 L180.5,126 L189,129 L180.5,132 L178,140 L175.5,132 L167,129 L175.5,126 Z"
+                fill="#F8CCDD"/>
+          <path class="chest__spark chest__spark--c"
+                d="M392,103 L394.5,111 L403,114 L394.5,117 L392,125 L389.5,117 L381,114 L389.5,111 Z"
+                fill="#C9B8F0"/>
+          <path class="chest__spark chest__spark--d"
+                d="M106,175 L108,182 L115,184 L108,186 L106,193 L104,186 L97,184 L104,182 Z"
+                fill="#F2D49B" opacity=".82"/>
+          <path class="chest__spark chest__spark--e"
+                d="M466,165 L468,172 L475,174 L468,176 L466,183 L464,176 L457,174 L464,172 Z"
+                fill="#F8CCDD" opacity=".82"/>
+
+          <!-- Twinkle glints (small bright circles) -->
+          <circle class="chest__glint"     cx="234" cy="75" r="3.5" fill="rgba(255,248,220,.95)"/>
+          <circle class="chest__glint chest__glint--b" cx="352" cy="65" r="2.8" fill="rgba(255,248,220,.95)"/>
+          <circle class="chest__glint chest__glint--c" cx="148" cy="150" r="2.2" fill="rgba(255,248,220,.80)"/>
+          <circle class="chest__glint chest__glint--d" cx="442" cy="143" r="2.2" fill="rgba(255,248,220,.80)"/>
+          <circle class="chest__glint chest__glint--e" cx="282" cy="46"  r="2.0" fill="rgba(255,248,220,.75)"/>
+        </g>
+
+        <!-- 9. Floating coins (GSAP animated) -->
+        <g class="chest__coins" aria-hidden="true">
+          <g class="chest__coin">
+            <circle cx="196" cy="272" r="10"  fill="url(#ch-coin)" stroke="#C99048" stroke-width="1.2"/>
+            <text x="196" y="276" text-anchor="middle" font-family="system-ui,sans-serif"
+                  font-size="10" font-weight="700" fill="#9E6E2A">$</text>
+          </g>
+          <g class="chest__coin">
+            <circle cx="246" cy="269" r="8"   fill="url(#ch-coin)" stroke="#C99048" stroke-width="1.0"/>
+          </g>
+          <g class="chest__coin">
+            <circle cx="296" cy="267" r="10"  fill="url(#ch-coin)" stroke="#C99048" stroke-width="1.2"/>
+            <text x="296" y="271" text-anchor="middle" font-family="system-ui,sans-serif"
+                  font-size="10" font-weight="700" fill="#9E6E2A">$</text>
+          </g>
+          <g class="chest__coin">
+            <circle cx="346" cy="270" r="8"   fill="url(#ch-coin)" stroke="#C99048" stroke-width="1.0"/>
+          </g>
+          <g class="chest__coin">
+            <circle cx="393" cy="272" r="10"  fill="url(#ch-coin)" stroke="#C99048" stroke-width="1.2"/>
+            <text x="393" y="276" text-anchor="middle" font-family="system-ui,sans-serif"
+                  font-size="10" font-weight="700" fill="#9E6E2A">$</text>
+          </g>
+        </g>
+
+      </svg>
+    </div><!-- /stage -->
+
+  </div><!-- /wrap -->
+
+</section>
+
+  <section id="finale" class="finale" aria-label="OneCompute — closing brand card">
+  <div class="finale__halo" aria-hidden="true"></div>
+  <div class="finale__inner">
+    <img class="finale__mark" src="onecompute-mark.png" width="130" height="130"
+         alt="OneCompute mark — a hex honeycomb cradling a C">
+    <p class="finale__word"><b>One</b><span>Compute</span></p>
+    <p class="finale__tag">Every idle cycle, put to work.</p>
+  </div>
+</section>
+
+<style>
+/* ===== Finale — luminous cream brand closing card (tonal inverse of the dark signoff) ===== */
+.finale {
+  position: relative;
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  text-align: center;
+  background: var(--cream, #F7EFE9);
+}
+
+/* Soft multi-layer pastel halo — lilac + pink + peach at rest, blooms on reveal */
+.finale__halo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(1100px, 140vw);
+  height: min(800px, 110vh);
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(50% 50% at 48% 44%, rgba(201,184,240,.52) 0%, rgba(201,184,240,0) 60%),
+    radial-gradient(44% 44% at 54% 58%, rgba(242,181,212,.44) 0%, rgba(242,181,212,0) 58%),
+    radial-gradient(38% 38% at 52% 46%, rgba(248,211,188,.36) 0%, rgba(248,211,188,0) 52%);
+  filter: blur(46px);
+}
+
+.finale__inner {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(20px, 3vh, 36px);
+  padding: clamp(48px, 10vh, 110px) 24px;
+}
+
+/* Logo: CSS shine loop — works with or without JS/GSAP */
+.finale__mark {
+  width: clamp(88px, 11vw, 130px);
+  height: auto;
+  display: block;
+  filter: drop-shadow(0 10px 36px rgba(178,61,128,.30));
+  animation: finale-shine 3.8s ease-in-out infinite;
+}
+
+@keyframes finale-shine {
+  0%, 100% { filter: drop-shadow(0 10px 36px rgba(178,61,128,.30)); }
+  50%       { filter: drop-shadow(0 18px 58px rgba(178,61,128,.64)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .finale__mark { animation: none; }
+}
+
+/* Wordmark — One=plum, Compute=magenta-ink; solid colors, NO gradient clip */
+.finale__word {
+  font-family: var(--serif, "DM Serif Display", "Iowan Old Style", Georgia, serif);
+  font-weight: 400;
+  line-height: .96;
+  letter-spacing: -.02em;
+  font-size: clamp(48px, 9vw, 92px);
+  margin: 0;
+}
+
+.finale__word b {
+  font-weight: 400;
+  color: var(--plum, #2B2233); /* contrast ≥12.5:1 on cream */
+}
+
+.finale__word span {
+  color: var(--magenta-ink, #b23d80); /* large text ≥3:1 (≈4.5:1 on cream) */
+}
+
+/* Tagline — serif italic, ink on cream: contrast ≥10:1 */
+.finale__tag {
+  font-family: var(--serif, "DM Serif Display", "Iowan Old Style", Georgia, serif);
+  font-style: italic;
+  color: var(--ink, #3A2E45);
+  font-size: clamp(18px, 2.8vw, 30px);
+  line-height: 1.28;
+  max-width: 22ch;
+  text-wrap: balance;
+  margin: 0;
+}
+
+/* === Entrance: content VISIBLE by default.
+   The hidden-start transition ONLY engages when html.js is present (JS confirmed running),
+   so headless renders / hidden tabs always ship the logo — never a blank section. === */
+html.js .finale__inner {
+  opacity: 0;
+  transform: translateY(26px) scale(.92);
+  transition: opacity .9s var(--ease-out, cubic-bezier(.22,1,.36,1)),
+              transform 1s var(--ease-out, cubic-bezier(.22,1,.36,1));
+}
+
+html.js .finale__inner.in {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.js .finale__inner { opacity: 1; transform: none; transition: none; }
+}
+</style>
+
+<!-- ===== Cinema (routing) — moved to follow the launch journey; closes the cinematic arc ===== -->
   <section class="cinema" id="routing" aria-label="How idle compute is reclaimed">
     <div class="cinema__stage">
       <canvas class="cinema__canvas" aria-hidden="true"></canvas>
@@ -2292,6 +4493,662 @@ void main(){
 </script>
 <script src="vendor/gsap/gsap.min.js"></script>
 <script src="vendor/gsap/ScrollTrigger.min.js"></script>
+<!-- new-section controllers (calc, ghdive, chest, finale) -->
+<script>
+(function () {
+  "use strict";
+
+  /* ── Guard ──────────────────────────────────────────────────────── */
+  if (!window.gsap) return; // graceful no-op if GSAP not loaded
+
+  var section = document.getElementById("calc");
+  if (!section) return;
+
+  var REDUCE   = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var mqMobile = window.matchMedia ? window.matchMedia("(max-width:760px)") : { matches: false };
+  var hasGsap  = !!(window.gsap && window.ScrollTrigger);
+
+  /* ── DOM refs ───────────────────────────────────────────────────── */
+  var stage    = section.querySelector(".calc__stage");
+  var bg       = section.querySelector(".calc__bg");
+  var canvas   = section.querySelector(".calc__canvas");
+  var vstage   = section.querySelector(".calc__vstage");
+  var cards    = vstage ? [].slice.call(vstage.querySelectorAll(".calc__card")) : [];
+  var climax   = section.querySelector(".calc__climax");
+  var tallyWrap= section.querySelector(".calc__tally");
+  var tallyNum = section.querySelector(".calc__tally-num");
+
+  /* ── Canvas context ─────────────────────────────────────────────── */
+  var ctx = (canvas && canvas.getContext) ? canvas.getContext("2d") : null;
+  var W = 0, H = 0;
+
+  function resizeCanvas() {
+    if (!canvas || !stage) return;
+    var r = stage.getBoundingClientRect();
+    W = Math.round(r.width  || window.innerWidth);
+    H = Math.round(r.height || window.innerHeight);
+    canvas.width  = W;
+    canvas.height = H;
+  }
+
+  /* ── Pre-seeded drops (deterministic, no Math.random) ──────────── */
+  var DROP_PALETTE = [
+    [201, 184, 240], // --lilac
+    [181, 159, 227], // --purple
+    [159, 134, 201], // --mauve
+    [242, 181, 212], // --pink
+    [248, 204, 221], // --blush
+    [248, 211, 188], // --peach
+    [232, 163, 140], // --coral
+  ];
+
+  var NDROPS = 18;
+  var drops = [];
+  for (var i = 0; i < NDROPS; i++) {
+    // Use sine-based pseudo-random to avoid Math.random() (deterministic across refreshes)
+    var s1 = (Math.sin(i * 2.3456 + 1.700) + 1) / 2;
+    var s2 = (Math.sin(i * 3.7120 + 0.900) + 1) / 2;
+    var s3 = (Math.sin(i * 1.2340 + 4.100) + 1) / 2;
+    var s4 = (Math.sin(i * 5.6780 + 2.300) + 1) / 2;
+    drops.push({
+      x:      0.05 + s1 * 0.90,          // fractional x across canvas width
+      startT: 0.02 + s2 * 0.68,          // when this drop starts falling (0-1 progress)
+      dur:    0.062 + s3 * 0.048,        // fall duration
+      r:      3.5  + s4 * 4.5,           // drop radius (px)
+      ci:     Math.floor(s4 * DROP_PALETTE.length), // color index
+    });
+  }
+
+  /* Ripple metadata derived from drops — each drop spawns a ripple at landing */
+  var ripples = drops.map(function (d, i) {
+    return {
+      x:     d.x,
+      landT: d.startT + d.dur,
+      maxR:  28 + (i % 5) * 9,
+    };
+  });
+
+  /* ── Canvas drawing ─────────────────────────────────────────────── */
+  function drawScene(p) {
+    if (!ctx || W === 0) return;
+    ctx.clearRect(0, 0, W, H);
+
+    /* ─ Lake fill ─ */
+    var fillFrac  = Math.min(1, p / 0.84);
+    var easedFill = fillFrac * fillFrac * (3 - 2 * fillFrac); // smoothstep
+    var lakeH     = H * 0.62 * easedFill;
+    var lakeSurfY = H - lakeH;
+    var tWave     = p * 28; // wave animation time (progress-driven, not real time)
+
+    if (lakeH > 2) {
+      /* wave profile helper */
+      function waveY(x) {
+        var wx = x / W;
+        return lakeSurfY
+          + Math.sin(wx * Math.PI * 3.8 + tWave)        * (2 + easedFill * 3)
+          + Math.sin(wx * Math.PI * 7.3 - tWave * 1.35) * (1.2 + easedFill * 2);
+      }
+
+      /* Lake body fill */
+      ctx.beginPath();
+      ctx.moveTo(0, H);
+      for (var x = 0; x <= W; x += 2) ctx.lineTo(x, waveY(x));
+      ctx.lineTo(W, H);
+      ctx.closePath();
+
+      var grad = ctx.createLinearGradient(0, lakeSurfY, 0, H);
+      grad.addColorStop(0.00, "rgba(201,184,240," + (0.46 + easedFill * 0.10) + ")"); // lilac surface
+      grad.addColorStop(0.20, "rgba(181,159,227," + (0.56 + easedFill * 0.08) + ")"); // purple
+      grad.addColorStop(0.55, "rgba(159,134,201," + (0.52 + easedFill * 0.06) + ")"); // mauve
+      grad.addColorStop(1.00, "rgba(120,100,168," + (0.40 + easedFill * 0.06) + ")"); // deep
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      /* Specular shimmer at surface */
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(0, waveY(0));
+      for (var xw = 2; xw <= W; xw += 2) ctx.lineTo(xw, waveY(xw));
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "rgba(255,255,255," + (0.22 * easedFill) + ")";
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    /* ─ Falling drops ─ */
+    drops.forEach(function (d) {
+      if (p < d.startT) return;
+      var frac = Math.min(1, (p - d.startT) / d.dur);
+      if (frac >= 1) return; // already landed — rendered as ripple
+
+      var startY = 16 + d.r;
+      var endY   = lakeSurfY - d.r;
+      if (endY < startY) endY = startY; // lake not yet high enough — clip at horizon
+      var dropX  = d.x * W;
+      var dropY  = startY + (endY - startY) * frac;
+      var c      = DROP_PALETTE[d.ci];
+
+      /* Glow halo */
+      var gr = d.r * 2.6;
+      var glow = ctx.createRadialGradient(dropX, dropY, 0, dropX, dropY, gr);
+      var glowA = 0.28 * (1 - frac * 0.4);
+      glow.addColorStop(0,   "rgba(" + c[0] + "," + c[1] + "," + c[2] + "," + glowA + ")");
+      glow.addColorStop(1,   "rgba(" + c[0] + "," + c[1] + "," + c[2] + ",0)");
+      ctx.beginPath();
+      ctx.arc(dropX, dropY, gr, 0, Math.PI * 2);
+      ctx.fillStyle = glow;
+      ctx.fill();
+
+      /* Drop body */
+      ctx.beginPath();
+      ctx.arc(dropX, dropY, d.r, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(" + c[0] + "," + c[1] + "," + c[2] + ",0.80)";
+      ctx.fill();
+
+      /* Falling tail (elongated teardrop tip) */
+      if (frac > 0.08) {
+        var tailLen = d.r * 2.0 * frac;
+        var tailGrad = ctx.createLinearGradient(dropX, dropY - tailLen, dropX, dropY);
+        tailGrad.addColorStop(0, "rgba(" + c[0] + "," + c[1] + "," + c[2] + ",0)");
+        tailGrad.addColorStop(1, "rgba(" + c[0] + "," + c[1] + "," + c[2] + ",0.44)");
+        ctx.beginPath();
+        ctx.moveTo(dropX - d.r * 0.28, dropY - tailLen);
+        ctx.lineTo(dropX + d.r * 0.28, dropY - tailLen);
+        ctx.lineTo(dropX + d.r * 0.12, dropY);
+        ctx.lineTo(dropX - d.r * 0.12, dropY);
+        ctx.closePath();
+        ctx.fillStyle = tailGrad;
+        ctx.fill();
+      }
+    });
+
+    /* ─ Ripples at lake surface ─ */
+    ripples.forEach(function (rip, i) {
+      if (p < rip.landT) return;
+      var rPhase = (p - rip.landT) / 0.09;
+      if (rPhase >= 1) return;
+
+      var rx = rip.x * W;
+      var ry = lakeSurfY; // always at current lake surface
+
+      for (var ring = 0; ring < 2; ring++) {
+        var rp = Math.max(0, rPhase - ring * 0.14);
+        if (rp <= 0) continue;
+        var ringR  = rp * rip.maxR;
+        var alphaR = (1 - rp) * 0.32;
+        if (alphaR < 0.01) continue;
+        ctx.beginPath();
+        ctx.arc(rx, ry, ringR, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(255,255,255," + alphaR + ")";
+        ctx.lineWidth   = 1.0 + (1 - rp) * 0.8;
+        ctx.stroke();
+      }
+    });
+  }
+
+  /* ── Running tally: 0 → 9.45 ExaOPS as progress 0.05 → 0.82 ──── */
+  function updateTally(p) {
+    /* tally fade-in */
+    if (tallyWrap) {
+      var fi = Math.max(0, Math.min(1, (p - 0.025) / 0.04));
+      tallyWrap.style.opacity = fi.toString();
+    }
+    if (!tallyNum) return;
+    var tp = Math.max(0, Math.min(1, (p - 0.05) / 0.77));
+    /* ease-in-out: slow start, fast mid, ease out */
+    var et = tp < 0.5 ? 2 * tp * tp : -1 + (4 - 2 * tp) * tp;
+    tallyNum.textContent = (et * 9.45).toFixed(2);
+  }
+
+  /* ── Static / reduced-motion fallback ──────────────────────────── */
+  if (REDUCE || !hasGsap || mqMobile.matches) {
+    if (tallyNum)  tallyNum.textContent = "9.45";
+    if (tallyWrap) tallyWrap.style.opacity = "1";
+    /* Draw final-state canvas if canvas is shown (mobile fallback hides it via CSS) */
+    if (ctx) { resizeCanvas(); drawScene(1.0); }
+    /* Make climax visible */
+    if (climax) { climax.style.opacity = "1"; climax.style.visibility = "visible"; }
+    return;
+  }
+
+  /* ── Cinema mode ─────────────────────────────────────────────────── */
+  gsap.registerPlugin(ScrollTrigger);
+  section.classList.add("is-cinema");
+
+  resizeCanvas();
+
+  /* Initial hidden state for cards and climax
+     (only reached when html.js is present — enforced by CSS .html.js rules) */
+  gsap.set(cards,  { xPercent: -50, yPercent: -50, autoAlpha: 0, scale: 0.72, y: 26, filter: "blur(0px)" });
+  gsap.set(climax, { autoAlpha: 0, y: 28, scale: 0.95 });
+
+  /* ─── Master scrub timeline ─── */
+  var SPACING  = 0.100; // gap between successive card pops
+  var POP_AT0  = 0.040; // first pop
+  var POP_DUR  = 0.052;
+  var MELT_OFF = 0.140; // melt starts this far after the pop
+  var MELT_DUR = 0.058;
+
+  var tl = gsap.timeline({
+    defaults: { ease: "power3.out" },
+    scrollTrigger: {
+      trigger: section,
+      start:   "top top",
+      end:     "bottom bottom",
+      scrub:   true,
+      onUpdate: function (self) {
+        drawScene(self.progress);
+        updateTally(self.progress);
+      },
+    },
+  });
+
+  /* Background color arc: cream → dusty lilac (tension) → warm blush → cream */
+  tl.to(bg, { backgroundColor: "#EDE6F7", duration: 0.14 }, 0.04)
+    .to(bg, { backgroundColor: "#DDD0EF", duration: 0.16 }, 0.24)
+    .to(bg, { backgroundColor: "#D6CAEC", duration: 0.14 }, 0.42)
+    .to(bg, { backgroundColor: "#E2D8F4", duration: 0.12 }, 0.62)
+    .to(bg, { backgroundColor: "#F7EFE9", duration: 0.12 }, 0.86); // resolve to cream
+
+  /* Cards pop → drift → melt */
+  cards.forEach(function (card, i) {
+    var popAt  = POP_AT0 + i * SPACING;
+    var meltAt = popAt + MELT_OFF;
+
+    /* Pop in: gentle scale + rise + fade */
+    tl.fromTo(card,
+      { autoAlpha: 0, scale: 0.72, y: 26, filter: "blur(0px)" },
+      { autoAlpha: 1, scale: 1,    y: 0,  duration: POP_DUR, ease: "back.out(1.4)" },
+      popAt);
+
+    /* Slow natural drift while held */
+    tl.to(card, { y: (i % 2 ? 12 : -12), duration: MELT_OFF, ease: "sine.inOut" }, popAt + POP_DUR);
+
+    /* All cards melt — climax element takes over */
+    tl.to(card,
+      { autoAlpha: 0, scale: 1.07, y: -18, filter: "blur(10px)", duration: MELT_DUR, ease: "power2.in" },
+      meltAt);
+  });
+
+  /* Climax fades in at 70% */
+  tl.to(climax,
+    { autoAlpha: 1, y: 0, scale: 1, duration: 0.12, ease: "power3.out" },
+    0.70);
+
+  /* ─── Resize / refresh ─── */
+  var rz;
+  window.addEventListener("resize", function () {
+    clearTimeout(rz);
+    rz = setTimeout(function () {
+      resizeCanvas();
+      ScrollTrigger.refresh();
+    }, 160);
+  });
+  window.addEventListener("load", function () {
+    resizeCanvas();
+    ScrollTrigger.refresh();
+  });
+
+})();
+</script>
+<script>
+/* controller.js — ghdive section GSAP ScrollTrigger animation
+   Bare IIFE — no <script> wrapper — safe to concatenate or inject.
+   Depends on: window.gsap, window.ScrollTrigger (vendored globally).
+   ------------------------------------------------------------------ */
+(function () {
+  'use strict';
+
+  /* ── reduced-motion gate ─────────────────────────────────────── */
+  var REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (REDUCE) {
+    /* CSS @media block already keeps everything legible — nothing to do */
+    return;
+  }
+
+  /* ── GSAP availability guard ─────────────────────────────────── */
+  if (typeof window.gsap === 'undefined' || typeof window.ScrollTrigger === 'undefined') {
+    /* degrade gracefully: CSS shows everything at full opacity */
+    return;
+  }
+
+  gsap.registerPlugin(ScrollTrigger);
+
+  /* ── element refs ────────────────────────────────────────────── */
+  var section  = document.getElementById('ghdive');
+  if (!section) return;
+
+  var stage    = section.querySelector('.gh__stage');
+  var theVoid  = section.querySelector('.gh__void');
+  var copy     = section.querySelector('.gh__copy');
+  var panel    = section.querySelector('.gh__panel');
+  var cstream  = section.querySelector('.gh__cstream');
+  var diffDel  = section.querySelector('.gh__line--del');
+  var diffAdd  = section.querySelector('.gh__line--add');
+  var cursor   = section.querySelector('.gh__cursor');
+  var commits  = section.querySelectorAll('.gh__ci');
+  var treeActive = section.querySelector('#gh-tree-active');
+
+  /* ── master scrubbed timeline ────────────────────────────────── */
+  var tl = gsap.timeline({
+    scrollTrigger: {
+      trigger: section,
+      start:  'top top',
+      end:    'bottom bottom',
+      scrub:  0.9
+    }
+  });
+
+  /*
+   * Beat map (normalised 0–1 progress of the 320vh scroll track):
+   *
+   *  0.00 – 0.18  Void fades in; copy fades out.
+   *  0.05 – 0.38  Browser panel zooms in (scale .52 → 1, opacity .6 → 1).
+   *  0.30 – 0.45  Tree active-file pulses (scale up then down).
+   *  0.40 – 0.58  Diff lines (del then add) fade in from opacity 0.
+   *  0.50 – 0.78  Commit stream slides in, commits stagger in.
+   *  0.55 – 0.68  Cursor fades in.
+   *  0.82 – 1.00  Void fades back out → cream seam resolved.
+   *
+   * Total timeline duration is treated as 1 unit (ease-out only).
+   */
+
+  var D = 1; /* total normalised duration */
+
+  /* ── Beat 0: void in + copy out ──────────────────────────────── */
+  tl.fromTo(theVoid,
+    { opacity: 0 },
+    { opacity: 1, ease: 'power2.out', duration: D * 0.18 },
+    0
+  );
+  tl.fromTo(copy,
+    { opacity: 1, y: 0 },
+    { opacity: 0, y: -18, ease: 'power2.in', duration: D * 0.14 },
+    0
+  );
+
+  /* ── Beat 1: panel zoom-in (the "dive") ──────────────────────── */
+  tl.fromTo(panel,
+    { scale: 0.52, y: 52, opacity: 0.6 },
+    { scale: 1, y: 0, opacity: 1, ease: 'power3.out', duration: D * 0.34 },
+    D * 0.05
+  );
+
+  /* ── Beat 2: tree active-item pulse ─────────────────────────── */
+  if (treeActive) {
+    tl.fromTo(treeActive,
+      { scale: 1 },
+      { scale: 1.04, ease: 'power2.out', duration: D * 0.05 },
+      D * 0.32
+    );
+    tl.to(treeActive,
+      { scale: 1, ease: 'power2.out', duration: D * 0.05 },
+      D * 0.37
+    );
+  }
+
+  /* ── Beat 3: diff lines reveal ───────────────────────────────── */
+  if (diffDel) {
+    tl.fromTo(diffDel,
+      { opacity: 0, x: -8 },
+      { opacity: 1, x: 0, ease: 'power2.out', duration: D * 0.10 },
+      D * 0.42
+    );
+  }
+  if (diffAdd) {
+    tl.fromTo(diffAdd,
+      { opacity: 0, x: -8 },
+      { opacity: 1, x: 0, ease: 'power2.out', duration: D * 0.10 },
+      D * 0.50
+    );
+  }
+
+  /* ── Beat 4: cursor appears ──────────────────────────────────── */
+  if (cursor) {
+    tl.fromTo(cursor,
+      { opacity: 0 },
+      { opacity: 1, ease: 'power2.out', duration: D * 0.06 },
+      D * 0.55
+    );
+  }
+
+  /* ── Beat 5: commit stream slides in ────────────────────────── */
+  if (cstream) {
+    tl.fromTo(cstream,
+      { opacity: 0, x: 22 },
+      { opacity: 1, x: 0, ease: 'power3.out', duration: D * 0.14 },
+      D * 0.52
+    );
+  }
+  commits.forEach(function (ci, i) {
+    tl.fromTo(ci,
+      { opacity: 0, x: 18 },
+      { opacity: 1, x: 0, ease: 'power2.out', duration: D * 0.08 },
+      D * (0.56 + i * 0.04)
+    );
+  });
+
+  /* ── Beat 6: void fades back out → cream seam ────────────────── */
+  tl.to(theVoid,
+    { opacity: 0, ease: 'power2.inOut', duration: D * 0.18 },
+    D * 0.82
+  );
+
+})();
+</script>
+<script>
+/* chest/controller.js — bare IIFE, no <script> wrapper
+   Depends on window.gsap + window.ScrollTrigger (vendored).
+   Animates #chest treasure-chest section: lid opens on scroll,
+   items rise, rays burst, coins float in a repeating loop.
+   A "shines in different spaces" looping timeline drives sparkle
+   glints across the scene independently of scroll progress.
+*/
+(function () {
+  'use strict';
+
+  var REDUCE = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* --- Reduced-motion: open chest statically, no scroll or loop anim --- */
+  if (REDUCE) {
+    var lidEl = document.getElementById('chestLid');
+    if (lidEl) { lidEl.style.transform = 'scaleY(0)'; lidEl.style.opacity = '0'; }
+    var toShow = ['chest__interior-glow', 'chest__rays', 'chest__items'];
+    toShow.forEach(function (cls) {
+      var el = document.querySelector('.' + cls);
+      if (el) { el.style.opacity = '1'; el.style.transform = 'none'; }
+    });
+    /* Show coins at final float position */
+    document.querySelectorAll('.chest__coin').forEach(function (c, i) {
+      c.style.opacity = '0.75';
+      c.style.transform = 'translateY(' + (-(40 + i * 14)) + 'px)';
+    });
+    return;
+  }
+
+  /* --- Guard: need GSAP + ScrollTrigger --- */
+  if (!window.gsap || !window.ScrollTrigger) { return; }
+
+  gsap.registerPlugin(ScrollTrigger);
+
+  /* ── Initial closed state (html.js CSS already closes it;
+        gsap.set ensures correct transform for GSAP to animate from) ── */
+  gsap.set('#chestLid', {
+    scaleY: 1,
+    opacity: 1,
+    transformOrigin: '50% 100%'   /* pivot at hinge — bottom of lid bbox */
+  });
+  gsap.set('.chest__rays',          { opacity: 0, scale: 0.15, transformOrigin: 'center 278px' });
+  gsap.set('.chest__items',         { y: 44, opacity: 0 });
+  gsap.set('.chest__interior-glow', { opacity: 0 });
+  gsap.set('.chest__coin',          { opacity: 0 });
+
+  /* ── Scroll-driven main timeline ── */
+  var mainTl = gsap.timeline({
+    scrollTrigger: {
+      trigger: '#chest',
+      start:   'top 80%',
+      end:     'center center',
+      scrub:   1.4
+    }
+  });
+
+  /* 0 → 0.55 : lid folds back (scaleY 1→0) + fades */
+  mainTl.to('#chestLid', {
+    scaleY:          0,
+    opacity:         0,
+    ease:            'power2.inOut',
+    duration:        0.55
+  }, 0);
+
+  /* 0.22 → 0.62 : interior glow wells up */
+  mainTl.to('.chest__interior-glow', {
+    opacity:  0.94,
+    ease:     'power2.out',
+    duration: 0.42
+  }, 0.22);
+
+  /* 0.28 → 0.74 : rays burst outward */
+  mainTl.to('.chest__rays', {
+    opacity:  0.82,
+    scale:    1,
+    ease:     'power2.out',
+    duration: 0.48
+  }, 0.28);
+
+  /* 0.34 → 0.92 : items rise and settle (staggered) */
+  mainTl.to('.chest__items', {
+    y:        0,
+    opacity:  1,
+    ease:     'power2.out',
+    duration: 0.58
+  }, 0.34);
+
+  /* ── Coin float loops (start once chest is open enough) ──
+     Each coin floats independently with stagger.
+     Uses a GSAP timeline with repeat:-1 per coin.               */
+  var coins = gsap.utils.toArray('.chest__coin');
+  coins.forEach(function (coin, i) {
+    var floatDist = 88 + i * 16;
+    var dur       = 2.1 + i * 0.28;
+    var tl = gsap.timeline({ repeat: -1, delay: i * 0.52 + 0.6, repeatDelay: 0.35 });
+    tl.fromTo(coin,
+      { y: 0,          opacity: 0 },
+      { y: -floatDist, opacity: 0.88, duration: dur, ease: 'power1.out' }
+    ).to(coin,
+      { opacity: 0, duration: dur * 0.28, ease: 'none' },
+      '-=0.55'
+    );
+  });
+
+  /* ── Looping "shines in different spaces" glint timeline ──
+     Small GSAP repeating tl that pulses each glint/spark at
+     offset times — travels the scene independently of scroll.   */
+  var glints = gsap.utils.toArray('.chest__glint');
+  glints.forEach(function (g, i) {
+    gsap.fromTo(g,
+      { scale: 0,   opacity: 0 },
+      {
+        scale:       1.3,
+        opacity:     1,
+        duration:    0.32,
+        delay:       i * 0.85,
+        repeat:      -1,
+        repeatDelay: 2.4 + i * 0.5,
+        yoyo:        true,
+        ease:        'power2.out',
+        transformOrigin: 'center'
+      }
+    );
+  });
+
+  /* Secondary cross-scene glint sweep: a pair of gsap.fromTo that
+     animates x-position on two sparkle stars across the chest width,
+     creating the "light traveling across items" feel the CEO requested. */
+  var sparks = gsap.utils.toArray('.chest__spark');
+  if (sparks.length >= 2) {
+    /* star "a": sweeps left→right path across scene */
+    gsap.fromTo(sparks[0],
+      { x: -80,  opacity: 0 },
+      {
+        x:           80,
+        opacity:     1,
+        duration:    2.6,
+        delay:       1.2,
+        repeat:      -1,
+        repeatDelay: 3.8,
+        yoyo:        false,
+        ease:        'power1.inOut',
+        onRepeat:    function () {
+          gsap.set(sparks[0], { x: -80, opacity: 0 });
+        }
+      }
+    );
+    /* star "c": sweeps right→left */
+    gsap.fromTo(sparks[2],
+      { x: 80,   opacity: 0 },
+      {
+        x:           -80,
+        opacity:     1,
+        duration:    3.0,
+        delay:       2.8,
+        repeat:      -1,
+        repeatDelay: 4.2,
+        yoyo:        false,
+        ease:        'power1.inOut',
+        onRepeat:    function () {
+          gsap.set(sparks[2], { x: 80, opacity: 0 });
+        }
+      }
+    );
+  }
+
+}());
+</script>
+<script>
+(function(){
+  "use strict";
+
+  var inner = document.querySelector("#finale .finale__inner");
+  if(!inner) return;
+
+  var REDUCE = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* Reduced-motion or no IO support: reveal immediately, leave CSS shine in place */
+  if(REDUCE || !("IntersectionObserver" in window)){
+    inner.classList.add("in");
+    return;
+  }
+
+  /* Scroll-triggered reveal — threshold 0.35 so the logo is well in view when it fires */
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(!e.isIntersecting) return;
+      inner.classList.add("in");
+      io.disconnect();
+      /* Layer GSAP shine on top of the CSS animation for smoother easing when available */
+      if(window.gsap) _layerGsapShine();
+    });
+  }, { threshold: 0.35 });
+
+  io.observe(inner);
+
+  function _layerGsapShine(){
+    var mark = document.querySelector("#finale .finale__mark");
+    if(!mark) return;
+    /* Hand off from CSS keyframe to GSAP for tighter yoyo control */
+    mark.style.animation = "none";
+    window.gsap.to(mark, {
+      filter: "drop-shadow(0 18px 60px rgba(178,61,128,.68))",
+      duration: 1.9,
+      ease: "sine.inOut",
+      yoyo: true,
+      repeat: -1
+    });
+  }
+})();
+</script>
+
 <script>
 (function(){
   "use strict";
