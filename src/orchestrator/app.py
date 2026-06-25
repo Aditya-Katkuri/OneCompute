@@ -115,6 +115,21 @@ def _build_workload_jobs(kind: str, n_tiles: int, params: dict) -> list[dict]:
     if kind == "data.transform":
         from workloads.cpu_fanout import generate_jobs
         return generate_jobs(n_jobs=n_tiles, **params)
+    if kind == "montecarlo":
+        from workloads.montecarlo import build_montecarlo_jobs
+        return build_montecarlo_jobs(n_tiles=n_tiles, **params)
+    if kind == "hashcrack":
+        from workloads.hashcrack import build_hashcrack_jobs
+        return build_hashcrack_jobs(n_tiles=n_tiles, **params)
+    if kind == "ai.infer":
+        from workloads.infer import build_infer_jobs
+        return build_infer_jobs(n_tiles=n_tiles, **params)
+    if kind == "ai.eval":
+        from workloads.eval import build_eval_jobs
+        return build_eval_jobs(n_tiles=n_tiles, **params)
+    if kind == "ai.graph":
+        from workloads.graph import build_graph_jobs
+        return build_graph_jobs(n_tiles=n_tiles, **params)
     raise ValueError(f"unknown or non-launchable workload kind: {kind!r}")
 
 
@@ -143,7 +158,67 @@ WORKLOAD_CATALOG: list[dict] = [
         "blurb": "Each machine generates synthetic records via an LLM; merged into one dataset.",
         "default_params": {"total_rows": 30}, "split": "per_machine",
     },
+    {
+        "kind": "montecarlo", "label": "Monte-Carlo finance risk", "category": "non-AI", "ai": False,
+        "blurb": "Millions of market paths price a portfolio and its Value-at-Risk; every core pinned.",
+        "default_params": {"total_paths": 3000000, "horizon_days": 252}, "split": "per_machine",
+    },
+    {
+        "kind": "hashcrack", "label": "Hash crack (proof-of-work)", "category": "non-AI", "ai": False,
+        "blurb": "The fleet brute-forces a SHA-256 with a target prefix; live hash-rate, then the winning nonce.",
+        "default_params": {"keyspace": 300000000, "target_prefix": "000000"}, "split": "per_machine",
+    },
+    {
+        "kind": "ai.infer", "label": "Local LLM inference", "category": "AI", "ai": True,
+        "blurb": "A big batch of prompts runs through the on-device model on every machine — no cloud.",
+        "default_params": {"n_prompts": 120}, "split": "per_machine",
+    },
+    {
+        "kind": "ai.eval", "label": "Model evaluation (LLM judge)", "category": "AI", "ai": True,
+        "blurb": "The fleet grades answers with a local-model judge into a leaderboard + score chart.",
+        "default_params": {}, "split": "per_machine",
+    },
+    {
+        "kind": "ai.graph", "label": "Knowledge graph", "category": "AI", "ai": True,
+        "blurb": "The fleet extracts entities + relations from a corpus into one rendered graph.",
+        "default_params": {}, "split": "per_machine",
+    },
 ]
+
+
+def _aggregate_workload(kind: str, outputs: list[dict]) -> dict | None:
+    """Render-ready merged summary for a workload, computed server-side from its completed tiles'
+    outputs, so the dashboard draws it instead of re-implementing each merge in JS. Returns None
+    when nothing has completed (or for fractal, which the dashboard reassembles tile-by-tile).
+    Never raises; lazy imports keep the workload deps out of the orchestrator's import path."""
+    if not outputs:
+        return None
+    try:
+        if kind == "montecarlo":
+            from workloads.montecarlo import aggregate_montecarlo
+            return aggregate_montecarlo(outputs)
+        if kind == "hashcrack":
+            from workloads.hashcrack import aggregate_hashcrack
+            return aggregate_hashcrack(outputs)
+        if kind == "optimize":
+            from workloads.optimize import aggregate_optimize
+            return aggregate_optimize(outputs)
+        if kind == "ai.eval":
+            from workloads.eval import aggregate_eval
+            return aggregate_eval(outputs)
+        if kind == "ai.graph":
+            from workloads.graph import aggregate_graph
+            return aggregate_graph(outputs)
+        if kind in ("ai.infer", "ai.batch_infer"):
+            results = [r for out in outputs for r in (out.get("results") or [])]
+            return {"count": len(results), "backend": outputs[0].get("backend"), "results": results[:200]}
+        if kind == "ai.synth":
+            from workloads.synth import merge_synth
+            rows = merge_synth(outputs)
+            return {"count": len(rows), "backend": outputs[0].get("backend"), "rows": rows[:500]}
+    except Exception:
+        return None
+    return None
 
 
 def _lease_deadline() -> str:
@@ -664,12 +739,18 @@ def create_app(db_path: str = ":memory:", signer=None, require_approval: bool = 
             raise HTTPException(status_code=404, detail="workload not found")
         jobs = [_job_detail(row) for row in rows]
         completed = sum(1 for row in rows if row["state"] == "completed")
+        outputs = [
+            json.loads(row["result_json"])
+            for row in rows
+            if row["state"] == "completed" and row["result_json"]
+        ]
         return WorkloadView(
             workload_id=workload_id,
             kind=rows[0]["kind"],
             total=len(rows),
             completed=completed,
             jobs=jobs,
+            summary=_aggregate_workload(rows[0]["kind"], outputs),
         )
 
     @app.get("/events")

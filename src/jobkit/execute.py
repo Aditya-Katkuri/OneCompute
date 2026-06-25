@@ -11,15 +11,78 @@ Chunkable executors check should_yield() between chunks and return early with
 
 from __future__ import annotations
 
+import hashlib
 import math
 import os
 import random
 import time
 from collections.abc import Callable
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 
 from contracts.hashing import sha256_hex
 
 YieldFn = Callable[[], bool]
+
+
+# --- multi-core fan-out for CPU-bound kinds (saturate every core for high utilization) ------
+# A single tile spreads across all of a machine's cores so it pins the whole machine (visible on
+# the dashboard usage graph) AND finishes a big problem inside the ~15-min window. In a Linux
+# sandbox container multiprocessing uses fast fork; on a Windows worker it uses spawn (so each
+# task fn must be a top-level, picklable module function). Stays yield-able: should_yield() is
+# polled in the PARENT (children never get the unpicklable closure); a yield cancels pending tasks
+# and the worker's Job-Object/Docker kill is the hard backstop.
+
+def _core_count() -> int:
+    """Cores to fan a tile across. ``ONECOMPUTE_MAX_WORKERS`` caps it (set to 1 for hermetic,
+    spawn-free tests; or to leave the employee some headroom)."""
+    env = os.environ.get("ONECOMPUTE_MAX_WORKERS")
+    if env:
+        try:
+            return max(1, int(env))
+        except ValueError:
+            pass
+    return max(1, os.cpu_count() or 1)
+
+
+def _parallel_map(
+    fn: Callable, tasks: list, should_yield: YieldFn, max_workers: int | None = None
+) -> tuple[list, bool]:
+    """Run ``fn(task)`` for every task across cores; return ``(results, yielded)``.
+
+    Falls back to in-process sequential when there's <=1 worker/task or the pool can't start
+    (restricted sandbox), so a tile always completes. Results are in completion order.
+    """
+    workers = max_workers if max_workers is not None else _core_count()
+    if workers > 1 and len(tasks) > 1:
+        pool = None
+        try:
+            pool = ProcessPoolExecutor(max_workers=workers)
+        except Exception:
+            pool = None
+        if pool is not None:
+            results: list = []
+            yielded = False
+            try:
+                pending = {pool.submit(fn, task) for task in tasks}
+                while pending:
+                    if should_yield():
+                        yielded = True
+                        break
+                    done, pending = wait(pending, timeout=0.2, return_when=FIRST_COMPLETED)
+                    for future in done:
+                        try:
+                            results.append(future.result())
+                        except Exception:
+                            pass
+            finally:
+                pool.shutdown(wait=False, cancel_futures=True)
+            return results, yielded
+    results = []
+    for task in tasks:
+        if should_yield():
+            return results, True
+        results.append(fn(task))
+    return results, False
 
 
 def _data_transform(input: dict, should_yield: YieldFn) -> dict:
@@ -46,7 +109,39 @@ def _challenge(input: dict, should_yield: YieldFn) -> dict:
     return {"y": x * x + 1}
 
 
+# Local model (Ollama) — the CPU-only, no-API inference backend (its OpenAI-compatible
+# endpoint). Overridable per worker via env so a laptop can point at its own model.
+_LLM_LOCAL_URL = os.environ.get("ONECOMPUTE_LLM_URL", "http://127.0.0.1:11434/v1")
+_LLM_LOCAL_MODEL = os.environ.get("ONECOMPUTE_LLM_MODEL", "llama3.2:3b")
+_ollama_cache: bool | None = None
+
+
+def _ollama_available() -> bool:
+    """True if a local Ollama server responds (cached). Never raises. A 1.5s probe of /api/tags;
+    set ONECOMPUTE_NO_LLM=1 to force the disclosed fallback (hermetic tests / no-model machines)."""
+    global _ollama_cache
+    if os.environ.get("ONECOMPUTE_NO_LLM"):
+        return False
+    if _ollama_cache is not None:
+        return _ollama_cache
+    import urllib.request
+
+    base = _LLM_LOCAL_URL.removesuffix("/v1")
+    try:
+        with urllib.request.urlopen(base + "/api/tags", timeout=1.5) as resp:
+            _ollama_cache = getattr(resp, "status", 200) == 200
+    except Exception:
+        _ollama_cache = False
+    return bool(_ollama_cache)
+
+
 def _detect_ai_backend() -> str | None:
+    """Pick the inference backend, preferring the LOCAL model (the demo fleet is CPU-only / no
+    cloud): local Ollama -> OpenAI key -> Anthropic key -> None (disclosed fallback)."""
+    if os.environ.get("ONECOMPUTE_NO_LLM"):
+        return None
+    if _ollama_available():
+        return "ollama"
     if os.environ.get("OPENAI_API_KEY"):
         return "openai"
     if os.environ.get("ANTHROPIC_API_KEY"):
@@ -55,8 +150,21 @@ def _detect_ai_backend() -> str | None:
 
 
 def _ai_one(backend: str | None, prompt: str, model: str, max_tokens: int) -> tuple[str, int]:
-    """Run a single prompt. Real SDK call when a key is present, else a disclosed
-    token-proportional fallback (parallelism stays real; see architecture.md §13)."""
+    """Run a single prompt. Real model call when a backend is available (local Ollama on the
+    CPU fleet, else a cloud SDK), otherwise a disclosed token-proportional fallback so the
+    parallelism stays real even with no model present (see architecture.md §13)."""
+    if backend == "ollama":
+        from openai import OpenAI  # Ollama serves an OpenAI-compatible API at /v1
+
+        client = OpenAI(base_url=_LLM_LOCAL_URL, api_key="ollama")
+        resp = client.chat.completions.create(
+            model=model or _LLM_LOCAL_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+        )
+        text = resp.choices[0].message.content or ""
+        used = getattr(getattr(resp, "usage", None), "total_tokens", max_tokens)
+        return text, int(used)
     if backend == "openai":
         from openai import OpenAI
 
@@ -436,15 +544,282 @@ def _render(input: dict, should_yield: YieldFn) -> dict:
     }
 
 
+# --- NON-AI: Monte-Carlo portfolio risk (multi-core, pure stdlib) ---------------------------
+
+def _mc_chunk(args: tuple) -> tuple:
+    """One core's slice of GBM paths -> (count, sum, sumsq, worst_return, hist_counts)."""
+    seed, n_paths, steps, mu, sigma, lo, hi, nbins = args
+    rng = random.Random(seed)
+    gauss = rng.gauss
+    dt = 1.0 / steps if steps else 1.0
+    drift = (mu - 0.5 * sigma * sigma) * dt
+    vol = sigma * math.sqrt(dt)
+    width = (hi - lo) / nbins if nbins else 1.0
+    hist = [0] * nbins
+    total = 0.0
+    total_sq = 0.0
+    worst = 0.0
+    for _ in range(n_paths):
+        log_ret = 0.0
+        for _ in range(steps):
+            log_ret += drift + vol * gauss(0.0, 1.0)
+        ret = math.exp(log_ret) - 1.0  # terminal portfolio return
+        total += ret
+        total_sq += ret * ret
+        if ret < worst:
+            worst = ret
+        bucket = int((ret - lo) / width) if width else 0
+        hist[min(nbins - 1, max(0, bucket))] += 1
+    return n_paths, total, total_sq, worst, hist
+
+
+def _montecarlo(input: dict, should_yield: YieldFn) -> dict:
+    """Portfolio risk via Monte-Carlo GBM simulation (NON-AI, multi-core, pure stdlib).
+
+    Each fleet tile owns a slice of paths; cores split the slice. Returns a MERGEABLE
+    histogram of terminal returns + moments + worst loss, so the host-side aggregator computes
+    fleet-wide VaR / CVaR and renders the risk distribution. Compute scales with
+    ``n_paths * horizon_days`` -- size ``n_paths`` to hit the demo runtime.
+    """
+    n_paths = int(input.get("n_paths", 200_000))
+    steps = max(1, int(input.get("horizon_days", 252)))
+    mu = float(input.get("mu", 0.07))
+    sigma = float(input.get("sigma", 0.20))
+    seed = int(input.get("seed", 0))
+    lo = float(input.get("hist_lo", -1.0))
+    hi = float(input.get("hist_hi", 2.0))
+    nbins = int(input.get("hist_bins", 120))
+
+    cores = _core_count()
+    # Many small chunks (not one per core) so should_yield() is honored promptly and the pool
+    # stays load-balanced; distinct seeds per chunk so paths never repeat.
+    n_chunks = max(cores, min(2048, (n_paths + 1999) // 2000))
+    base, rem = divmod(n_paths, n_chunks)
+    tasks = [
+        (seed * 1_000_003 + c, base + (1 if c < rem else 0), steps, mu, sigma, lo, hi, nbins)
+        for c in range(n_chunks)
+        if base + (1 if c < rem else 0) > 0
+    ]
+    parts, yielded = _parallel_map(_mc_chunk, tasks, should_yield, max_workers=cores)
+
+    count = sum(p[0] for p in parts)
+    total = sum(p[1] for p in parts)
+    total_sq = sum(p[2] for p in parts)
+    worst = min((p[3] for p in parts), default=0.0)
+    hist = [0] * nbins
+    for part in parts:
+        for i, value in enumerate(part[4]):
+            hist[i] += value
+    mean = total / count if count else 0.0
+    variance = (total_sq / count - mean * mean) if count else 0.0
+    return {
+        "paths": count,
+        "mean_return": mean,
+        "stdev": math.sqrt(max(0.0, variance)),
+        "worst_return": worst,
+        "hist": hist,
+        "hist_lo": lo,
+        "hist_hi": hi,
+        "horizon_days": steps,
+        "yielded": yielded,
+    }
+
+
+# --- NON-AI: distributed hash crack / proof-of-work (multi-core, pure stdlib) ----------------
+
+def _hash_chunk(args: tuple) -> tuple:
+    """One core's nonce range -> (found_nonce|None, found_hash|None, hashes_tried)."""
+    prefix, target, start, end = args
+    pre = prefix.encode()
+    for nonce in range(start, end):
+        digest = hashlib.sha256(pre + str(nonce).encode()).hexdigest()
+        if digest.startswith(target):
+            return nonce, digest, nonce - start + 1
+    return None, None, end - start
+
+
+def _hashcrack(input: dict, should_yield: YieldFn) -> dict:
+    """Distributed proof-of-work search (NON-AI, multi-core, pure stdlib).
+
+    Each fleet tile scans a nonce range for ``sha256(prefix + nonce)`` whose hex starts with
+    ``target_prefix``; cores split the range. Mergeable: the aggregator takes the winner and
+    sums hashes for a fleet hash-rate. Lengthen ``target_prefix`` / widen the range for runtime.
+    """
+    prefix = str(input.get("prefix", "onecompute"))
+    target = str(input.get("target_prefix", "00000")).lower()
+    start = int(input.get("nonce_start", 0))
+    end = int(input.get("nonce_end", start + 2_000_000))
+
+    cores = _core_count()
+    span = max(0, end - start)
+    # Many small nonce ranges so should_yield() lands promptly and cores stay balanced.
+    n_chunks = max(cores, min(4096, span // 500_000 + 1))
+    base, rem = divmod(span, n_chunks)
+    tasks = []
+    pos = start
+    for c in range(n_chunks):
+        size = base + (1 if c < rem else 0)
+        if size <= 0:
+            continue
+        tasks.append((prefix, target, pos, pos + size))
+        pos += size
+    parts, yielded = _parallel_map(_hash_chunk, tasks, should_yield, max_workers=cores)
+
+    hashes_tried = sum(p[2] for p in parts)
+    winner = next((p for p in parts if p[0] is not None), None)
+    return {
+        "prefix": prefix,
+        "target_prefix": target,
+        "found": winner is not None,
+        "nonce": winner[0] if winner else None,
+        "hash": winner[1] if winner else None,
+        "hashes_tried": hashes_tried,
+        "nonce_start": start,
+        "nonce_end": end,
+        "yielded": yielded,
+    }
+
+
+# --- AI: model evaluation (LLM-as-judge) -- local model, host-side --------------------------
+
+def _ai_eval_one(
+    backend: str | None, question: str, answer: str, rubric: str, model: str, max_tokens: int
+) -> tuple[int, str]:
+    """Grade one answer 0-10 against a rubric -> (score, short verdict)."""
+    if backend is None:
+        # Disclosed deterministic heuristic so the workload runs with no model present.
+        score = int(sha256_hex(question + "||" + answer)[:4], 16) % 11
+        return score, "[fallback heuristic score — no model]"
+    prompt = (
+        "Grade the ANSWER to the QUESTION from 0-10 using the RUBRIC. Reply with ONLY a JSON "
+        'object: {"score": <integer 0-10>, "verdict": "<one short sentence>"}.\n'
+        f"RUBRIC: {rubric}\nQUESTION: {question}\nANSWER: {answer}"
+    )
+    import json
+
+    text, _ = _ai_one(backend, prompt, model, max_tokens)
+    score, verdict = 0, text[:200]
+    try:
+        start, end = text.find("{"), text.rfind("}")
+        obj = json.loads(text[start : end + 1])
+        score = int(round(float(obj.get("score", 0))))
+        verdict = str(obj.get("verdict", ""))[:200]
+    except Exception:
+        pass
+    return max(0, min(10, score)), verdict
+
+
+def _ai_eval(input: dict, should_yield: YieldFn) -> dict:
+    """Score a batch of (question, answer) items with an LLM judge (AI, local model).
+
+    Each item may carry a ``label`` (which system produced the answer) so the aggregator can
+    build a leaderboard. Chunked per item; a yield returns the partial scores.
+    """
+    items = input.get("items", [])
+    rubric = input.get("rubric", "correctness, clarity, and completeness")
+    model = input.get("model", "")
+    max_tokens = int(input.get("max_tokens", 120))
+    backend = _detect_ai_backend()
+    results: list = []
+    for item in items:
+        if should_yield():
+            return {"results": results, "backend": backend or "fallback", "yielded": True}
+        score, verdict = _ai_eval_one(
+            backend, str(item.get("question", "")), str(item.get("answer", "")),
+            rubric, model, max_tokens,
+        )
+        row = {"question": item.get("question", ""), "score": score, "verdict": verdict}
+        if "label" in item:
+            row["label"] = item["label"]
+        results.append(row)
+    return {"results": results, "backend": backend or "fallback", "yielded": False}
+
+
+# --- AI: knowledge-graph extraction -- local model, host-side -------------------------------
+
+def _ai_graph_one(
+    backend: str | None, doc: str, model: str, max_tokens: int
+) -> tuple[list[str], list[dict]]:
+    """Extract (entities, relations) from one document. relations are {source,relation,target}."""
+    if backend is None:
+        # Disclosed fallback: capitalized-token entities chained by an 'related_to' edge.
+        import re
+
+        entities: list[str] = []
+        for word in re.findall(r"\b[A-Z][a-zA-Z]{2,}\b", doc):
+            if word not in entities:
+                entities.append(word)
+        entities = entities[:8]
+        relations = [
+            {"source": entities[i], "relation": "related_to", "target": entities[i + 1]}
+            for i in range(len(entities) - 1)
+        ]
+        return entities, relations
+    prompt = (
+        "Extract a knowledge graph from the TEXT. Reply with ONLY JSON: "
+        '{"entities": ["..."], "relations": [{"source":"...","relation":"...","target":"..."}]}.\n'
+        f"TEXT: {doc}"
+    )
+    import json
+
+    text, _ = _ai_one(backend, prompt, model, max_tokens)
+    try:
+        start, end = text.find("{"), text.rfind("}")
+        obj = json.loads(text[start : end + 1])
+        entities = [str(e) for e in obj.get("entities", []) if e][:24]
+        relations = [
+            {
+                "source": str(r.get("source", "")),
+                "relation": str(r.get("relation", "")),
+                "target": str(r.get("target", "")),
+            }
+            for r in obj.get("relations", [])
+            if isinstance(r, dict) and r.get("source") and r.get("target")
+        ][:48]
+        return entities, relations
+    except Exception:
+        return [], []
+
+
+def _ai_graph(input: dict, should_yield: YieldFn) -> dict:
+    """Build a knowledge graph from a batch of documents (AI, local model).
+
+    Each fleet tile processes a slice of docs; the aggregator merges nodes/edges into one graph
+    and renders it. Chunked per doc; a yield returns the partial graph.
+    """
+    docs = input.get("docs", [])
+    model = input.get("model", "")
+    max_tokens = int(input.get("max_tokens", 220))
+    backend = _detect_ai_backend()
+    nodes: list[str] = []
+    seen: set[str] = set()
+    edges: list[dict] = []
+    for doc in docs:
+        if should_yield():
+            return {"nodes": nodes, "edges": edges, "backend": backend or "fallback", "yielded": True}
+        entities, relations = _ai_graph_one(backend, str(doc), model, max_tokens)
+        for entity in entities:
+            if entity and entity not in seen:
+                seen.add(entity)
+                nodes.append(entity)
+        edges.extend(relations)
+    return {"nodes": nodes, "edges": edges, "backend": backend or "fallback", "yielded": False}
+
+
 EXECUTORS: dict[str, Callable[[dict, YieldFn], dict]] = {
     "data.transform": _data_transform,
     "render": _render,
     "challenge": _challenge,
     "ai.batch_infer": _ai_batch_infer,
+    "ai.infer": _ai_batch_infer,  # AI: distributed local-model inference (alias, demo headline)
     "eval": _data_transform,   # eval reuses the deterministic transform path in the PoC
-    "fractal": _fractal,       # NON-AI #1: distributed Mandelbrot tile (pure stdlib)
-    "optimize": _optimize,     # NON-AI #2: distributed param-sweep slice (pure stdlib)
-    "ai.synth": _ai_synth,     # AI #2: distributed synthetic-data slice (host-side)
+    "fractal": _fractal,       # NON-AI: distributed Mandelbrot tile (pure stdlib)
+    "optimize": _optimize,     # NON-AI: distributed param-sweep slice (pure stdlib)
+    "montecarlo": _montecarlo, # NON-AI: distributed portfolio-risk simulation (multi-core)
+    "hashcrack": _hashcrack,   # NON-AI: distributed proof-of-work search (multi-core)
+    "ai.synth": _ai_synth,     # AI: distributed synthetic-data slice (local model / host-side)
+    "ai.eval": _ai_eval,       # AI: distributed model evaluation / LLM-as-judge (local model)
+    "ai.graph": _ai_graph,     # AI: distributed knowledge-graph extraction (local model)
 }
 
 
