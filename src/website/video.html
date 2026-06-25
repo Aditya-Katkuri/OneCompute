@@ -49,6 +49,7 @@
   /* ---- letterbox wrap + fixed 16:9 stage that scales to fit ---- */
   #wrap{position:fixed;inset:0;background:#0b0710;overflow:hidden}
   #stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;overflow:hidden;transform-origin:center center;
+    transform:translate(-50%,-50%);
     background:#F7EFE9;transition:background-color .9s var(--ease-out);will-change:transform}
 
   /* ---- ambient pastel orb field (colin's fallback look, driven per scene) ---- */
@@ -252,9 +253,11 @@
   .s-head .wlogo img{height:1.02em;width:auto;vertical-align:-0.22em;filter:drop-shadow(0 2px 7px rgba(0,0,0,.14))}
 
   /* ---- clip slot ---- */
-  .clipframe{position:absolute;inset:0;width:100%;height:100%;overflow:hidden;z-index:50;
+  .clipframe{position:absolute;inset:0;width:100%;height:100%;overflow:hidden;z-index:93;
     background:#000;visibility:hidden}
   .clipframe video{width:100%;height:100%;object-fit:cover;display:block}
+  .cloudveil{position:absolute;inset:-20%;z-index:94;pointer-events:none;opacity:0;
+    background:radial-gradient(58% 58% at 50% 46%,#ffffff 0%,#f4f2fc 50%,#ece8f6 100%);filter:blur(10px)}
   .ph{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;text-align:center;padding:40px}
   .ph .play{width:96px;height:96px;border-radius:50%;display:grid;place-items:center;
     background:rgba(247,239,233,.1);border:1.5px solid rgba(247,239,233,.5)}
@@ -365,6 +368,7 @@
       <div class="ph" id="clipph"><div class="play"></div><div class="who" id="clipwho">Clip</div><div class="hint" id="cliphint">set src in CLIPS to play footage</div></div>
     </div>
     <div class="clipcap" id="clipcap"><div class="stamp" id="capstamp">On the record</div><div class="nm" id="capname">—</div></div>
+    <div class="cloudveil" id="cloudveil"></div>
     <video id="introvid" playsinline preload="auto"></video>
 
     <!-- atmosphere -->
@@ -408,6 +412,7 @@
    ====================================================================== */
 const CLIPS = {
   "opener-ai":      "ai-montage.mp4",   // the "AI. AI. AI." montage — full-bleed, with sound
+  "opener-cloud":   "cloud-reveal.mp4", // white-cloud reveal: ~5s visual, then black while audio continues
   "sol-yield":      "",                 // e.g. "clips/instant-yield-demo.mp4"
 };
 
@@ -419,8 +424,9 @@ const CHAPTERS = {opener:"Opening", problem:"The Problem", turn:"The Turn",
   solution:"The Solution", safety:"Safety", usecases:"Real Work", rewards:"The Win-Win", close:"The Vision"};
 
 const SCENES = [
-  {id:"opener-hook",    chapter:"opener", dur:8, style:"paperCrumple",      bg:"black", head:"but if there's one bet Microsoft is making for the future…"},
+  {id:"opener-hook",    chapter:"opener", dur:5.6, style:"paperCrumple",      bg:"black", head:"but if there's one bet Microsoft is making for the future…"},
   {id:"opener-ai",      chapter:"opener", dur:7, style:"clip", bg:"black", clip:{who:"", role:""}},
+  {id:"opener-cloud",   chapter:"opener", dur:6, style:"clip", clipMode:"cloud", visibleSecs:5, bg:"black", clip:{who:"", role:""}},
   {id:"opener-converge",chapter:"opener", dur:5, style:"riseIn", bg:"coral", head:"One bet. The whole company, all in."},
 
   {id:"problem-turn",   chapter:"problem", dur:5, style:"riseIn",      bg:"calm", eyebrow:"The reflex", head:"So we build.", accent:"build", sub:"Concrete. Copper. Capital."},
@@ -1096,7 +1102,7 @@ function build(){
     if(scene.style==="clip" && CLIPS[scene.id] && CLIPS[scene.id].trim()){
       master.addPause(at+0.7, ()=>playClip(scene));   // real clip: pause the SHOW, play full-frame, resume on end
     }
-    if(scene.style==="paperCrumple"){ master.call(playPaperSound,null,at+0.15); master.call(playNarration,null,at+2.7); master.call(playClipMusic,null,at+5.5); }   // paper sound + VO + the AI music swelling in mid-crumple (scrub-safe)
+    if(scene.style==="paperCrumple"){ master.call(playPaperSound,null,at+0.15); master.call(playNarration,null,at+1.0); master.call(playVoiceBed,null,at+1.0); master.call(playClipMusic,null,at+2.88); }   // paper sound + VO (with a soft bed underneath) + dramatic music swelling in halfway through the VO, carrying through the clip (scrub-safe)
     master.set(root,{autoAlpha:0,immediateRender:false},at+scene.dur);  // hide at scene end (no leak)
     cues.push({id:scene.id,start:at,dur:scene.dur,chapter:scene.chapter,bg:scene.bg,style:scene.style,label});
     at+=scene.dur;
@@ -1107,22 +1113,47 @@ function build(){
 /* ---- real clip playback: pause → play full-frame → resume on end/timeout ---- */
 let seeking=false, clipActive=false, clipMusic=null, clipMusicArmed=true, clipMusicId=null;
 function initClipMusic(){ if(PREVIEW||typeof Howl==="undefined")return; try{ clipMusic=new Howl({src:["music/ai-bed.mp3"],volume:0,html5:false,preload:true,pool:1}); }catch(e){} }
+let stopSfx=null;
+function initStopSfx(){ if(PREVIEW||typeof Howl==="undefined")return; try{ stopSfx=new Howl({src:["kit/sfx/tapestop.mp3"],volume:1.0,preload:true,html5:false,pool:1}); }catch(e){} }
+function playStopSfx(){ if(PREVIEW||!stopSfx)return; audioUnlock(); try{ stopSfx.stop(); stopSfx.play(); }catch(e){} }   // tape-stop "neeeuuuu" as the intro wooshes out into the paper reveal
 function rearmClipMusic(){ clipMusicArmed=true; }
 function playClipMusic(){
   if(PREVIEW || seeking || !clipMusicArmed || !clipMusic) return;   // once per opener entry, scrub-safe; starts mid-paper, carries into the AI clip
   clipMusicArmed=false; audioUnlock();
   try{ clipMusic.stop(); clipMusicId=clipMusic.play(); clipMusic.fade(0,0.5,900,clipMusicId); }catch(e){}
+  stopVoiceBed();   // the big bed swells in -> fade the soft voice underscore out, clean handoff
 }
 function stopClipMusic(){ try{ if(clipMusic){ clipMusic.fade(clipMusic.volume(),0,400); setTimeout(()=>{try{clipMusic.stop();}catch(_){}} ,420);} }catch(_){} }
+let cloudBed=null, cloudBedId=null;
+function initCloudBed(){ if(PREVIEW||typeof Howl==="undefined")return; try{ cloudBed=new Howl({src:["music/cloud-bed.mp3"],volume:0,html5:false,preload:true,pool:1}); }catch(e){} }
+function playCloudBed(){ if(PREVIEW||!cloudBed)return; audioUnlock(); try{ cloudBed.stop(); cloudBedId=cloudBed.play(); cloudBed.fade(0,0.45,1200,cloudBedId); }catch(e){} }   // separate ominous bed under the cloud-reveal video
+function stopCloudBed(){ try{ if(cloudBed){ cloudBed.fade(cloudBed.volume(),0,500); setTimeout(()=>{try{cloudBed.stop();}catch(_){}} ,520);} }catch(_){} }
+let voiceBed=null, voiceBedId=null, voiceBedArmed=true;
+function initVoiceBed(){ if(PREVIEW||typeof Howl==="undefined")return; try{ voiceBed=new Howl({src:["music/voice-bed.mp3"],volume:0,html5:false,preload:true,pool:1}); }catch(e){} }
+function rearmVoiceBed(){ voiceBedArmed=true; }
+function playVoiceBed(){ if(PREVIEW||seeking||!voiceBedArmed||!voiceBed)return; voiceBedArmed=false; audioUnlock(); try{ voiceBed.stop(); voiceBedId=voiceBed.play(); voiceBed.fade(0,0.24,800,voiceBedId); }catch(e){} }   // soft, a-tad-dramatic underscore beneath the narrator; hands off to the big AI swell at the VO midpoint
+function stopVoiceBed(){ try{ if(voiceBed){ voiceBed.fade(voiceBed.volume(),0,700); setTimeout(()=>{try{voiceBed.stop();}catch(_){}} ,720);} }catch(_){} }
 function playClip(scene){
   if(seeking)return;                 // don't fire when scrubbing/seeking across the pause point
   const v=clipvideo; clipActive=true;
-  let done=false;
-  const resume=()=>{ if(done)return; done=true; clipActive=false; try{clipvideo.pause();}catch(_){} try{ if(clipMusic){ clipMusic.fade(clipMusic.volume(),0,400); setTimeout(()=>{try{clipMusic.stop();}catch(_){}} ,420); } }catch(_){} cleanup(); const cue=cues.find(c=>c.id===scene.id); if(cue) master.totalTime(cue.start+Math.max(1.0,scene.dur-0.5)); master.play(); };
+  const isCloud=scene.clipMode==="cloud"; const visSecs=scene.visibleSecs||5; const cloudveil=$("#cloudveil");
+  let done=false, cloudT=0;
+  const resume=()=>{ if(done)return; done=true; clipActive=false; clearTimeout(cloudT);
+    try{clipvideo.pause();}catch(_){}
+    try{ if(clipMusic){ clipMusic.fade(clipMusic.volume(),0,400); setTimeout(()=>{try{clipMusic.stop();}catch(_){}} ,420); } }catch(_){}
+    try{ stopCloudBed(); }catch(_){}
+    try{ if(cloudveil) gsap.set(cloudveil,{autoAlpha:0}); gsap.set(clipframe,{autoAlpha:1}); }catch(_){}   // restore the frame for the next clip / replay
+    cleanup(); const cue=cues.find(c=>c.id===scene.id); if(cue) master.totalTime(cue.start+Math.max(1.0,scene.dur-0.5)); master.play(); };
   const cleanup=()=>{ v.removeEventListener("ended",resume); v.removeEventListener("error",resume); clearTimeout(safety); };
   v.addEventListener("ended",resume); v.addEventListener("error",resume);
   const safety=setTimeout(resume, 60000); // never hang the show
   try{ if(scene.id==="opener-ai") playClipMusic(); }catch(e){}   // fallback: if the mid-paper cue was skipped (e.g. scrubbed straight to the clip), start it now; no-op if already swelling
+  try{ clipframe.style.visibility="visible"; gsap.set(clipframe,{autoAlpha:1,scale:1}); }catch(e){}   // force the clip frame visible (don't rely on the scene tween)
+  if(isCloud){
+    try{ playCloudBed(); }catch(e){}   // its own dramatic bed
+    try{ if(cloudveil) gsap.fromTo(cloudveil,{autoAlpha:1,scale:1.25,filter:"blur(6px)"},{autoAlpha:0,scale:1.6,filter:"blur(26px)",duration:1.6,ease:"power2.out"}); }catch(e){}   // white cloud parts to reveal the footage
+    cloudT=setTimeout(()=>{ try{ gsap.to(clipframe,{autoAlpha:0,duration:1.0,ease:"power2.inOut"}); }catch(e){} }, visSecs*1000);   // after ~5s the picture goes black; audio keeps playing
+  }
   try{ v.muted=false; v.volume=0.92; v.currentTime=0; const p=v.play(); if(p&&p.catch)p.catch(()=>{ v.muted=true; const q=v.play(); if(q&&q.catch)q.catch(resume); }); }catch(e){ resume(); }
 }
 
@@ -1144,6 +1175,8 @@ function applyScene(i){
   const cv=paperfx(); if(cv) cv.style.opacity=cr?"1":"0";
   if(!cr){ rearmPaperSound(); stopPaperSound(); rearmNarration(); stopNarration(); }
   if(c.id!=="opener-hook" && c.id!=="opener-ai"){ stopClipMusic(); rearmClipMusic(); }   // the AI bed spans the paper+clip opener; stop & rearm once we leave it (covers scrub-out + replay)
+  if(c.id!=="opener-hook"){ stopVoiceBed(); rearmVoiceBed(); }   // the soft voice underscore lives only on the paper/VO scene; stop & rearm on leave (scrub-out + replay)
+  if(c.id!=="opener-cloud"){ try{ stopCloudBed(); var _cv=$("#cloudveil"); if(_cv) gsap.set(_cv,{autoAlpha:0}); }catch(e){} }   // kill the cloud bed/veil whenever we're not on the cloud scene
 }
 function sceneIndexAt(t){ let idx=0; for(let i=0;i<cues.length;i++) if(t>=cues[i].start-1e-3) idx=i; return idx; }
 
@@ -1272,11 +1305,11 @@ function playIntro(){
   if(hud) hud.classList.add("hide"); introPlaying=true; { const pf=paperfx(); if(pf) pf.style.opacity="0"; }   // keep the paper hidden (pure black) until the intro is fully gone
   v.style.display="block"; v.classList.remove("woosh"); v.muted=false; try{v.currentTime=0;}catch(e){} v.src="intro.mp4";
   let done=false;
-  const go=()=>{ if(done)return; done=true;
+  const go=()=>{ if(done)return; done=true; playStopSfx();   // fire the tape-stop SFX as the woosh begins
     try{gsap.to(v,{volume:0,duration:0.32,ease:"power1.in"});}catch(e){}
     v.classList.add("woosh");                                  // push the intro out to the left + fade; black is revealed behind it
     setTimeout(()=>{ v.style.display="none"; try{v.pause();}catch(e){} v.removeAttribute("src"); v.classList.remove("woosh"); }, 540);   // video fully gone -> pure black screen
-    setTimeout(()=>{ startFilm(); }, 720);                    // a short black beat, THEN the paper appears and crumples in on the black
+    setTimeout(()=>{ startFilm(); }, 1600);                   // wait for the tape-stop "neuu" to finish, THEN the paper crumbles in (sound + animation)
   };
   const onTU=()=>{ if(v.duration && v.currentTime>=v.duration-0.82){ v.removeEventListener("timeupdate",onTU); go(); } };
   v.addEventListener("timeupdate",onTU);
@@ -1328,7 +1361,7 @@ function stopNarration(){
 function start(){ if(posterGone())return; poster.classList.add("gone"); setTimeout(()=>{poster.style.display="none";},650); audioUnlock(); rearmPaperSound(); playIntro(); }
 
 /* wiring */
-if(typeof gsap!=="undefined") gsap.ticker.lagSmoothing(0); initPaper(); initPaperAudio(); initNarrAudio(); initClipMusic(); build(); gsap.set(".scene",{autoAlpha:0}); buildChapters(); applyScene(0); onTick();
+if(typeof gsap!=="undefined") gsap.ticker.lagSmoothing(0); initPaper(); initPaperAudio(); initNarrAudio(); initClipMusic(); initStopSfx(); initCloudBed(); initVoiceBed(); build(); gsap.set(".scene",{autoAlpha:0}); buildChapters(); applyScene(0); onTick();
 const wrapEl=$("#wrap");
 
 if(PREVIEW){
@@ -1361,7 +1394,7 @@ if(PREVIEW){
       case "Comma": e.preventDefault(); if(posterGone())seekScene(-1); break;
       case "Home": e.preventDefault(); if(posterGone())seekTo(0); break;
       case "End": e.preventDefault(); if(posterGone())seekTo(master.totalDuration()); break;
-      case "KeyR": e.preventDefault(); if(posterGone()){ rearmPaperSound(); rearmNarration(); rearmClipMusic(); stopClipMusic(); master.restart(); showHUD(); } break;
+      case "KeyR": e.preventDefault(); if(posterGone()){ rearmPaperSound(); rearmNarration(); rearmClipMusic(); stopClipMusic(); rearmVoiceBed(); stopVoiceBed(); master.restart(); showHUD(); } break;
       case "KeyF": e.preventDefault(); document.fullscreenElement?document.exitFullscreen():(wrapEl.requestFullscreen?wrapEl.requestFullscreen().catch(()=>{}):0); break;
       case "KeyH": e.preventDefault(); toggleHUD(); break;
     }
