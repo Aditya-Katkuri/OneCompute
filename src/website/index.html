@@ -98,6 +98,9 @@
   .nav__in{max-width:1280px;margin:0 auto;padding:0 clamp(22px,5vw,90px);height:74px;display:flex;align-items:center;justify-content:space-between}
   .brand{display:flex;align-items:center;gap:12px;font-family:var(--disp);font-weight:700;font-size:19px;letter-spacing:-.02em}
   .brand svg{width:30px;height:30px}
+  .brandmark{position:fixed;top:22px;left:clamp(22px,5vw,90px);z-index:50;display:flex;align-items:center;gap:13px;font-family:var(--disp);font-weight:700;font-size:23px;letter-spacing:-.02em;color:var(--plum)}
+  .brandmark__logo{width:42px;height:42px;border-radius:10px;object-fit:cover}
+  .brandmark:hover{color:var(--magenta-ink)}
   .nav__links{display:flex;align-items:center;gap:30px}
   .nav__links a{font-size:14px;color:var(--ink);font-weight:500}
   .nav__links a.nh{padding:12px 6px}
@@ -116,7 +119,7 @@
   .hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:150px 0 90px;position:relative}
   .kick{display:flex;gap:16px;align-items:center;margin-bottom:34px}
   .kick .ln{height:1px;width:70px;background:linear-gradient(90deg,var(--magenta),transparent)}
-  .hero h1{font-size:clamp(50px,10.5vw,158px);margin:0 0 -.04em -.01em;color:var(--plum);text-shadow:0 1px 30px rgba(247,239,233,.5)}
+  .hero h1{font-size:clamp(44px,9vw,134px);margin:0 0 -.04em -.01em;color:var(--plum);text-shadow:0 1px 30px rgba(247,239,233,.5)}
   .hero .sub{max-width:580px;margin-top:38px;color:var(--ink);font-size:clamp(17px,1.7vw,21px);line-height:1.5;text-wrap:pretty}
   .hero__cta{display:flex;flex-wrap:wrap;gap:14px;margin-top:38px}
   .scrollcue{margin-top:74px;font-family:var(--mono);font-size:11px;letter-spacing:.3em;color:var(--muted);text-transform:uppercase;display:flex;align-items:center;gap:12px}
@@ -206,7 +209,8 @@
   @media(max-width:760px){.cta{padding:56px 22px}}
   footer{padding:70px 0 64px;border-top:1px solid var(--line);margin-top:30px}
   .foot{display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.04em}
-  .foot .mk{font-family:var(--disp);font-weight:700;font-size:21px;letter-spacing:-.02em;color:var(--magenta-ink)}
+  .foot .mk{display:inline-flex;align-items:center;gap:10px;font-family:var(--disp);font-weight:700;font-size:21px;letter-spacing:-.02em;color:var(--magenta-ink)}
+  .foot .mk__logo{width:28px;height:28px;border-radius:7px;object-fit:cover}
   .foot__dis{margin-top:18px;font-family:var(--mono);font-size:12px;color:var(--muted);max-width:80ch;line-height:1.8;letter-spacing:.02em;text-wrap:pretty}
 
   /* reveals default VISIBLE; the hidden start only engages once JS confirms it's running (html.js),
@@ -291,40 +295,19 @@
 <div class="filmgrain"></div>
 <div class="vignette"></div>
 
-<header class="nav" id="nav">
-  <div class="nav__in">
-    <a class="brand" href="#top" aria-label="OneCompute home">
-      <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
-        <rect x="1.4" y="1.4" width="29.2" height="29.2" rx="9" stroke="#2B2233" stroke-width="1.6"/>
-        <circle cx="16" cy="16" r="4.2" fill="#D98FC0"/>
-        <circle cx="7.4" cy="7.4" r="2" fill="#2B2233"/><circle cx="24.6" cy="7.4" r="2" fill="#2B2233"/>
-        <circle cx="7.4" cy="24.6" r="2" fill="#2B2233"/><circle cx="24.6" cy="24.6" r="2" fill="#2B2233"/>
-        <path d="M9.2 9.2l4.3 4.3M22.8 9.2l-4.3 4.3M9.2 22.8l4.3-4.3M22.8 22.8l-4.3-4.3" stroke="#2B2233" stroke-width="1.1" opacity=".4"/>
-      </svg>
-      OneCompute
-    </a>
-    <nav class="nav__links" aria-label="Primary">
-      <a class="nh" href="#problem">The problem</a>
-      <a class="nh" href="#how">How it works</a>
-      <a class="nh" href="#trust">Trust</a>
-      <a class="btn btn--ghost" href="#cta">Open the console <span class="ar">&rarr;</span></a>
-    </nav>
-  </div>
-</header>
+<a class="brandmark" href="#top" aria-label="OneCompute home">
+  <img class="brandmark__logo" src="logo.png" alt="">
+  <span>OneCompute</span>
+</a>
 
 <div class="wrap" id="top">
   <header class="hero">
-    <div class="kick reveal">
-      <span class="ln"></span>
-      <span class="eyebrow">The second supercomputer</span>
-    </div>
     <h1 class="reveal">Idle machines,<br>woken at <span class="it">dawn.</span></h1>
-    <p class="sub reveal">Every company already owns a second supercomputer, scattered across the laptops that sit idle overnight and through the long browser-and-chat hours of the day. OneCompute harvests that spare headroom into a private, opt-in grid, and steps aside the instant someone needs their machine back.</p>
+    <p class="sub reveal">OneCompute harvests the spare compute of your idle laptops into a private, opt-in grid, and steps aside the instant someone needs their machine back.</p>
     <div class="hero__cta reveal">
       <a class="btn" href="#cta">Switch it on tonight <span class="ar">&rarr;</span></a>
       <a class="btn btn--ghost" href="#how">See how it routes work</a>
     </div>
-    <div class="scrollcue reveal">Move your cursor &middot; then scroll</div>
   </header>
 
 
@@ -485,7 +468,7 @@
 
   <footer>
     <div class="foot">
-      <span class="mk">OneCompute</span>
+      <span class="mk"><img class="mk__logo" src="logo.png" alt="OneCompute logo">OneCompute</span>
       <span>Let your compute work when you are not.</span>
       <span>Warm pastels &middot; a living field &middot; honest numbers</span>
     </div>
@@ -1201,7 +1184,7 @@ void main(){
     }
   })();
 
-  var nav=document.getElementById("nav");addEventListener("scroll",function(){nav.classList.toggle("scrolled",window.scrollY>16);},{passive:true});
+  var nav=document.getElementById("nav");if(nav){addEventListener("scroll",function(){nav.classList.toggle("scrolled",window.scrollY>16);},{passive:true});}
   var cb=document.getElementById("consoleBtn");if(cb)cb.addEventListener("click",function(ev){ev.preventDefault();window.location.href="/";});
 })();
 </script>
