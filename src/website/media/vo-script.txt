@@ -1,0 +1,6 @@
+One machine, running at a fraction of what it can do.
+When compute sits idle, OneCompute quietly takes it back.
+Spare capacity, reclaimed, machine by machine.
+A single job, fanned out across the fleet.
+Thousands of idle cores, waking in parallel.
+Redirected, in an instant, to the work that matters most.
