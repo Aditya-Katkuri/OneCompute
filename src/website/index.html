@@ -609,6 +609,76 @@
   .narr.is-cinema .vig__art{width:clamp(120px,38vw,170px)}
   .vig__word{max-width:16ch}
 }
+
+/* ===== Reclaim · the multiply — one machine fans out into the whole fleet ===== */
+/* bridges the dark launch film (above) into the cream routing lake (below): a deep-plum
+   film-world stage so the video tiles glow, resolving to cream at the top + bottom edges */
+.multiply{position:relative;width:100vw;margin-left:calc(50% - 50vw);overflow:hidden;
+  --mp-0:#140d1b; --mp-1:#1d1428; --mp-2:#241a30;
+  padding:clamp(96px,14vh,168px) 0;
+  background:linear-gradient(180deg, var(--cream) 0%, var(--mp-1) 11%, var(--mp-0) 40%,
+    var(--mp-0) 60%, var(--mp-2) 86%, var(--cream) 100%)}
+.multiply__glow{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:min(1200px,120vw);height:min(760px,92vh);z-index:1;pointer-events:none;
+  background:radial-gradient(50% 50% at 50% 50%, rgba(217,143,192,.30) 0%, rgba(232,163,140,.13) 42%, rgba(217,143,192,0) 72%);
+  filter:blur(44px);mix-blend-mode:screen}
+.multiply__stage{position:relative;z-index:2;max-width:1280px;margin:0 auto;
+  padding:0 clamp(22px,5vw,90px);display:flex;flex-direction:column;align-items:center;gap:clamp(32px,5vh,58px)}
+.multiply__head{text-align:center;max-width:26ch}
+.multiply__head .eyebrow{color:var(--pink)}
+.multiply__head h2{font-family:var(--serif);font-weight:400;color:#fbf4ef;margin-top:14px;
+  font-size:clamp(28px,4.4vw,56px);line-height:1.04;text-wrap:balance;text-shadow:0 2px 34px rgba(20,13,27,.7)}
+
+.multiply__screen{position:relative;width:min(1080px,92vw);aspect-ratio:3/2;border-radius:16px;overflow:hidden;
+  background:#0d0913;
+  box-shadow:0 44px 120px -46px rgba(217,143,192,.5), 0 30px 80px -50px rgba(20,13,27,.92),
+    inset 0 0 0 1px rgba(248,204,221,.16)}
+.multiply__canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+/* the single decoded source video: kept rendering (not display:none) so frames stay live for the canvas */
+.multiply__src{position:absolute;left:-12px;top:-12px;width:2px;height:2px;opacity:0;pointer-events:none}
+.multiply__caption{position:absolute;left:5%;right:5%;bottom:clamp(20px,5.5%,48px);z-index:3;margin:0;
+  text-align:center;font-family:var(--disp);font-weight:700;color:#fff;
+  font-size:clamp(22px,3.5vw,44px);line-height:1.16;letter-spacing:-.01em;text-wrap:balance;
+  text-shadow:0 2px 4px rgba(0,0,0,.6),0 6px 30px rgba(0,0,0,.62);
+  opacity:0;transition:opacity .55s var(--ease-out);pointer-events:none}
+.multiply__caption.show{opacity:1}
+.multiply__caption.off{display:none}
+
+.multiply__controls{display:flex;gap:14px;align-items:center;flex-wrap:wrap;justify-content:center;z-index:3}
+.multiply__btn{display:inline-flex;align-items:center;gap:8px;font-family:var(--sans);font-weight:600;
+  font-size:14px;padding:12px 22px;border-radius:999px;cursor:pointer;
+  border:1.5px solid rgba(248,204,221,.5);background:rgba(248,204,221,.08);color:#fbeef5;
+  transition:transform .3s var(--ease),background .3s var(--ease-out),border-color .3s var(--ease-out)}
+.multiply__btn:hover{transform:translateY(-2px);background:rgba(248,204,221,.18);border-color:var(--pink)}
+.multiply__btn--sound{border-color:var(--pink);background:var(--magenta-ink);color:#fff}
+.multiply__btn--sound:hover{background:#c64a90}
+@media(prefers-reduced-motion:reduce){.multiply__caption{transition:none;opacity:1}.multiply__btn{transition:none}}
+@media(max-width:760px){.multiply{padding:84px 0}.multiply__caption{font-size:clamp(18px,5vw,28px)}}
+
+/* ===== Sign-off — the climactic closing beat (deliberate dark close against the cream body) ===== */
+.signoff{position:relative;width:100vw;margin-left:calc(50% - 50vw);min-height:100vh;
+  display:grid;place-items:center;overflow:hidden;text-align:center;
+  background:radial-gradient(120% 100% at 50% 32%, #2a2033 0%, #1b1424 56%, #110b18 100%)}
+.signoff__glow{position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);
+  width:min(900px,92vw);height:min(620px,78vh);z-index:1;pointer-events:none;
+  background:radial-gradient(50% 50% at 50% 50%, rgba(217,143,192,.42) 0%, rgba(232,163,140,.18) 42%, rgba(217,143,192,0) 72%);
+  filter:blur(48px);mix-blend-mode:screen}
+.signoff__inner{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;
+  gap:clamp(20px,3vh,34px);padding:clamp(40px,8vh,90px) 22px}
+.signoff__mark{width:clamp(96px,12vw,140px);height:auto;display:block;
+  filter:drop-shadow(0 14px 42px rgba(217,143,192,.5))}
+.signoff__word{font-family:var(--serif);font-weight:400;line-height:.96;letter-spacing:-.02em;
+  font-size:clamp(48px,9vw,96px)}
+.signoff__word b{font-weight:400;color:#f6efe9}
+.signoff__word span{color:#e9b6d4}
+.signoff__tag{font-family:var(--serif);font-style:italic;color:rgba(247,239,233,.84);
+  font-size:clamp(20px,3.2vw,34px);line-height:1.22;max-width:24ch;text-wrap:balance}
+/* pop-up entrance: default VISIBLE; hidden-start engages only once JS confirms (html.js),
+   so a hidden tab / headless render never ships this closing beat blank */
+html.js .signoff__inner{opacity:0;transform:translateY(26px) scale(.92);
+  transition:opacity .9s var(--ease-out),transform 1s var(--ease)}
+html.js .signoff__inner.in{opacity:1;transform:none}
+@media(prefers-reduced-motion:reduce){html.js .signoff__inner{opacity:1;transform:none;transition:none}}
 </style>
 </head>
 <body>
@@ -1817,6 +1887,27 @@
     </div>
   </section>
 
+  <!-- ===== Reclaim · the multiply — one reclaimed machine fans out into the whole fleet ===== -->
+  <section class="multiply" id="multiply" aria-label="One reclaimed machine multiplies across the fleet">
+    <div class="multiply__glow" aria-hidden="true"></div>
+    <div class="multiply__stage">
+      <div class="multiply__head reveal">
+        <span class="eyebrow">Reclaim &middot; the multiply</span>
+        <h2>One idle machine becomes the whole fleet.</h2>
+      </div>
+      <div class="multiply__screen">
+        <canvas class="multiply__canvas" aria-hidden="true"></canvas>
+        <video class="multiply__src" src="media/reclaim.mp4" muted loop playsinline preload="auto" aria-hidden="true"></video>
+        <p class="multiply__caption" id="multiplyCaption" aria-live="polite"></p>
+      </div>
+      <div class="multiply__controls">
+        <button type="button" class="multiply__btn" id="multiplyReplay">&#8635;&nbsp;Replay the multiply</button>
+        <button type="button" class="multiply__btn multiply__btn--sound" id="multiplySound" hidden>&#9654;&nbsp;Sound on</button>
+      </div>
+      <audio id="multiplyVo" src="media/reclaim-vo.mp3" preload="auto"></audio>
+    </div>
+  </section>
+
   <!-- ===== Cinema (routing) — moved to follow the launch journey; closes the cinematic arc ===== -->
   <section class="cinema" id="routing" aria-label="How idle compute is reclaimed">
     <div class="cinema__stage">
@@ -1969,6 +2060,16 @@
       <h2>Idle compute, paid back to the people who lend it.</h2>
       <p>Employees opt in and stay in control with caps, schedules, and instant opt-out. They earn gift cards and perks for compute they were not using. The company offloads cost it would otherwise pay a cloud provider.</p>
       <a class="btn" href="#" id="consoleBtn">Open the live fleet console <span class="ar">&rarr;</span></a>
+    </div>
+  </section>
+
+  <!-- ===== Sign-off — the site's climactic closing beat (relocated film endcard) ===== -->
+  <section class="signoff" id="signoff" aria-label="OneCompute">
+    <div class="signoff__glow" aria-hidden="true"></div>
+    <div class="signoff__inner">
+      <img class="signoff__mark" src="onecompute-mark.png" width="140" height="140" alt="OneCompute mark — a hex honeycomb cradling a C">
+      <p class="signoff__word"><b>One</b><span>Compute</span></p>
+      <p class="signoff__tag">Let your compute work when you are not.</p>
     </div>
   </section>
 
@@ -3148,6 +3249,193 @@ void main(){
 
   var nav=document.getElementById("nav");addEventListener("scroll",function(){nav.classList.toggle("scrolled",window.scrollY>16);},{passive:true});
   var cb=document.getElementById("consoleBtn");if(cb)cb.addEventListener("click",function(ev){ev.preventDefault();window.location.href="/";});
+})();
+</script>
+
+<script>
+/* ===== Reclaim · the multiply — one decoded video, one canvas, tiled 1→2→4→8→16→32 ===== */
+/* Captions are removable in ONE line: flip CAPTIONS to false (or open with ?captions=0). */
+(function(){
+  "use strict";
+  var CAPTIONS = true;
+  if (new URLSearchParams(location.search).get("captions") === "0") CAPTIONS = false;
+
+  var section   = document.getElementById("multiply");
+  if(!section) return;
+  var canvas    = section.querySelector(".multiply__canvas");
+  var video     = section.querySelector(".multiply__src");
+  var capEl     = section.querySelector(".multiply__caption");
+  var screenEl  = section.querySelector(".multiply__screen");
+  var audio     = document.getElementById("multiplyVo");
+  var replayBtn = document.getElementById("multiplyReplay");
+  var soundBtn  = document.getElementById("multiplySound");
+  if(!canvas || !video || !screenEl) return;
+  var ctx = canvas.getContext("2d");
+  var REDUCE = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  var CUES   = [0, 3.27, 7.53, 11.18, 14.15, 18.40];   // VO stage boundaries (s)
+  var TILES  = [1, 2, 4, 8, 16, 32];
+  var LAYOUT = [[1,1],[2,1],[2,2],[4,2],[4,4],[8,4]];   // cols × rows per stage
+  var LINES  = [
+    "One machine, running at a fraction of what it can do.",
+    "When compute sits idle, OneCompute quietly takes it back.",
+    "Spare capacity, reclaimed, machine by machine.",
+    "A single job, fanned out across the fleet.",
+    "Thousands of idle cores, waking in parallel.",
+    "Redirected, in an instant, to the work that matters most."
+  ];
+  var SPLIT_MS = 620;
+
+  if(CAPTIONS === false){ capEl.classList.add("off"); }
+
+  var dpr = Math.min(2, window.devicePixelRatio || 1);
+  function resize(){
+    var r = canvas.getBoundingClientRect();
+    canvas.width  = Math.max(1, Math.round(r.width  * dpr));
+    canvas.height = Math.max(1, Math.round(r.height * dpr));
+  }
+
+  var stage = -1, splitStart = 0, clockStart = 0;
+  var useAudioClock = false, running = false, forced = -1, armed = false, rafId = 0;
+
+  function nowT(){
+    if(forced >= 0) return CUES[forced];
+    if(useAudioClock && audio && !audio.paused) return audio.currentTime;
+    return (performance.now() - clockStart) / 1000;
+  }
+  function stageForT(t){ var s=0; for(var i=0;i<CUES.length;i++){ if(t>=CUES[i]) s=i; } return s; }
+
+  /* object-fit:cover crop — same source frame fills each tile without distortion */
+  function drawTile(vw, vh, dx, dy, dw, dh){
+    if(!vw || !vh) return;
+    var srcA = vw/vh, tA = dw/dh, sx, sy, sw, sh;
+    if(tA > srcA){ sw = vw; sh = vw / tA; sx = 0; sy = (vh - sh) / 2; }
+    else         { sh = vh; sw = vh * tA; sy = 0; sx = (vw - sw) / 2; }
+    try{ ctx.drawImage(video, sx, sy, sw, sh, dx, dy, dw, dh); }catch(e){}
+  }
+
+  function render(stageIdx, splitP){
+    var W = canvas.width, H = canvas.height;
+    var lay = LAYOUT[stageIdx], cols = lay[0], rows = lay[1];
+    var vw = video.videoWidth, vh = video.videoHeight;
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.clearRect(0,0,W,H);
+
+    /* quick scale-pop of the whole composition right at a split */
+    var pop = splitP < 1 ? (0.99 + 0.01*splitP) : 1;
+    var ox = (W - W*pop)/2, oy = (H - H*pop)/2;
+    ctx.setTransform(pop,0,0,pop,ox,oy);
+
+    var tw = W/cols, th = H/rows, cx, ry;
+    for(ry=0; ry<rows; ry++){ for(cx=0; cx<cols; cx++){ drawTile(vw, vh, cx*tw, ry*th, tw, th); } }
+
+    /* crisp glowing seams between tiles; brighter in the moment after the split */
+    var seamGlow = 0.45 + 0.55*(1 - Math.min(1, splitP));
+    ctx.lineWidth = Math.max(1, dpr*1.1);
+    ctx.strokeStyle = "rgba(248,204,221," + (0.28 + 0.55*seamGlow) + ")";
+    ctx.shadowColor = "rgba(217,143,192," + (0.7*seamGlow) + ")";
+    ctx.shadowBlur  = 12 * dpr * seamGlow;
+    ctx.beginPath();
+    for(var c=1;c<cols;c++){ ctx.moveTo(c*tw,0); ctx.lineTo(c*tw,H); }
+    for(var r=1;r<rows;r++){ ctx.moveTo(0,r*th); ctx.lineTo(W,r*th); }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    /* split flash overlay */
+    if(splitP < 1){
+      ctx.setTransform(1,0,0,1,0,0);
+      ctx.fillStyle = "rgba(255,236,247," + (0.22*(1-splitP)) + ")";
+      ctx.fillRect(0,0,W,H);
+    }
+    ctx.setTransform(1,0,0,1,0,0);
+  }
+
+  function setCaption(i){
+    if(CAPTIONS === false) return;
+    capEl.textContent = LINES[i] || "";
+    capEl.classList.add("show");
+  }
+
+  function frame(){
+    if(!running) return;
+    var t = nowT(), s = stageForT(t);
+    if(s !== stage){ stage = s; splitStart = performance.now(); setCaption(s); }
+    var sp = Math.min(1, (performance.now() - splitStart) / SPLIT_MS);
+    render(stage, sp);
+    rafId = requestAnimationFrame(frame);
+  }
+
+  function primeVideo(){ video.muted = true; var vp = video.play && video.play(); if(vp && vp.catch) vp.catch(function(){}); }
+
+  function startSequence(withAudio){
+    forced = -1; stage = -1; clockStart = performance.now(); useAudioClock = false;
+    if(withAudio && audio){
+      try{ audio.currentTime = 0; }catch(e){}
+      var p = audio.play();
+      if(p && p.then){
+        p.then(function(){ useAudioClock = true; if(soundBtn) soundBtn.hidden = true; })
+         .catch(function(){ useAudioClock = false; if(soundBtn) soundBtn.hidden = false; });
+      }
+    }
+    if(!running){ running = true; rafId = requestAnimationFrame(frame); }
+  }
+  function resumeLoop(){ if(!running && forced < 0){ running = true; rafId = requestAnimationFrame(frame); } }
+  function stopLoop(){ running = false; if(rafId) cancelAnimationFrame(rafId); }
+
+  /* deterministic screenshot hook: jump to a given tile count and hold */
+  window.__multiplyStage = function(tileCount){
+    var idx = TILES.indexOf(tileCount); if(idx < 0) idx = 0;
+    stopLoop(); forced = idx; stage = idx;
+    var draw = function(){ render(idx, 1); };
+    if(video.readyState >= 2) draw(); else video.addEventListener("loadeddata", draw, {once:true});
+    setCaption(idx); capEl.classList.add("show");
+    return idx;
+  };
+
+  window.addEventListener("resize", function(){ resize(); if(forced >= 0) render(forced, 1); else if(stage >= 0) render(stage, 1); });
+  resize();
+
+  if(REDUCE){
+    /* reduced motion: one static 32-tile grid + the final caption, no audio, no rAF churn */
+    primeVideo();
+    var drawStatic = function(){ render(5, 1); setCaption(5); capEl.classList.add("show"); };
+    if(video.readyState >= 2) drawStatic(); else video.addEventListener("loadeddata", drawStatic, {once:true});
+  } else if("IntersectionObserver" in window){
+    var io = new IntersectionObserver(function(es){
+      es.forEach(function(e){
+        var rect = e.boundingClientRect, vh = window.innerHeight || document.documentElement.clientHeight;
+        var vis = Math.min(rect.bottom, vh) - Math.max(rect.top, 0);
+        var cover = vis / Math.max(1, Math.min(rect.height, vh));
+        if(e.isIntersecting && cover >= 0.5){
+          primeVideo();
+          if(!armed){ armed = true; startSequence(true); } else { resumeLoop(); }
+        } else {
+          stopLoop();
+        }
+      });
+    }, {threshold:[0,0.2,0.4,0.6,0.8,1]});
+    io.observe(screenEl);
+  } else {
+    primeVideo(); armed = true; startSequence(true);
+  }
+
+  if(replayBtn) replayBtn.addEventListener("click", function(){ primeVideo(); startSequence(false); });
+  if(soundBtn)  soundBtn.addEventListener("click",  function(){ primeVideo(); startSequence(true);  });
+})();
+</script>
+
+<script>
+/* ===== Sign-off pop-up reveal — default visible, enhanced when JS + motion are present ===== */
+(function(){
+  "use strict";
+  var inner = document.querySelector("#signoff .signoff__inner");
+  if(!inner) return;
+  var REDUCE = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if(REDUCE || !("IntersectionObserver" in window)){ inner.classList.add("in"); return; }
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(e){ if(e.isIntersecting){ inner.classList.add("in"); io.disconnect(); } });
+  }, {threshold:0.35});
+  io.observe(inner);
 })();
 </script>
 </body>
