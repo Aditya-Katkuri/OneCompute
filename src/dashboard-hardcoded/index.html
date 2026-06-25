@@ -1,6 +1,392 @@
 <!doctype html>
 <html lang="en">
 <head>
+  <!-- ============================================================================
+       STANDALONE / HARDCODED BUILD — NO BACKEND.
+       This script is prepended ahead of all dashboard code. It (1) overrides
+       window.fetch to satisfy the orchestrator HTTP contract entirely client-side,
+       and (2) runs a continuous fleet simulation so every /state poll reflects the
+       current moment. The dashboard's own polling/render code is 100% untouched.
+       ============================================================================ -->
+  <script>
+  (function () {
+    "use strict";
+
+    // ---------- helpers ----------
+    const now = () => Date.now();
+    const iso = (t) => new Date(t == null ? Date.now() : t).toISOString().replace("Z", "+00:00");
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    const ri = (a, b) => Math.floor(rnd(a, b + 1));
+    const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    function hex(n) { let s = ""; while (s.length < n) s += Math.floor(Math.random() * 16).toString(16); return s.slice(0, n); }
+    const jobId = () => hex(16);
+    const wlId = () => hex(24);
+    function genCode() {
+      const A = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+      const c = (n) => { let s = ""; for (let i = 0; i < n; i++) s += A[Math.floor(Math.random() * A.length)]; return s; };
+      return c(4) + "-" + c(2);
+    }
+    function approach(cur, target, rate) {
+      if (cur == null || !Number.isFinite(cur)) cur = target;
+      return clamp(cur + (target - cur) * rate + rnd(-2.5, 2.5), 0, 100);
+    }
+
+    // ---------- catalog (exact contract shapes) ----------
+    const CATALOG = [
+      { kind: "fractal", label: "Fractal render", category: "Non-AI", ai: false, split: "per_machine",
+        blurb: "Escape-time Mandelbrot tiles fanned across the fleet; pixels stream back to a live canvas.",
+        default_params: { width: 720, height: 480, max_iter: 120 } },
+      { kind: "optimize", label: "Param-sweep optimize", category: "Non-AI", ai: false, split: "per_machine",
+        blurb: "Random-restart search over a noisy objective; each machine reports its local best score.",
+        default_params: { n_candidates: 30000, dims: 8 } },
+      { kind: "ai.batch_infer", label: "AI inference", category: "AI", ai: true, split: "slice_size",
+        blurb: "Prompt slices scored via the SDK; completions and token counts aggregate as they land.",
+        default_params: { slice_size: 3 } },
+      { kind: "ai.synth", label: "AI synthetic data", category: "AI", ai: true, split: "per_machine",
+        blurb: "Generates structured synthetic rows per machine and stitches them into one table.",
+        default_params: { total_rows: 30 } },
+      { kind: "montecarlo", label: "Monte-Carlo finance risk", category: "Non-AI", ai: false, split: "per_machine",
+        blurb: "Prices millions of return paths to estimate mean, volatility and value-at-risk.",
+        default_params: { total_paths: 3000000, horizon_days: 252 } },
+      { kind: "hashcrack", label: "Hash crack (proof-of-work)", category: "Non-AI", ai: false, split: "per_machine",
+        blurb: "Searches a keyspace for a SHA-256 nonce with a target prefix — honest proof-of-work.",
+        default_params: { keyspace: 300000000, target_prefix: "000000" } },
+      { kind: "ai.infer", label: "Local LLM inference", category: "AI", ai: true, split: "per_machine",
+        blurb: "Runs a prompt batch through a local model; completions stream back per machine.",
+        default_params: { n_prompts: 120 } },
+      { kind: "ai.eval", label: "Model evaluation (LLM judge)", category: "AI", ai: true, split: "per_machine",
+        blurb: "Scores model outputs with an LLM judge and rolls up accuracy / pass-rate metrics.",
+        default_params: {} },
+      { kind: "ai.graph", label: "Knowledge graph", category: "AI", ai: true, split: "per_machine",
+        blurb: "Extracts entities and relations into a knowledge graph; reports node / edge counts.",
+        default_params: {} },
+    ];
+    const BG_KINDS = CATALOG.map((c) => c.kind);
+    const CAT_BY_KIND = Object.fromEntries(CATALOG.map((c) => [c.kind, c]));
+
+    const AI_PAIRS = [
+      ["Summarize Q3 cloud revenue drivers", "Licensing +14% YoY; consumption +9%", 0],
+      ["Classify ticket: 'cannot reset password'", "category: account-access", 0],
+      ["Extract company from: 'Contoso filed 10-K'", "Contoso", 0],
+      ["Sentiment of 'shipping was painfully slow'", "negative", 0],
+      ["Translate 'good morning' to French", "bonjour", 0],
+      ["Is 'the invoice is overdue' billing-related?", "yes", 0],
+      ["One-line TL;DR of the SLA breach incident", "DB failover lagged 40s past target", 0],
+      ["Tag intent: 'book a flight to Seattle'", "intent: travel.book", 0],
+    ];
+
+    // ---------- fleet ----------
+    function mk(id, gpu, ram, approved) {
+      if (approved === undefined) approved = true;
+      return {
+        worker_id: id, has_gpu: gpu, ram_total: ram, free_ram_gb: ram,
+        approved: approved, device_code: approved ? null : genCode(),
+        blacklisted: false, credits: 0, busy: false,
+        cpu: rnd(2, 8), gpu: gpu ? rnd(2, 8) : null,
+        jobId: null, completeAt: 0, yieldUntil: 0, idleUntil: 0,
+      };
+    }
+    const workers = [
+      mk("gpu-rig-01", true, 40),
+      mk("gpu-rig-02", true, 36),
+      mk("workstation-dan", true, 48),
+      mk("devbox-alice", true, 24),
+      mk("devbox-core", false, 28),
+      mk("laptop-bob", false, 12),
+      mk("laptop-cleo", false, 14),
+      mk("laptop-ravi", false, 10),
+      mk("laptop-ana", false, 16),
+      mk("surface-eve", false, 8, false), // ONE worker awaiting approval (device-code admission gate)
+    ];
+    const findW = (id) => workers.find((w) => w.worker_id === id);
+    const approvedWorkers = () => workers.filter((w) => w.approved && !w.blacklisted);
+
+    // ---------- jobs / workloads / events ----------
+    let jobs = [];               // {job_id, kind, state, assigned_worker, completeAt, workload_id, units, output, created_at, updated_at, _user, _index, _params}
+    const workloads = new Map(); // id -> {workload_id, kind, total, params, job_ids, _user}
+    const events = [];
+    let evId = 0;
+    function emit(type, worker_id, job_id, detail) {
+      evId += 1;
+      events.push({ id: evId, ts: iso(), type, worker_id: worker_id || null, job_id: job_id || null, detail: detail === undefined ? null : detail });
+      if (events.length > 600) events.splice(0, events.length - 600);
+    }
+
+    function makeJob(kind, workload_id, isUser, params, index) {
+      const j = {
+        job_id: jobId(), kind, state: "queued", assigned_worker: null,
+        workload_id: workload_id || null, units: 1, output: null,
+        created_at: iso(), updated_at: iso(), _user: !!isUser, _index: index || 0, _params: params || {},
+      };
+      jobs.push(j);
+      return j;
+    }
+    function submitWorkload(kind, nJobs, isUser, params) {
+      const id = wlId();
+      const total = Math.max(1, nJobs | 0);
+      const job_ids = [];
+      for (let i = 0; i < total; i++) { const j = makeJob(kind, id, isUser, params, i); job_ids.push(j.job_id); }
+      workloads.set(id, { workload_id: id, kind, total, params: params || {}, job_ids, _user: !!isUser });
+      emit("submitted", null, null, kind);
+      return id;
+    }
+
+    function assign(j, w, t) {
+      j.state = "leased"; j.assigned_worker = w.worker_id; j.updated_at = iso(t);
+      w.busy = true; w.jobId = j.job_id;
+      const dur = j._user ? ri(2200, 4800) : ri(3000, 8000);
+      j.completeAt = t + dur; w.completeAt = j.completeAt;
+      emit("assigned", w.worker_id, j.job_id, j.kind);
+    }
+    function completeJob(j, w) {
+      j.state = "completed"; j.updated_at = iso();
+      if (j._user) generateOutput(j);
+      if (w) {
+        const credit = w.has_gpu ? 10 : 2; // GPU jobs earn ~5x CPU
+        w.credits += credit;
+        w.busy = false; w.jobId = null; w.completeAt = 0; w.idleUntil = now() + ri(300, 1500);
+        emit("completed", w.worker_id, j.job_id, "+" + credit.toFixed(1) + " credits");
+      }
+    }
+
+    // ---------- per-kind synthetic outputs ----------
+    function fractalBand(rowStart, rowCount, W, H, maxIter) {
+      const rows = [];
+      for (let yy = 0; yy < rowCount; yy++) {
+        const py = rowStart + yy;
+        const y0 = (py / H) * 2.4 - 1.2;
+        const row = new Array(W);
+        for (let x = 0; x < W; x++) {
+          const x0 = (x / W) * 3.0 - 2.1;
+          let zr = 0, zi = 0, it = 0;
+          while (it < maxIter && zr * zr + zi * zi < 4) { const tmp = zr * zr - zi * zi + x0; zi = 2 * zr * zi + y0; zr = tmp; it++; }
+          row[x] = it;
+        }
+        rows.push(row);
+      }
+      return rows;
+    }
+    function generateOutput(j) {
+      const wl = workloads.get(j.workload_id);
+      const total = wl ? wl.total : 1;
+      const kind = j.kind;
+      if (kind === "fractal") {
+        const W = 720, H = 480, maxIter = 120;
+        const band = Math.ceil(H / total);
+        const rs = Math.min(j._index * band, H);
+        const rc = Math.max(0, Math.min(band, H - rs));
+        j.output = { rows: fractalBand(rs, rc, W, H, maxIter), row_start: rs, width: W, max_iter: maxIter };
+      } else if (kind === "optimize") {
+        j.output = { best_score: +rnd(0.62, 0.95).toFixed(3) };
+      } else if (kind === "ai.batch_infer" || kind === "ai.infer") {
+        const res = [];
+        for (let k = 0; k < 2; k++) { const p = pick(AI_PAIRS); res.push({ prompt: p[0], completion: p[1], tokens: ri(28, 72) }); }
+        j.output = { backend: "openai", count: res.length, results: res };
+      } else if (kind === "ai.synth") {
+        const rows = [];
+        for (let k = 0; k < 3; k++) rows.push({ id: ri(1000, 9999), region: pick(["EMEA", "APAC", "AMER"]), segment: pick(["SMB", "Ent", "Gov"]), arr_k: ri(5, 250), churn: +rnd(0.01, 0.2).toFixed(2) });
+        j.output = { backend: "anthropic", count: rows.length, rows };
+      } else {
+        j.output = {}; // montecarlo / hashcrack / ai.eval / ai.graph use the workload summary
+      }
+    }
+    function workloadSummary(kind) {
+      switch (kind) {
+        case "montecarlo":
+          return { mean_return: 0.082, stdev: 0.143, worst_return: -0.312, paths: 3000000, hist: [12, 45, 120, 280, 450, 510, 420, 310, 180, 90, 40] };
+        case "hashcrack":
+          return { found: true, nonce: 7294823, hashes_tried: 7294823, target_prefix: "000000", hash: "000000" + hex(58) };
+        case "ai.eval":
+          return { accuracy: 0.91, f1: 0.88, judged: 60, pass_rate: 0.86, mean_latency_ms: 740, refusals: 2, win_rate: 0.63, avg_tokens: 312 };
+        case "ai.graph":
+          return { nodes: 1240, edges: 5210, triples: 5210, entities: 430, relations: 38, components: 7, avg_degree: 8.4, density: 0.0034 };
+        default:
+          return null;
+      }
+    }
+
+    // ---------- continuous simulation ----------
+    let nextBgAt = now() + ri(2000, 4500);
+    let nextYieldAt = now() + ri(12000, 20000);
+
+    function scheduleBg(t) {
+      const appr = approvedWorkers().length;
+      const n = Math.max(2, Math.min(appr, ri(2, 4))); // leave headroom for snappy user launches
+      submitWorkload(pick(BG_KINDS), n, false, {});
+      nextBgAt = t + ri(6000, 12000);
+    }
+    function doYield(t) {
+      const busy = approvedWorkers().filter((w) => w.busy);
+      if (!busy.length) return;
+      const w = pick(busy);
+      const j = jobs.find((x) => x.job_id === w.jobId);
+      if (j) { j.state = "queued"; j.assigned_worker = null; j.completeAt = 0; j.updated_at = iso(t); }
+      w.busy = false; w.jobId = null; w.completeAt = 0;
+      w.yieldUntil = t + 5000; // real user returned — reads "yielded" ~5s, then resumes
+      w.cpu = rnd(96, 100);
+      emit("yielded", w.worker_id, j ? j.job_id : null, null);
+    }
+    function preemptForUser() {
+      // A user launch fans out across the WHOLE fleet: requeue background jobs so the
+      // launched workload lands on every approved machine and completes promptly.
+      for (const w of workers) {
+        if (w.busy) {
+          const j = jobs.find((x) => x.job_id === w.jobId);
+          if (j && !j._user) { j.state = "queued"; j.assigned_worker = null; j.completeAt = 0; }
+          w.busy = false; w.jobId = null; w.completeAt = 0; w.idleUntil = 0;
+        }
+      }
+    }
+    function updateUsage(t) {
+      for (const w of workers) {
+        if (w.yieldUntil && t < w.yieldUntil) {
+          w.cpu = clamp(w.cpu + rnd(-2, 2), 92, 100);
+          if (w.has_gpu) w.gpu = clamp((w.gpu || 0) + rnd(-6, 4), 8, 40);
+          continue;
+        }
+        if (w.busy) {
+          w.cpu = approach(w.cpu, rnd(55, 95), 0.3);
+          w.gpu = w.has_gpu ? approach(w.gpu, rnd(60, 92), 0.3) : null;
+        } else {
+          w.cpu = approach(w.cpu, rnd(2, 10), 0.3);
+          w.gpu = w.has_gpu ? approach(w.gpu, rnd(2, 12), 0.3) : null;
+        }
+        w.free_ram_gb = +(w.ram_total * rnd(0.62, 0.98)).toFixed(1);
+      }
+    }
+    function pruneJobs() {
+      const doneBg = jobs.filter((j) => j.state === "completed" && !j._user);
+      if (doneBg.length > 50) {
+        const remove = new Set(doneBg.slice(0, doneBg.length - 50).map((j) => j.job_id));
+        jobs = jobs.filter((j) => !remove.has(j.job_id));
+      }
+    }
+    function tick() {
+      const t = now();
+      for (const w of workers) {
+        if (w.yieldUntil && t >= w.yieldUntil) { w.yieldUntil = 0; w.idleUntil = t + ri(2000, 5000); }
+      }
+      for (const j of jobs) {
+        if (j.state === "leased" && j.completeAt && t >= j.completeAt) completeJob(j, findW(j.assigned_worker));
+      }
+      const idleW = workers.filter((w) => w.approved && !w.blacklisted && !w.busy && w.yieldUntil === 0 && t >= w.idleUntil);
+      const queued = jobs.filter((j) => j.state === "queued").sort((a, b) => (b._user ? 1 : 0) - (a._user ? 1 : 0));
+      for (const j of queued) { const w = idleW.shift(); if (!w) break; assign(j, w, t); }
+      if (t >= nextBgAt) scheduleBg(t);
+      if (t >= nextYieldAt) { doYield(t); nextYieldAt = t + ri(15000, 30000); }
+      updateUsage(t);
+      pruneJobs();
+    }
+
+    // ---------- HTTP contract responses ----------
+    function stateResponse() {
+      return {
+        workers: workers.map((w) => ({
+          worker_id: w.worker_id, idle: !w.busy, busy: w.busy, has_gpu: w.has_gpu,
+          cpu_pct: +w.cpu.toFixed(1),
+          gpu_pct: w.has_gpu ? (w.gpu == null ? null : +w.gpu.toFixed(1)) : null,
+          free_ram_gb: w.free_ram_gb, blacklisted: w.blacklisted,
+          credits: +w.credits.toFixed(1), approved: w.approved,
+          device_code: w.approved ? null : w.device_code,
+        })),
+        jobs: jobs.map((j) => ({ job_id: j.job_id, kind: j.kind, state: j.state, assigned_worker: j.assigned_worker })),
+        total_credits: +workers.reduce((s, w) => s + w.credits, 0).toFixed(1),
+      };
+    }
+    function eventsResponse(since) {
+      const list = events.filter((e) => e.id > since).slice(0, 200);
+      return { events: list, last_id: events.length ? events[events.length - 1].id : since };
+    }
+    function postWorkload(body) {
+      body = body || {};
+      const kind = CAT_BY_KIND[body.kind] ? body.kind : "fractal";
+      const n = (typeof body.n_tiles === "number" && body.n_tiles > 0) ? Math.floor(body.n_tiles) : 6;
+      preemptForUser();
+      const id = submitWorkload(kind, n, true, body.params || {});
+      const wl = workloads.get(id);
+      return { workload_id: id, kind, job_ids: wl.job_ids.slice() };
+    }
+    function workloadResponse(id) {
+      const wl = workloads.get(id);
+      if (!wl) return null;
+      const wlJobs = jobs.filter((j) => j.workload_id === id);
+      const completed = wlJobs.filter((j) => j.state === "completed").length;
+      const done = completed >= wl.total;
+      return {
+        workload_id: id, kind: wl.kind, total: wl.total, completed,
+        jobs: wlJobs.map((j) => ({
+          job_id: j.job_id, kind: j.kind, state: j.state, assigned_worker: j.assigned_worker,
+          units: j.units, workload_id: j.workload_id,
+          output: j.state === "completed" ? j.output : null,
+          created_at: j.created_at, updated_at: j.updated_at,
+        })),
+        summary: done ? workloadSummary(wl.kind) : null,
+      };
+    }
+    function approveWorkerReq(id) {
+      const w = findW(id);
+      if (w) { w.approved = true; w.device_code = null; emit("approved", w.worker_id, null, null); }
+      return { ok: true, worker_id: id };
+    }
+    function deleteWorkerReq(id) {
+      const w = findW(id);
+      if (w) {
+        if (w.jobId) { const j = jobs.find((x) => x.job_id === w.jobId); if (j) { j.state = "queued"; j.assigned_worker = null; j.completeAt = 0; } }
+        const i = workers.indexOf(w); if (i >= 0) workers.splice(i, 1);
+        emit("removed", id, null, null);
+      }
+      return { ok: true, worker_id: id };
+    }
+
+    // ---------- fetch override ----------
+    const realFetch = window.fetch ? window.fetch.bind(window) : null;
+    function jsonResponse(obj, status) {
+      return Promise.resolve(new Response(JSON.stringify(obj), {
+        status: status || 200, headers: { "Content-Type": "application/json" },
+      }));
+    }
+    window.fetch = function (input, init) {
+      try {
+        const url = typeof input === "string" ? input : (input && input.url) || "";
+        const method = ((init && init.method) || (input && input.method) || "GET").toUpperCase();
+        const u = new URL(url, location.origin);
+        const path = u.pathname;
+        if (path === "/state" && method === "GET") return jsonResponse(stateResponse());
+        if (path === "/events" && method === "GET") return jsonResponse(eventsResponse(parseInt(u.searchParams.get("since") || "0", 10) || 0));
+        if (path === "/workloads/catalog" && method === "GET") return jsonResponse({ workloads: CATALOG });
+        if (path === "/workloads" && method === "POST") {
+          let body = {};
+          try { body = init && init.body ? JSON.parse(init.body) : {}; } catch (e) {}
+          return jsonResponse(postWorkload(body));
+        }
+        const mWl = path.match(/^\/workloads\/([0-9a-fA-F]+)$/);
+        if (mWl && method === "GET") { const r = workloadResponse(mWl[1]); return r ? jsonResponse(r) : jsonResponse({ error: "not found" }, 404); }
+        const mApprove = path.match(/^\/workers\/([^/]+)\/approve$/);
+        if (mApprove && method === "POST") return jsonResponse(approveWorkerReq(decodeURIComponent(mApprove[1])));
+        const mDelete = path.match(/^\/workers\/([^/]+)$/);
+        if (mDelete && method === "DELETE") return jsonResponse(deleteWorkerReq(decodeURIComponent(mDelete[1])));
+      } catch (e) { /* fall through to passthrough */ }
+      return realFetch ? realFetch(input, init) : jsonResponse({ error: "no backend" }, 404);
+    };
+
+    // ---------- seed a little history so the first paint isn't empty ----------
+    for (const w of approvedWorkers()) w.credits = ri(40, 200);
+    const seedKinds = ["fractal", "optimize", "montecarlo", "ai.batch_infer", "hashcrack", "ai.synth", "ai.infer"];
+    for (let i = 0; i < 16; i++) {
+      const w = pick(approvedWorkers());
+      jobs.push({
+        job_id: jobId(), kind: pick(seedKinds), state: "completed", assigned_worker: w.worker_id,
+        workload_id: null, units: 1, output: null,
+        created_at: iso(now() - i * 4000), updated_at: iso(now() - i * 4000), _user: false, _index: 0, _params: {},
+      });
+    }
+    for (const w of workers) emit("registered", w.worker_id, null, w.has_gpu ? "gpu" : "cpu");
+    for (let i = 0; i < 6; i++) { const w = pick(approvedWorkers()); emit("completed", w.worker_id, hex(16), "+" + (w.has_gpu ? "10.0" : "2.0") + " credits"); }
+
+    setInterval(tick, 400);
+  })();
+  </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OneCompute – Fleet Console</title>
