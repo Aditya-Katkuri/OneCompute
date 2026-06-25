@@ -78,7 +78,6 @@ it on what it actually does. The code is meant to stand on its own.
 
 ## Conventions
 
-- The product is **OneCompute**; the installed package and engine are codenamed **`nightshift`** — same system.
 - Python 3.13, managed with `uv`; `src/` is on the path via the installed packages (no `PYTHONPATH` needed).
 - Shared types live in `src/contracts/` and are treated as frozen seams — change them deliberately.
 - `src/jobkit/execute.py` is the one place that knows how to execute a job kind; keep executors pure-stdlib if they must run inside the Docker sandbox.
