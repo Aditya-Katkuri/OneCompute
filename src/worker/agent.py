@@ -60,6 +60,9 @@ class WorkerAgent:
         self.registered = False
         self.approved: bool = True
         self.device_code: str | None = None
+        # The job currently executing (None when idle). The usage heartbeat sends this so a
+        # long-running tile keeps renewing its lease instead of being reaped mid-run.
+        self._current_job_id: str | None = None
 
     def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
         if self.worker_token:
@@ -187,6 +190,7 @@ class WorkerAgent:
                     units=1,
                 )
         self._job_running.set()
+        self._current_job_id = manifest.job_id  # heartbeats now renew this job's lease
         try:
             if self.isolated:
                 # GPU jobs must run host-side (real CUDA device); a Linux container can't see
@@ -215,6 +219,7 @@ class WorkerAgent:
             status = "failed"
         finally:
             self._job_running.clear()
+            self._current_job_id = None
             self._yield.clear()
         units = len(assignment.input.get("items", [])) or 1
         return ResultRequest(

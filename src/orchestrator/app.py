@@ -108,6 +108,12 @@ def _build_workload_jobs(kind: str, n_tiles: int, params: dict) -> list[dict]:
     if kind == "data.transform":
         from workloads.cpu_fanout import generate_jobs
         return generate_jobs(n_jobs=n_tiles, **params)
+    if kind == "montecarlo":
+        from workloads.montecarlo import build_montecarlo_jobs
+        return build_montecarlo_jobs(n_tiles=n_tiles, **params)
+    if kind == "hashcrack":
+        from workloads.hashcrack import build_hashcrack_jobs
+        return build_hashcrack_jobs(n_tiles=n_tiles, **params)
     raise ValueError(f"unknown or non-launchable workload kind: {kind!r}")
 
 
@@ -133,8 +139,18 @@ WORKLOAD_CATALOG: list[dict] = [
     },
     {
         "kind": "ai.synth", "label": "AI synthetic data", "category": "AI", "ai": True,
-        "blurb": "Each machine generates synthetic records via an LLM; merged into one dataset.",
+        "blurb": "Each machine generates synthetic records via the local model; merged into one dataset.",
         "default_params": {"total_rows": 30}, "split": "per_machine",
+    },
+    {
+        "kind": "montecarlo", "label": "Monte-Carlo finance risk", "category": "non-AI", "ai": False,
+        "blurb": "Millions of market paths price a portfolio and its Value-at-Risk; every core pinned.",
+        "default_params": {"total_paths": 3_000_000, "horizon_days": 252}, "split": "per_machine",
+    },
+    {
+        "kind": "hashcrack", "label": "Hash crack (proof-of-work)", "category": "non-AI", "ai": False,
+        "blurb": "The fleet brute-forces a SHA-256 with a target prefix; live hash-rate, then the winning nonce.",
+        "default_params": {"keyspace": 300_000_000, "target_prefix": "000000"}, "split": "per_machine",
     },
 ]
 

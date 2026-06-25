@@ -17,6 +17,8 @@ from pydantic import BaseModel, Field
 JobKind = Literal[
     "ai.batch_infer", "eval", "data.transform", "render", "challenge",
     "fractal", "optimize", "ai.synth",
+    "montecarlo", "hashcrack",                 # NON-AI long-running, multi-core
+    "ai.infer", "ai.eval", "ai.graph",         # AI long-running, local-model (Ollama)
 ]
 JobState = Literal["queued", "leased", "completed", "failed"]
 ResultStatus = Literal["completed", "failed", "yielded"]
@@ -189,6 +191,7 @@ class FleetState(BaseModel):
 # Workload kinds a dashboard can launch across the fleet with POST /workloads.
 LAUNCHABLE_KINDS: tuple[str, ...] = (
     "fractal", "optimize", "ai.batch_infer", "ai.synth", "data.transform",
+    "montecarlo", "hashcrack", "ai.infer", "ai.eval", "ai.graph",
 )
 
 

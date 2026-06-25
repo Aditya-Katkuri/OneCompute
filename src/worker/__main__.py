@@ -47,7 +47,10 @@ def _start_usage_heartbeat(agent: WorkerAgent, period_s: float = 1.0) -> threadi
                     cpu = 0.0
             gpu = system_gpu_load_pct() if agent.capability.has_gpu else None
             try:
+                # current_job_id renews the lease while a long tile runs (None when idle, so an
+                # idle heartbeat stays pure telemetry and can't touch leasing).
                 agent.heartbeat(
+                    current_job_id=agent._current_job_id,
                     cpu_pct=round(cpu, 1),
                     gpu_pct=(round(gpu, 1) if gpu is not None else None),
                 )
