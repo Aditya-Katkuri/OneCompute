@@ -3724,176 +3724,155 @@ html.js .gh__ci {
   justify-content: center;
   position: relative;
 }
-.chest__svg {
+  /* ---- Gold scroll-open treasure chest (SVG scene, shiny marks) ---- */
+.chest__stage {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  position: relative;
+  isolation: isolate;
+}
+
+.chest__scene {
   width: min(620px, 90vw);
+  position: relative;
+  transform: translateZ(0);
+}
+
+.chest__svg {
+  width: 100%;
   height: auto;
   display: block;
   overflow: visible;
 }
 
-/* ---- LID: open by default (no JS); with html.js GSAP takes over ---- */
-#chestLid {
+.chest__float {
+  animation: chest-float 5.6s ease-in-out infinite;
+  transform-origin: 50% 74%;
+}
+
+#chestLid.chest__lid,
+.chest__lid {
+  opacity: 1;
+  transform-box: view-box;
+  transform-origin: 310px 312px;
+  transform: translate(-28px, -112px) rotate(-6deg);
+  will-change: transform;
+}
+
+.chest__stage .chest__interior-glow { opacity: 0.94; }
+.chest__stage .chest__rays { opacity: 0.72; }
+.chest__stage .chest__items { opacity: 1; transform: none; }
+.chest__stage .chest__sparkles,
+.chest__stage .chest__gold-sheen,
+.chest__stage .chest__item-sheen { opacity: 1; }
+
+.chest__interior-glow,
+.chest__rays,
+.chest__items,
+.chest__sparkles,
+.chest__gold-sheen,
+.chest__item-sheen {
+  will-change: opacity, transform;
+}
+
+.chest__item {
   transform-box: fill-box;
   transform-origin: 50% 100%;
-  transform: scaleY(0);
-  opacity: 0;
-}
-html.js #chestLid {
-  transform: scaleY(1);
-  opacity: 1;
 }
 
-/* ---- Interior/items/rays: visible by default; hidden when JS present ---- */
-.chest__interior-glow { opacity: 1; }
-.chest__rays           { opacity: .84; }
-.chest__items          { opacity: 1; transform: translateY(0); }
-
-html.js .chest__interior-glow { opacity: 0; }
-html.js .chest__rays           { opacity: 0; }
-html.js .chest__items          { opacity: 0; transform: translateY(44px); }
-
-/* ---- Microsoft merch (Higgsfield cartoon SVGs) inside the chest ---- */
-.chest__merch { filter: drop-shadow(0 7px 11px rgba(43,34,51,.30)); }
-
-  /* ---- Higgsfield video chest (closed -> opens to reveal Microsoft merch) ---- */
-.chest__video,
-.chest__video-still {
-  width: min(620px, 90vw);
-  max-width: 100%;
-  height: auto;
-  display: block;
-  margin: 0 auto;
-  border: 1px solid rgba(255, 255, 255, .58);
-  border-radius: 28px;
-  background: var(--paper, #F3E7EE);
-  box-shadow:
-    0 30px 88px -48px rgba(43, 34, 51, .58),
-    0 14px 34px -26px rgba(178, 61, 128, .42),
-    inset 0 1px 0 rgba(255, 255, 255, .58);
-  object-fit: cover;
-  object-position: center;
+.chest__merch {
+  filter: drop-shadow(0 10px 12px rgba(43, 34, 51, 0.28));
 }
 
-.chest__video {
-  aspect-ratio: 1 / 1;
+.chest__item--surface .chest__merch {
+  filter: drop-shadow(0 12px 16px rgba(43, 34, 51, 0.24));
 }
 
-.chest__video-still {
-  display: none;
+.chest__item--xbox .chest__merch {
+  filter: drop-shadow(0 12px 15px rgba(43, 34, 51, 0.34));
 }
 
-.chest__stage.is-video-fallback .chest__video {
-  display: none;
-}
-
-.chest__stage.is-video-fallback .chest__video-still {
-  display: block;
-}
-
-html:not(.js) .chest__video {
-  display: block;
-}
-
-html:not(.js) .chest__video-still {
-  display: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .chest__video,
-  html:not(.js) .chest__video {
-    display: none;
-  }
-
-  .chest__video-still,
-  html:not(.js) .chest__video-still {
-    display: block;
-  }
-}
-
-/* ---- Sweeping light beams (CSS loop) ---- */
-.chest__sweep {
-  animation: ch-sweep 5s cubic-bezier(.22,1,.36,1) 0.3s infinite;
-}
-.chest__sweep--b {
-  animation-delay: 2.4s;
-  animation-duration: 5.8s;
-}
-@keyframes ch-sweep {
-  0%   { transform: skewX(-13deg) translateX(-300px); opacity: 0; }
-  8%   { opacity: .75; }
-  70%  { opacity: .45; }
-  100% { transform: skewX(-13deg) translateX(920px);  opacity: 0; }
-}
-
-/* ---- Sparkle stars (CSS loop) ---- */
 .chest__spark {
   transform-box: fill-box;
   transform-origin: center;
-  animation: ch-spark 2.2s var(--ease-out, cubic-bezier(.22,1,.36,1)) infinite;
-}
-.chest__spark--b { animation-delay: .45s; animation-duration: 2.5s; }
-.chest__spark--c { animation-delay: .90s; animation-duration: 1.9s; }
-.chest__spark--d { animation-delay: 1.35s; animation-duration: 2.7s; }
-.chest__spark--e { animation-delay: .65s; animation-duration: 2.1s; }
-@keyframes ch-spark {
-  0%, 100% { transform: scale(.2) rotate(0deg);   opacity: .1; }
-  50%       { transform: scale(1.1) rotate(18deg); opacity: 1;  }
+  animation: chest-spark 2.45s cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
 
-/* ---- Twinkle glints ---- */
+.chest__spark--b { animation-delay: 0.42s; animation-duration: 2.9s; }
+.chest__spark--c { animation-delay: 0.84s; animation-duration: 2.2s; }
+.chest__spark--d { animation-delay: 1.2s; animation-duration: 2.65s; }
+.chest__spark--e { animation-delay: 1.55s; animation-duration: 2.3s; }
+.chest__spark--f { animation-delay: 0.24s; animation-duration: 2.15s; }
+.chest__spark--g { animation-delay: 1.05s; animation-duration: 2.55s; }
+
 .chest__glint {
   transform-box: fill-box;
   transform-origin: center;
-  animation: ch-glint 3s ease-in-out infinite;
+  animation: chest-glint 3.1s ease-in-out infinite;
 }
-.chest__glint--b { animation-delay: .8s; }
-.chest__glint--c { animation-delay: 1.6s; }
-.chest__glint--d { animation-delay: 2.4s; }
-.chest__glint--e { animation-delay: .4s; }
-@keyframes ch-glint {
+
+.chest__glint--b { animation-delay: 0.65s; }
+.chest__glint--c { animation-delay: 1.2s; }
+.chest__glint--d { animation-delay: 1.85s; }
+.chest__glint--e { animation-delay: 2.45s; }
+
+.chest__sweep {
+  transform-box: view-box;
+  transform-origin: center;
+  animation: chest-sheen 4.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.chest__sweep--items {
+  animation-delay: 1.25s;
+  animation-duration: 5.4s;
+}
+
+@keyframes chest-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes chest-spark {
+  0%, 100% { opacity: 0.15; transform: scale(0.18) rotate(0deg); }
+  44% { opacity: 1; transform: scale(1.08) rotate(17deg); }
+  58% { opacity: 0.86; transform: scale(0.84) rotate(25deg); }
+}
+
+@keyframes chest-glint {
   0%, 100% { opacity: 0; transform: scale(0); }
-  45%       { opacity: 1; transform: scale(1); }
-  55%       { opacity: 1; transform: scale(1); }
+  42%, 54% { opacity: 0.95; transform: scale(1); }
 }
 
-/* ---- Steam wisps ---- */
-.chest__steam {
-  animation: ch-steam 3s ease-in-out infinite;
-}
-.chest__steam--b { animation-delay: 1s; }
-.chest__steam--c { animation-delay: 2s; }
-@keyframes ch-steam {
-  0%   { opacity: 0;   transform: translateY(0px)   scaleX(1); }
-  30%  { opacity: .75; }
-  100% { opacity: 0;   transform: translateY(-22px) scaleX(1.3); }
+@keyframes chest-sheen {
+  0% { opacity: 0; transform: translateX(-90px); }
+  10% { opacity: 0.74; }
+  54% { opacity: 0.5; }
+  100% { opacity: 0; transform: translateX(860px); }
 }
 
-/* ---- Coins: driven by GSAP; start hidden ---- */
-.chest__coin { opacity: 0; }
-
-/* ---- Gold air-blast streaks: hidden by default; driven by GSAP one-shot ---- */
-.chest__blast { opacity: 0; }
-.chest__blast-line {
-  fill: none;
-  stroke: #F2D49B;
-  stroke-width: 5;
-  stroke-linecap: round;
-  filter: drop-shadow(0 0 3px rgba(255,240,190,.9));
-}
-
-/* ---- Reduced-motion: static open chest, no loops ---- */
 @media (prefers-reduced-motion: reduce) {
-  #chestLid                      { transform: scaleY(0) !important; opacity: 0 !important; }
-  .chest__interior-glow          { opacity: .95 !important; }
-  .chest__rays                   { opacity: .78 !important; }
-  .chest__items                  { opacity: 1 !important; transform: none !important; }
-  .chest__sweep                  { animation: none !important; }
-  .chest__spark                  { animation: none !important; opacity: .85; transform: scale(1); }
-  .chest__glint                  { animation: none !important; opacity: .7; transform: scale(1); }
-  .chest__steam                  { animation: none !important; }
-  .chest__coin                   { opacity: .75 !important; transform: translateY(-32px) !important; }
-  .chest__blast                  { opacity: 0 !important; }
+  .chest__float,
+  .chest__spark,
+  .chest__glint,
+  .chest__sweep {
+    animation: none !important;
+  }
+
+  .chest__interior-glow { opacity: 0.9 !important; }
+  .chest__rays { opacity: 0.62 !important; }
+  .chest__items,
+  .chest__sparkles,
+  .chest__gold-sheen,
+  .chest__item-sheen {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .chest__sweep--gold { opacity: 0.34 !important; transform: translateX(360px) !important; }
+  .chest__sweep--items { opacity: 0.26 !important; transform: translateX(280px) !important; }
 }
+
 </style>
 
 <!-- ===== SECTION: chest ============================================== -->
@@ -3910,10 +3889,201 @@ html:not(.js) .chest__video-still {
 
     <!-- ---- Chest stage ---- -->
     <div class="chest__stage" aria-label="Animated treasure chest opening to reveal Microsoft merch and tech rewards">
-      <video class="chest__video" muted playsinline preload="metadata" poster="media/chest/chest-closed.jpg" aria-hidden="true">
-        <source src="media/chest/chest-open.mp4" type="video/mp4">
-      </video>
-      <img class="chest__video-still" src="media/chest/chest-open-still.jpg" alt="An open treasure chest overflowing with Microsoft hardware, branded clothing, and swag." />
+      <div class="chest__scene" data-chest-scene>
+        <svg class="chest__svg" viewBox="0 0 620 560" role="img" aria-labelledby="chestTitle chestDesc" xmlns="http://www.w3.org/2000/svg">
+          <title id="chestTitle">Gold treasure chest opening to reveal Microsoft rewards</title>
+          <desc id="chestDesc">A premium gold and lilac treasure chest opens on scroll to reveal Xbox, Surface, and Microsoft merch with sparkles and sweeping shine.</desc>
+          <defs>
+            <linearGradient id="chestGoldPanel" x1="96" y1="250" x2="512" y2="504" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#FBF0CC" />
+              <stop offset="0.2" stop-color="#F5DFA0" />
+              <stop offset="0.52" stop-color="#E8C07A" />
+              <stop offset="0.78" stop-color="#C99048" />
+              <stop offset="1" stop-color="#9E6E2A" />
+            </linearGradient>
+            <linearGradient id="chestGoldDark" x1="132" y1="124" x2="478" y2="508" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#F9E7B1" />
+              <stop offset="0.38" stop-color="#DDA75D" />
+              <stop offset="1" stop-color="#87591E" />
+            </linearGradient>
+            <linearGradient id="chestGoldBright" x1="150" y1="128" x2="468" y2="364" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#FFF8D8" />
+              <stop offset="0.32" stop-color="#F5DFA0" />
+              <stop offset="0.7" stop-color="#D99B4F" />
+              <stop offset="1" stop-color="#A8732A" />
+            </linearGradient>
+            <linearGradient id="chestLilac" x1="90" y1="178" x2="540" y2="478" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#EEE4FF" />
+              <stop offset="0.42" stop-color="#C9B8F0" />
+              <stop offset="0.78" stop-color="#B59FE3" />
+              <stop offset="1" stop-color="#8B6EC1" />
+            </linearGradient>
+            <linearGradient id="chestLilacEdge" x1="112" y1="170" x2="508" y2="486" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#FFF7FF" />
+              <stop offset="0.45" stop-color="#C9B8F0" />
+              <stop offset="1" stop-color="#8062B6" />
+            </linearGradient>
+            <linearGradient id="chestInterior" x1="138" y1="238" x2="512" y2="375" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#FFF5B8" />
+              <stop offset="0.34" stop-color="#FFD56E" />
+              <stop offset="0.72" stop-color="#D47A21" />
+              <stop offset="1" stop-color="#8A4C17" />
+            </linearGradient>
+            <radialGradient id="chestGlow" cx="50%" cy="45%" r="56%">
+              <stop offset="0" stop-color="#FFF8CA" stop-opacity="0.98" />
+              <stop offset="0.45" stop-color="#FFD36E" stop-opacity="0.54" />
+              <stop offset="1" stop-color="#E8A38C" stop-opacity="0" />
+            </radialGradient>
+            <linearGradient id="chestSheen" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stop-color="#FFFFFF" stop-opacity="0" />
+              <stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0.72" />
+              <stop offset="0.55" stop-color="#FFF4BE" stop-opacity="0.72" />
+              <stop offset="1" stop-color="#FFFFFF" stop-opacity="0" />
+            </linearGradient>
+            <clipPath id="chestGoldClip">
+              <path d="M80 322 C128 301 491 301 540 321 L552 344 L516 490 L116 490 L62 342 Z" />
+              <path d="M100 312 L532 312 L515 220 C492 155 431 126 313 126 C195 126 129 154 108 221 Z" />
+            </clipPath>
+            <clipPath id="chestItemClip">
+              <path d="M76 116 H566 V392 H70 V279 C106 214 152 171 224 144 Z" />
+            </clipPath>
+            <filter id="chestSoftShadow" x="-25%" y="-25%" width="150%" height="160%">
+              <feGaussianBlur in="SourceAlpha" stdDeviation="12" />
+              <feOffset dx="0" dy="16" result="offset" />
+              <feColorMatrix in="offset" type="matrix" values="0 0 0 0 0.17 0 0 0 0 0.13 0 0 0 0 0.20 0 0 0 0.28 0" />
+              <feMerge>
+                <feMergeNode />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <filter id="chestGlowFilter" x="-60%" y="-70%" width="220%" height="240%">
+              <feGaussianBlur stdDeviation="15" />
+            </filter>
+            <filter id="chestSparkFilter" x="-80%" y="-80%" width="260%" height="260%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="1.6" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <pattern id="chestFiligree" width="24" height="10" patternUnits="userSpaceOnUse">
+              <path d="M2 7 C6 1 10 1 12 6 C15 11 20 9 22 4" fill="none" stroke="#FFF8FF" stroke-width="1.1" stroke-linecap="round" opacity="0.58" />
+            </pattern>
+          </defs>
+
+          <g class="chest__float" filter="url(#chestSoftShadow)">
+            <ellipse class="chest__shadow" cx="318" cy="512" rx="218" ry="31" fill="#2B2233" opacity="0.16" />
+
+            <g class="chest__rays" data-chest-rays opacity="0.72">
+              <path d="M309 278 L171 126" stroke="#FFDFA4" stroke-width="19" stroke-linecap="round" opacity="0.2" />
+              <path d="M321 268 L482 108" stroke="#FFDFA4" stroke-width="16" stroke-linecap="round" opacity="0.16" />
+              <path d="M316 287 L318 95" stroke="#FFF3BE" stroke-width="22" stroke-linecap="round" opacity="0.2" />
+            </g>
+            <ellipse class="chest__interior-glow" data-chest-glow cx="316" cy="304" rx="230" ry="138" fill="url(#chestGlow)" filter="url(#chestGlowFilter)" opacity="0.9" />
+
+            <g class="chest__lid" id="chestLid" data-chest-lid transform="translate(-28 -112) rotate(-6 310 312)">
+              <path d="M100 312 L532 312 L515 220 C492 155 431 126 313 126 C195 126 129 154 108 221 Z" fill="url(#chestGoldBright)" />
+              <path d="M100 312 L108 221 C120 176 151 149 199 142 L172 312 Z" fill="url(#chestGoldDark)" opacity="0.7" />
+              <path d="M108 221 C129 154 195 126 313 126 C431 126 492 155 515 220 L532 312 L100 312 Z" fill="none" stroke="#FBF0CC" stroke-width="8" opacity="0.7" />
+              <path d="M119 300 H523 L532 316 H100 Z" fill="url(#chestLilac)" />
+              <path d="M125 303 H518" stroke="url(#chestFiligree)" stroke-width="10" stroke-linecap="round" opacity="0.72" />
+              <path d="M180 310 L196 169 C207 165 222 162 238 159 L221 310 Z" fill="url(#chestLilacEdge)" />
+              <path d="M294 311 L300 128 C311 127 322 127 333 128 L326 311 Z" fill="url(#chestLilacEdge)" />
+              <path d="M414 310 L392 160 C406 163 421 167 433 172 L456 310 Z" fill="url(#chestLilacEdge)" />
+              <path d="M494 311 L468 186 C480 197 489 211 495 226 L520 311 Z" fill="url(#chestLilacEdge)" opacity="0.96" />
+              <path d="M184 304 L197 174 M298 303 L303 133 M420 304 L399 166 M498 304 L475 195" stroke="#FFF8FF" stroke-width="2.4" stroke-linecap="round" opacity="0.82" />
+              <path d="M285 306 H337 V321 H285 Z" fill="#C99048" />
+              <path d="M293 300 H329 V318 H293 Z" fill="url(#chestGoldPanel)" />
+              <path d="M299 319 C301 345 319 345 323 319 Z" fill="url(#chestGoldPanel)" stroke="#9E6E2A" stroke-width="1.5" />
+              <path d="M311 327 C315 327 318 330 318 334 C318 337 316 340 314 341 L316 350 H307 L309 341 C306 340 304 337 304 334 C304 330 307 327 311 327 Z" fill="#7C4D18" opacity="0.9" />
+            </g>
+
+            <g class="chest__basin">
+              <path d="M92 304 C139 278 500 278 542 306 L520 363 C461 392 159 392 92 357 Z" fill="url(#chestInterior)" />
+              <path d="M94 304 C142 283 494 283 542 306" fill="none" stroke="#FFF2BD" stroke-width="8" stroke-linecap="round" opacity="0.82" />
+            </g>
+
+            <g class="chest__items" data-chest-items clip-path="url(#chestItemClip)">
+              <g class="chest__item chest__item--giftcard" data-chest-item>
+                <image class="chest__merch" href="media/merch/giftcard.svg" x="74" y="242" width="108" height="108" preserveAspectRatio="xMidYMid meet" />
+              </g>
+              <g class="chest__item chest__item--surface" data-chest-item>
+                <image class="chest__merch" href="media/merch/surface.svg" x="236" y="178" width="214" height="214" preserveAspectRatio="xMidYMid meet" />
+              </g>
+              <g class="chest__item chest__item--xbox" data-chest-item>
+                <image class="chest__merch" href="media/merch/xbox.svg" x="126" y="169" width="184" height="184" preserveAspectRatio="xMidYMid meet" />
+              </g>
+              <g class="chest__item chest__item--hoodie" data-chest-item>
+                <image class="chest__merch" href="media/merch/hoodie.svg" x="398" y="190" width="146" height="146" preserveAspectRatio="xMidYMid meet" />
+              </g>
+              <g class="chest__item chest__item--tshirt" data-chest-item>
+                <image class="chest__merch" href="media/merch/tshirt.svg" x="318" y="276" width="144" height="144" preserveAspectRatio="xMidYMid meet" />
+              </g>
+              <g class="chest__item chest__item--bottle" data-chest-item>
+                <image class="chest__merch" href="media/merch/bottle.svg" x="470" y="226" width="114" height="114" preserveAspectRatio="xMidYMid meet" />
+              </g>
+            </g>
+
+            <g class="chest__item-sheen" data-chest-sheen clip-path="url(#chestItemClip)">
+              <g class="chest__sweep chest__sweep--items">
+                <rect x="-170" y="128" width="58" height="306" fill="url(#chestSheen)" transform="rotate(-18 0 0)" />
+              </g>
+            </g>
+
+            <g class="chest__coins" opacity="0.88">
+              <ellipse cx="128" cy="350" rx="24" ry="8" fill="#C99048" />
+              <ellipse cx="128" cy="346" rx="23" ry="8" fill="#F5DFA0" stroke="#A8732A" stroke-width="2" />
+              <ellipse cx="170" cy="361" rx="26" ry="9" fill="#F5DFA0" stroke="#A8732A" stroke-width="2" />
+              <ellipse cx="454" cy="354" rx="28" ry="9" fill="#F5DFA0" stroke="#A8732A" stroke-width="2" />
+              <ellipse cx="500" cy="348" rx="19" ry="7" fill="#F5DFA0" stroke="#A8732A" stroke-width="2" />
+              <ellipse cx="282" cy="361" rx="30" ry="9" fill="#F5DFA0" stroke="#A8732A" stroke-width="2" />
+            </g>
+
+            <g class="chest__front">
+              <path d="M78 323 C128 304 491 304 541 322 L552 344 C500 365 132 366 62 342 Z" fill="url(#chestGoldPanel)" />
+              <path d="M62 342 L552 344 L516 490 L116 490 Z" fill="url(#chestGoldPanel)" />
+              <path d="M62 342 L116 490 L84 464 L50 357 Z" fill="url(#chestGoldDark)" opacity="0.72" />
+              <path d="M552 344 L516 490 L548 460 L578 357 Z" fill="#B57830" opacity="0.62" />
+              <path d="M71 340 C139 362 490 360 552 344" fill="none" stroke="#FFF0BC" stroke-width="7" stroke-linecap="round" opacity="0.66" />
+              <path d="M74 354 H546 L541 379 H79 Z" fill="url(#chestLilac)" />
+              <path d="M85 362 H532" stroke="url(#chestFiligree)" stroke-width="9" stroke-linecap="round" opacity="0.72" />
+              <path d="M101 468 H523 L516 491 H116 Z" fill="url(#chestLilac)" />
+              <path d="M119 476 H506" stroke="url(#chestFiligree)" stroke-width="8" stroke-linecap="round" opacity="0.66" />
+              <path d="M122 351 L147 489 H116 L91 349 Z" fill="url(#chestLilacEdge)" />
+              <path d="M244 356 L254 490 H221 L209 356 Z" fill="url(#chestLilacEdge)" />
+              <path d="M375 357 L361 490 H328 L342 357 Z" fill="url(#chestLilacEdge)" />
+              <path d="M503 351 L476 490 H444 L470 354 Z" fill="url(#chestLilacEdge)" />
+              <path d="M139 363 L160 475 M235 366 L243 476 M356 367 L344 476 M486 364 L464 476" stroke="#FFF8FF" stroke-width="2" stroke-linecap="round" opacity="0.7" />
+              <path d="M286 351 H341 V372 H286 Z" fill="#C99048" />
+              <path d="M296 361 H331 C338 390 339 419 331 447 C321 456 306 456 296 447 C289 419 289 390 296 361 Z" fill="url(#chestGoldBright)" stroke="#9E6E2A" stroke-width="2" />
+              <path d="M314 402 C319 402 323 406 323 411 C323 415 320 418 317 419 L320 434 H308 L311 419 C307 418 304 415 304 411 C304 406 308 402 314 402 Z" fill="#6C4318" opacity="0.95" />
+              <path d="M93 490 L151 490 L132 516 L98 507 Z" fill="#DCA65B" />
+              <path d="M466 490 L526 490 L513 511 L479 515 Z" fill="#DCA65B" />
+            </g>
+
+            <g class="chest__gold-sheen" data-chest-sheen clip-path="url(#chestGoldClip)">
+              <g class="chest__sweep chest__sweep--gold">
+                <rect x="-180" y="74" width="70" height="470" fill="url(#chestSheen)" transform="rotate(-18 0 0)" />
+              </g>
+            </g>
+
+            <g class="chest__sparkles" data-chest-sparkles filter="url(#chestSparkFilter)">
+              <path class="chest__spark chest__spark--a" d="M0 -16 L4 -4 L16 0 L4 4 L0 16 L-4 4 L-16 0 L-4 -4 Z" transform="translate(169 230)" fill="#FFF8D8" />
+              <path class="chest__spark chest__spark--b" d="M0 -12 L3 -3 L12 0 L3 3 L0 12 L-3 3 L-12 0 L-3 -3 Z" transform="translate(395 198)" fill="#FFFFFF" />
+              <path class="chest__spark chest__spark--c" d="M0 -14 L4 -4 L14 0 L4 4 L0 14 L-4 4 L-14 0 L-4 -4 Z" transform="translate(512 292)" fill="#FFF2B8" />
+              <path class="chest__spark chest__spark--d" d="M0 -10 L3 -3 L10 0 L3 3 L0 10 L-3 3 L-10 0 L-3 -3 Z" transform="translate(276 346)" fill="#FFFFFF" />
+              <path class="chest__spark chest__spark--e" d="M0 -11 L3 -3 L11 0 L3 3 L0 11 L-3 3 L-11 0 L-3 -3 Z" transform="translate(456 366)" fill="#FFF8D8" />
+              <circle class="chest__glint chest__glint--a" cx="216" cy="165" r="3.4" fill="#FFFFFF" />
+              <circle class="chest__glint chest__glint--b" cx="366" cy="146" r="3" fill="#FFF2B8" />
+              <circle class="chest__glint chest__glint--c" cx="525" cy="384" r="3.6" fill="#FFFFFF" />
+              <circle class="chest__glint chest__glint--d" cx="111" cy="373" r="3.2" fill="#FFF2B8" />
+              <circle class="chest__glint chest__glint--e" cx="338" cy="240" r="3.8" fill="#FFFFFF" />
+              <path class="chest__spark chest__spark--f" d="M0 -9 L2.6 -2.6 L9 0 L2.6 2.6 L0 9 L-2.6 2.6 L-9 0 L-2.6 -2.6 Z" transform="translate(226 186)" fill="#FFFFFF" />
+              <path class="chest__spark chest__spark--g" d="M0 -8 L2.4 -2.4 L8 0 L2.4 2.4 L0 8 L-2.4 2.4 L-8 0 L-2.4 -2.4 Z" transform="translate(352 254)" fill="#FFF8D8" />
+            </g>
+          </g>
+        </svg>
+      </div>
     </div><!-- /stage -->
 
   </div><!-- /wrap -->
@@ -4910,105 +5080,118 @@ void main(){
 })();
 </script>
 <script>
-/* chest/video-controller.js bare IIFE (no <script> wrapper).
-   Plays the Higgsfield closed-to-open chest reveal once when the
-   stage scrolls into view, then latches on the final frame. Reduced
-   motion or blocked autoplay falls back to the open still image. */
+/* chest/scroll-open-controller.js bare IIFE (no <script> wrapper).
+   Opens the gold treasure chest on scroll via GSAP ScrollTrigger scrub,
+   raising the Microsoft rewards and twinkling the shiny marks. Reduced
+   motion or no GSAP renders the chest already open. */
 (function () {
   'use strict';
 
   var stage = document.querySelector('.chest__stage');
   if (!stage) { return; }
 
-  var video = stage.querySelector('.chest__video');
-  var still = stage.querySelector('.chest__video-still');
-  if (!video) { return; }
+  var scene = stage.querySelector('[data-chest-scene]');
+  if (!scene) { return; }
 
+  var lid = scene.querySelector('[data-chest-lid]');
+  var glow = scene.querySelector('[data-chest-glow]');
+  var rays = scene.querySelector('[data-chest-rays]');
+  var items = Array.prototype.slice.call(scene.querySelectorAll('[data-chest-item]'));
+  var sparkles = scene.querySelector('[data-chest-sparkles]');
+  var sheens = Array.prototype.slice.call(scene.querySelectorAll('[data-chest-sheen]'));
   var reduceQuery = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
   var reduce = !!(reduceQuery && reduceQuery.matches);
-  var hasPlayed = false;
-  var hasEnded = false;
-  var observer = null;
+  var gsap = window.gsap;
+  var ScrollTrigger = window.ScrollTrigger;
+  var timeline = null;
+  var state = { progress: 1 };
 
-  function revealStill() {
-    stage.classList.add('is-video-fallback');
-    try { video.pause(); } catch (err) {}
-    video.setAttribute('aria-hidden', 'true');
-    if (still) {
-      still.removeAttribute('hidden');
-    }
-    if (observer) {
-      observer.disconnect();
-      observer = null;
-    }
+  function clamp(value) {
+    value = Number(value);
+    if (!Number.isFinite(value)) { return 0; }
+    return Math.max(0, Math.min(1, value));
   }
 
-  if (reduce) {
-    revealStill();
-    return;
+  function setAutoAlpha(element, value) {
+    if (!element) { return; }
+    element.style.opacity = String(value);
+    element.style.visibility = value <= 0.01 ? 'hidden' : 'visible';
   }
 
-  if (typeof video.play !== 'function') {
-    revealStill();
-    return;
-  }
+  function render(rawProgress) {
+    var progress = clamp(rawProgress);
+    var lidLiftX = -28 * progress;
+    var lidLiftY = -112 * progress;
+    var lidRotation = -6 * progress;
 
-  function playOnce() {
-    if (hasPlayed || hasEnded) { return; }
-    hasPlayed = true;
-
-    var playPromise;
-    try {
-      playPromise = video.play();
-    } catch (err) {
-      revealStill();
-      return;
+    if (lid) {
+      lid.style.transform = 'translate(' + lidLiftX.toFixed(3) + 'px, ' + lidLiftY.toFixed(3) + 'px) rotate(' + lidRotation.toFixed(3) + 'deg)';
     }
 
-    if (playPromise && typeof playPromise.catch === 'function') {
-      playPromise.catch(function () {
-        revealStill();
-      });
+    if (glow) {
+      glow.style.opacity = String(0.12 + progress * 0.82);
+      glow.style.transform = 'scale(' + (0.84 + progress * 0.18) + ')';
+      glow.style.transformOrigin = '50% 54%';
     }
-  }
 
-  video.addEventListener('ended', function () {
-    hasEnded = true;
-    video.pause();
-    if (observer) {
-      observer.disconnect();
-      observer = null;
-    }
-  }, { once: true });
+    setAutoAlpha(rays, progress * 0.72);
 
-  video.addEventListener('error', function () {
-    revealStill();
-  }, { once: true });
-
-  if (!('IntersectionObserver' in window)) {
-    playOnce();
-    return;
-  }
-
-  observer = new IntersectionObserver(function (entries) {
-    entries.forEach(function (entry) {
-      if (entry.target !== stage) { return; }
-
-      if (entry.isIntersecting && entry.intersectionRatio >= 0.55) {
-        playOnce();
-        return;
-      }
-
-      if (!entry.isIntersecting && !hasPlayed && !video.paused) {
-        video.pause();
-      }
+    items.forEach(function (item, index) {
+      var start = 0.16 + index * 0.045;
+      var local = clamp((progress - start) / (0.7 - start));
+      var lift = (1 - local) * (58 + index * 5);
+      item.style.opacity = String(local);
+      item.style.visibility = local <= 0.01 ? 'hidden' : 'visible';
+      item.style.transform = 'translateY(' + lift.toFixed(2) + 'px) scale(' + (0.88 + local * 0.12).toFixed(3) + ')';
     });
-  }, {
-    threshold: [0, 0.55, 0.66, 1]
+
+    setAutoAlpha(sparkles, clamp((progress - 0.46) / 0.28));
+    sheens.forEach(function (sheen) {
+      setAutoAlpha(sheen, clamp((progress - 0.34) / 0.3));
+    });
+  }
+
+  window.__chest = window.__chest || {};
+  window.__chest.progress = function (value) {
+    var progress = clamp(value);
+    if (timeline) {
+      timeline.progress(progress, false);
+    }
+    state.progress = progress;
+    render(progress);
+    return progress;
+  };
+
+  if (reduce || !gsap || !ScrollTrigger) {
+    scene.classList.add('chest__scene--static-open');
+    render(1);
+    return;
+  }
+
+  gsap.registerPlugin(ScrollTrigger);
+  scene.classList.add('chest__scene--enhanced');
+  state.progress = 0;
+  render(0);
+
+  timeline = gsap.timeline({
+    defaults: { ease: 'none' },
+    scrollTrigger: {
+      trigger: stage,
+      start: 'top 80%',
+      end: 'center 45%',
+      scrub: true,
+      invalidateOnRefresh: true
+    }
   });
 
-  observer.observe(stage);
-}());
+  timeline.to(state, {
+    progress: 1,
+    duration: 1,
+    onUpdate: function () {
+      render(state.progress);
+    }
+  }, 0);
+})();
 </script>
 <script>
 (function(){
