@@ -1,13 +1,14 @@
 # OneCompute
 
-**Turn Microsoft's idle and underutilized PCs into an on-demand/spot compute grid.**
+**Turn Microsoft's idle and underutilized hardware into an on-demand/spot compute grid.**
 
 OneCompute harvests the spare CPU/GPU capacity already sitting in employee laptops, desktops,
 dev boxes, SAWs, and break-room Xboxes, and runs real distributed and AI workloads on it,
 securely, while staying invisible to the person at the keyboard.
 
 This repo is a **working proof-of-concept**: a real multi-machine fleet, a live dashboard, a
-dozen example workloads (CPU/GPU/AI), and 159 passing tests.
+dozen example workloads (CPU/GPU/AI), and 159 passing tests. We are ready to begin integration
+into Azure AI Foundry.
 
 ---
 
