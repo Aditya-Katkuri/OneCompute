@@ -50,7 +50,7 @@ def test_disconnect_requeues_in_flight_job():
     ]
     assert client.get("/jobs/next", params={"worker_id": "w1"}, headers=auth).status_code == 200
 
-    client.delete("/workers/w1")  # the job was leased to w1 - disconnect must return it to the queue
+    client.delete("/workers/w1")  # the job was leased to w1: disconnect must return it to the queue
 
     job = next(j for j in client.get("/state").json()["jobs"] if j["job_id"] == job_id)
     assert job["state"] == "queued"
@@ -91,7 +91,7 @@ def test_no_defer_when_loads_are_similar():
     conn = open_serialized_db(":memory:")
     now = _now()
     _add_worker(conn, "a", 40, now)
-    _add_worker(conn, "b", 35, now)  # within the margin - no priority flip
+    _add_worker(conn, "b", 35, now)  # within the margin, no priority flip
     assert _defer_to_less_loaded(conn, "a", now) is False
 
 
@@ -108,5 +108,5 @@ def test_no_defer_to_a_stale_peer():
     now = _now()
     stale = (datetime.now(UTC) - timedelta(seconds=30)).isoformat()
     _add_worker(conn, "busy", 90, now)
-    _add_worker(conn, "ghost", 5, stale)  # idle but not heartbeating - not a live competitor
+    _add_worker(conn, "ghost", 5, stale)  # idle but not heartbeating, not a live competitor
     assert _defer_to_less_loaded(conn, "busy", now) is False

@@ -1,4 +1,4 @@
-"""``python -m orchestrator`` - run the NightShift control plane on a LAN PC.
+"""``python -m orchestrator``: run the NightShift control plane on a LAN PC.
 
 Binds uvicorn to a configurable host/port (default ``0.0.0.0:8080`` so worker
 machines on the same network can reach it) and persists the fleet/queue/ledger to
@@ -98,7 +98,7 @@ def _banner_lines(host: str, port: int, db_path: str, scheme: str = "http") -> l
             f"                curl {scheme}://{primary}:{port}/state  returns JSON",
         ]
     else:
-        # No usable LAN IP detected - fall back to local-only guidance.
+        # No usable LAN IP detected. Fall back to local-only guidance.
         out += [
             f"  Dashboard:  {scheme}://127.0.0.1:{port}/",
             f"  Worker:     uv run python -m worker --url {scheme}://127.0.0.1:{port}",
@@ -172,7 +172,7 @@ def main(argv: list[str] | None = None) -> int:
     for banner_line in _banner_lines(host, port, db_path, scheme):
         print(banner_line)
     if args.require_approval:
-        print("  Credential gate: ON - workers join PENDING and need dashboard approval (device code).")
+        print("  Credential gate: ON. Workers join PENDING and need dashboard approval (device code).")
     sys.stdout.flush()
 
     try:

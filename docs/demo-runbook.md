@@ -1,4 +1,4 @@
-# OneCompute / NightShift - fleet demo runbook
+# OneCompute / NightShift: fleet demo runbook
 
 The demo shows ONE fleet (2 laptops + 1 dev box, side by side) running **four distinct
 compute workloads, one after another**, each fanned across **every** machine. Joining a
@@ -19,19 +19,19 @@ milliseconds and is requeued to the rest of the fleet. The dev-box GPU earns **5
 
 There are two ways to run it:
 
-- **Section A** - the real multi-machine fleet over a LAN (the live demo).
-- **Section B** - a single-box simulated 3-machine fleet (records without a LAN).
+- **Section A**: the real multi-machine fleet over a LAN (the live demo).
+- **Section B**: a single-box simulated 3-machine fleet (records without a LAN).
 
 ---
 
-## A) Real fleet - 2 laptops + 1 dev box, side by side
+## A) Real fleet: 2 laptops + 1 dev box, side by side
 
 All three machines need the repo checked out and `uv` available. Commands use the project
-`uv` (`C:\Users\<you>\.local\bin\uv.exe`). **Run `uv sync` once per machine first** - it
+`uv` (`C:\Users\<you>\.local\bin\uv.exe`). **Run `uv sync` once per machine first**. It
 installs NightShift into the project venv, so `uv run python -m orchestrator` and
 `uv run python -m worker` work from any checkout (no `PYTHONPATH` needed).
 
-### A1. Dev box - start the orchestrator (with the credential gate ON)
+### A1. Dev box: start the orchestrator (with the credential gate ON)
 
 ```powershell
 uv sync                 # one-time: installs NightShift + deps into .venv
@@ -45,7 +45,7 @@ This binds `0.0.0.0:8080` and prints, for each LAN IP, the **dashboard URL** and
   Dashboard:  http://10.0.8.72:8080/
   Worker:     uv run python -m worker --url http://10.0.8.72:8080
   ...
-  Credential gate: ON - workers join PENDING and need dashboard approval (device code).
+  Credential gate: ON. Workers join PENDING and need dashboard approval (device code).
 ```
 
 Note your dev-box LAN IP (call it `<dev-box-ip>`). Optional flags: `--port <n>`,
@@ -54,7 +54,7 @@ Note your dev-box LAN IP (call it `<dev-box-ip>`). Optional flags: `--port <n>`,
 > **AI keys (beats 3 & 4):** for *real* inference/synthesis, set `OPENAI_API_KEY` or
 > `ANTHROPIC_API_KEY` **in the worker environment** before launching the worker (AI jobs run
 > host-side on the worker, so that is where the key must live). With no key the AI beats use a
-> disclosed deterministic fallback - the demo still completes.
+> disclosed deterministic fallback. The demo still completes.
 
 ### A2. Open the dashboard
 
@@ -62,7 +62,7 @@ On the dev box (projector), open the printed `http://<dev-box-ip>:8080/`. You'll
 worker tiles, per-machine busy/idle, the device-code **PENDING** tiles with an **Approve**
 button, credits, and the workloads-run tally.
 
-### A3. Each laptop (and the dev box itself) - join a worker
+### A3. Each laptop (and the dev box itself): join a worker
 
 On **laptop-ana**, **laptop-ben**, and the **dev box**:
 
@@ -75,7 +75,7 @@ First confirm reachability from a laptop: `curl http://<dev-box-ip>:8080/state` 
 Each worker registers, then prints and **waits**:
 
 ```
-Fleet access code: WX7Q-12 - waiting for approval in the dashboard…
+Fleet access code: WX7Q-12, waiting for approval in the dashboard…
 ```
 
 ### A4. Admin approves each machine (the credential step)
@@ -84,29 +84,29 @@ In the dashboard, each waiting machine shows up as a **PENDING** tile with its s
 code. Click **Approve** on that machine's tile. The worker flips to:
 
 ```
-[+] Access granted - <worker-id> joined the fleet
+[+] Access granted, <worker-id> joined the fleet
 ```
 
 Only then can that worker pull work. (This is the access-control story: a joining PC proves
 itself with a short code an admin admits in the dashboard.)
 
-### A5. Run the four workloads - one command per beat
+### A5. Run the four workloads: one command per beat
 
 From any machine that can reach the orchestrator (e.g. the dev box), submit each workload in
 turn. Each command fans the workload across all machines via the hardcoded split (`--n 3` =
-one tile per machine - set `--n` to your machine count).
+one tile per machine. Set `--n` to your machine count).
 
 ```powershell
-# BEAT 1 - distributed Mandelbrot fractal (non-AI)
+# BEAT 1: distributed Mandelbrot fractal (non-AI)
 uv run python scripts/submit_jobs.py --url http://<dev-box-ip>:8080 --kind fractal  --n 3
 
-# BEAT 2 - distributed param-sweep optimization (non-AI)
+# BEAT 2: distributed param-sweep optimization (non-AI)
 uv run python scripts/submit_jobs.py --url http://<dev-box-ip>:8080 --kind optimize --n 3
 
-# BEAT 3 - model inference over a prompt set (AI)
+# BEAT 3: model inference over a prompt set (AI)
 uv run python scripts/submit_jobs.py --url http://<dev-box-ip>:8080 --kind ai
 
-# BEAT 4 - synthetic data generation (AI)
+# BEAT 4: synthetic data generation (AI)
 uv run python scripts/submit_jobs.py --url http://<dev-box-ip>:8080 --kind synth    --n 3
 ```
 
@@ -118,30 +118,30 @@ Useful knobs (defaults are projector-friendly):
 `--kind optimize --candidates 400000 --dims 8` (fatter bar; the global best is deterministic
 regardless of how it's split), `--kind synth --rows 300` (more rows).
 
-### A6. Instant yield - the employee stays in control
+### A6. Instant yield: the employee stays in control
 
 While a beat is running on a laptop, **touch that laptop's mouse/keyboard**. Its current tile
 goes amber (**yielded**) within milliseconds and the slice is **requeued** to the rest of the
 fleet, which finishes it. The machine is never fought for. (A heavier slice makes this easy to
-catch - e.g. submit `--kind optimize --candidates 400000` and touch a laptop mid-run.)
+catch, e.g. submit `--kind optimize --candidates 400000` and touch a laptop mid-run.)
 
-### A7. The money shot - the reassembled image
+### A7. The money shot: the reassembled image
 
 After BEAT 1 drains, the host-side assembler stitches the bands into one image. To produce the
-PNG explicitly (e.g. on the dev box for the projector), run the simulated driver once - it
-writes `./onecompute-fractal.png` - or open the image the recording driver in Section B
+PNG explicitly (e.g. on the dev box for the projector), run the simulated driver once (it
+writes `./onecompute-fractal.png`) or open the image the recording driver in Section B
 produces. **Open `onecompute-fractal.png`**: a single Mandelbrot rendered across all machines.
 
 ### A8. Close
 
 Show the dashboard ledger: per-machine credits (dev-box GPU 5×), total credits, jobs completed,
 and the **workloads run: fractal, optimize, ai.batch_infer, ai.synth** tally. The pitch: one
-fleet, four very different jobs, each spread across every idle machine - credited only for
+fleet, four very different jobs, each spread across every idle machine, credited only for
 verified work, and yielding the instant a human comes back.
 
 ---
 
-## B) Local simulated fleet - record without a LAN
+## B) Local simulated fleet: record without a LAN
 
 For a clean screen recording on a single machine (no second/third PC, no network setup), the
 self-contained driver stands up a **real** signed orchestrator (credential gate ON), three
@@ -156,11 +156,11 @@ uv run python scripts/demo_fleet.py --no-hold  # run the beats and exit (used fo
 It prints the dashboard URL (open it to watch the tiles), shows each worker's PENDING device
 code then auto-approves it (narrating "in the real demo the admin clicks Approve"), and for
 each beat prints per-machine progress + the aggregate. BEAT 1 writes **`./onecompute-fractal.png`**
-- open it to show the image rendered across the (simulated) fleet. AI beats use the disclosed
+. Open it to show the image rendered across the (simulated) fleet. AI beats use the disclosed
 fallback unless `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` is set in the environment.
 
 The local flow mirrors the real flow exactly (same orchestrator, same contracts, same approval
-gate, same workload builders/aggregators, same hardcoded N-tile split) - only the worker
+gate, same workload builders/aggregators, same hardcoded N-tile split). Only the worker
 machines are simulated on one box.
 
 ---
@@ -174,5 +174,5 @@ machines are simulated on one box.
 - **AI runs host-side:** `ai.batch_infer` and `ai.synth` execute on the worker host (real SDK +
   API-key env), never inside the stdlib sandbox container. Non-AI kinds (`fractal`, `optimize`)
   run in the sandbox.
-- **Credit:** metered on server-assigned class weight - the GPU dev box earns 5×, CPU laptops 1×.
+- **Credit:** metered on server-assigned class weight: the GPU dev box earns 5×, CPU laptops 1×.
 ```

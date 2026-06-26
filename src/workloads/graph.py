@@ -124,7 +124,7 @@ def render_graph_png(agg: dict, path: str) -> str:
         edge_labels={(e["source"], e["target"]): e.get("relation", "") for e in agg.get("edges", [])},
     )
     ax.set_title(
-        f"Knowledge graph - {agg.get('node_count', 0)} entities, {agg.get('edge_count', 0)} relations"
+        f"Knowledge graph: {agg.get('node_count', 0)} entities, {agg.get('edge_count', 0)} relations"
     )
     ax.axis("off")
     fig.tight_layout()

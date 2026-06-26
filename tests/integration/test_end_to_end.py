@@ -17,7 +17,7 @@ from worker.agent import WorkerAgent
 
 def _client(app) -> TestClient:
     # TestClient is a synchronous httpx.Client subclass that speaks to the ASGI app
-    # in-process - so it can be injected straight into WorkerAgent(client=...).
+    # in-process, so it can be injected straight into WorkerAgent(client=...).
     return TestClient(app)
 
 

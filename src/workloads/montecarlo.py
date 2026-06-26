@@ -154,7 +154,7 @@ def render_risk_chart(agg: dict, path: str) -> str:
         if var is not None:
             ax.axvline(-var, color=color, linestyle="--", linewidth=1.6, label=f"VaR{pct} = {var:.1%}")
     ax.set_title(
-        f"Portfolio return distribution - {agg.get('paths', 0):,} Monte-Carlo paths "
+        f"Portfolio return distribution: {agg.get('paths', 0):,} Monte-Carlo paths "
         f"(mean {agg.get('mean_return', 0):.1%}, σ {agg.get('stdev', 0):.1%})"
     )
     ax.set_xlabel("terminal return")

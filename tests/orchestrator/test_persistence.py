@@ -5,7 +5,7 @@ from orchestrator.app import create_app
 
 def test_worker_and_ledger_survive_db_reopen(tmp_path):
     """A registered worker + earned credits persist across closing and re-opening the
-    same file-backed SQLite DB - the property the LAN standup depends on."""
+    same file-backed SQLite DB: the property the LAN standup depends on."""
     db_path = str(tmp_path / "persist.db")
 
     app = create_app(db_path)

@@ -1,17 +1,17 @@
-# OneCompute - the 4 example workloads
+# OneCompute: the 4 example workloads
 
 The demo fans **four hardcoded example workloads** across the fleet (2 laptops + a dev box). Each
 is submitted as a set of jobs that the fleet picks up in parallel; the work is split with a
-**hardcoded partition** - one tile per machine - because the dynamic headroom governor is
+**hardcoded partition** (one tile per machine) because the dynamic headroom governor is
 deliberately set aside for the demo (see [`architecture.md`](./architecture.md) §3.2). Two are
 **non-AI** and two are **AI**, to show range.
 
 | # | Workload | Job kind | AI? | Executor (where it runs) | Split across the fleet | Aggregated by |
 |---|---|---|---|---|---|---|
-| 1 | Fractal render | `fractal` | no | `jobkit.execute._fractal` - **pure stdlib**, runs inside the Docker sandbox | image rows → one band per machine | `workloads.fractal.assemble_tiles` → PNG |
-| 2 | Param-sweep optimize | `optimize` | no | `jobkit.execute._optimize` - **pure stdlib**, runs inside the Docker sandbox | candidate index range → one slice per machine | `workloads.optimize.aggregate_optimize` |
-| 3 | Model inference | `ai.batch_infer` | yes | `jobkit.execute._ai_batch_infer` - **host-side** (real SDK + key) | prompts → slices of `slice_size` | concatenate `results` |
-| 4 | Synthetic data | `ai.synth` | yes | `jobkit.execute._ai_synth` - **host-side** (real SDK + key) | rows → one slice per machine | `workloads.synth.merge_synth` |
+| 1 | Fractal render | `fractal` | no | `jobkit.execute._fractal`, **pure stdlib**, runs inside the Docker sandbox | image rows → one band per machine | `workloads.fractal.assemble_tiles` → PNG |
+| 2 | Param-sweep optimize | `optimize` | no | `jobkit.execute._optimize`, **pure stdlib**, runs inside the Docker sandbox | candidate index range → one slice per machine | `workloads.optimize.aggregate_optimize` |
+| 3 | Model inference | `ai.batch_infer` | yes | `jobkit.execute._ai_batch_infer`, **host-side** (real SDK + key) | prompts → slices of `slice_size` | concatenate `results` |
+| 4 | Synthetic data | `ai.synth` | yes | `jobkit.execute._ai_synth`, **host-side** (real SDK + key) | rows → one slice per machine | `workloads.synth.merge_synth` |
 
 > **Why the AI ones run host-side.** A jobkit executor also runs inside a `python:3.12-slim`
 > Docker container whose payload is stdlib-only and gets **no API key**. So the non-AI executors
@@ -27,21 +27,21 @@ tile, with `units` = the size of that tile.
 
 ---
 
-## 1. Fractal render (`fractal`) - non-AI
+## 1. Fractal render (`fractal`): non-AI
 
 A distributed **Mandelbrot**: each machine renders a horizontal **band** of the image, and the
 bands reassemble into one picture. Visual, embarrassingly parallel, deterministic.
 
 - **Builder:** `workloads.fractal.build_fractal_jobs(n_tiles, width=900, height=600, max_iter=120, weights=None)` → splits the image **height** into `n_tiles` row-bands.
 - **Input (per tile):** `{ width, height, row_start, row_end, max_iter, x_min, x_max, y_min, y_max }` (default window is the classic full view).
-- **Output (per tile):** `{ width, row_start, row_end, max_iter, rows: [[int per pixel], …], yielded }` - each int is the escape count (`>= max_iter` ⇒ in-set).
+- **Output (per tile):** `{ width, row_start, row_end, max_iter, rows: [[int per pixel], …], yielded }`: each int is the escape count (`>= max_iter` ⇒ in-set).
 - **Reassemble:** `workloads.fractal.assemble_tiles(results, width, height, max_iter)` places each row at absolute `y = row_start + i`, colorizes the escape counts (in-set → black), and returns a `PIL.Image`; `save_png(img, path)` writes it. (PIL/numpy are host-side only, guarded.)
-- **Preemptible:** chunked per row - `should_yield()` is checked before each row, returning the partial rows with `yielded: True`.
+- **Preemptible:** chunked per row: `should_yield()` is checked before each row, returning the partial rows with `yielded: True`.
 
-## 2. Param-sweep optimize (`optimize`) - non-AI
+## 2. Param-sweep optimize (`optimize`): non-AI
 
 A distributed **search**: each machine evaluates a slice of thousands of candidate configs against
-a fixed objective; the global best across the fleet wins. Deterministic - the same winner emerges
+a fixed objective; the global best across the fleet wins. Deterministic: the same winner emerges
 regardless of how the work was split.
 
 - **Builder:** `workloads.optimize.build_optimize_jobs(n_tiles, n_candidates=30000, dims=8, seed=0, weights=None)` → splits candidate indices `[0, n_candidates)` into `n_tiles` slices.
@@ -51,7 +51,7 @@ regardless of how the work was split.
 - **Aggregate:** `workloads.optimize.aggregate_optimize(results)` → the global best (max `best_score`, tie-break lower `best_index`) + total `evaluated`.
 - **Preemptible:** chunked per candidate.
 
-## 3. Model inference (`ai.batch_infer`) - AI
+## 3. Model inference (`ai.batch_infer`): AI
 
 Batch **LLM inference**: each machine scores a slice of a prompt set. Real model calls when a key
 is present, a disclosed token-proportional fallback otherwise.
@@ -61,7 +61,7 @@ is present, a disclosed token-proportional fallback otherwise.
 - **Backend:** real **Anthropic** (`ANTHROPIC_API_KEY`) or **OpenAI** (`OPENAI_API_KEY`) SDK if a key is set, else a disclosed `"fallback"`.
 - **Output (per tile):** `{ results: [{ prompt, completion, tokens }, …], backend, yielded }`.
 
-## 4. Synthetic data (`ai.synth`) - AI
+## 4. Synthetic data (`ai.synth`): AI
 
 Distributed **synthetic-data generation**: each machine generates a slice of records, merged into
 one dataset. Real LLM-generated rows when keyed, a deterministic disclosed fallback otherwise.

@@ -121,7 +121,7 @@ class WorkerAgent:
             return True
         code = self.device_code or "????-??"
         print(
-            f"Fleet access code: {code} - waiting for approval in the dashboard…",
+            f"Fleet access code: {code}, waiting for approval in the dashboard…",
             flush=True,
         )
         delay = poll_s if poll_s is not None else (self.poll_interval_s or 1.5)
@@ -131,7 +131,7 @@ class WorkerAgent:
                 self.approved = True
                 self.device_code = None
                 print(
-                    f"[+] Access granted - {self.capability.worker_id} joined the fleet",
+                    f"[+] Access granted: {self.capability.worker_id} joined the fleet",
                     flush=True,
                 )
                 return True

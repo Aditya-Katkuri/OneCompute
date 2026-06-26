@@ -26,7 +26,7 @@ def _start_usage_heartbeat(agent: WorkerAgent, period_s: float = 1.0) -> threadi
 
     Pure telemetry: it never sends current_job_id, so it cannot perturb leasing/scheduling. Runs
     as a daemon thread; returns a stop Event the caller sets on shutdown. The cadence is floored
-    at 0.25 s - psutil.cpu_percent measures the delta since the last call, so faster than that
+    at 0.25 s: psutil.cpu_percent measures the delta since the last call, so faster than that
     gives a noisy/meaningless CPU reading (and just hammers the orchestrator).
     """
     period_s = max(0.25, period_s)

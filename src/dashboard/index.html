@@ -344,7 +344,7 @@
     .tile.yielded { --state: var(--yield); background: color-mix(in srgb, var(--yield) 7%, var(--surface)); border-color: color-mix(in srgb, var(--yield) 42%, transparent); }
     .tile.blacklisted { --state: var(--danger); background: color-mix(in srgb, var(--danger) 7%, var(--surface)); border-color: color-mix(in srgb, var(--danger) 42%, transparent); }
     .tile.unavailable { --state: var(--text-soft); opacity: 0.7; }
-    /* Pending dashboard approval (device-code gate) - distinct accent-tinted state */
+    /* Pending dashboard approval (device-code gate), distinct accent-tinted state */
     .tile.pending { --state: var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--surface)); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
 
     /* moving sheen along the top of busy tiles to read as "working" */
@@ -409,7 +409,7 @@
     }
     .chip.gpu { color: var(--accent-2); border-color: color-mix(in srgb, var(--accent-2) 38%, transparent); background: color-mix(in srgb, var(--accent-2) 9%, var(--surface)); }
 
-    /* Admission badge - JOINED (approved) vs PENDING (awaiting dashboard approval) */
+    /* Admission badge: JOINED (approved) vs PENDING (awaiting dashboard approval) */
     .badge {
       flex: none;
       display: inline-flex; align-items: center; gap: 5px;
@@ -858,7 +858,7 @@
       </div>
     </section>
 
-    <!-- ===== Fleet at a glance (consolidated - each metric appears once) ===== -->
+    <!-- ===== Fleet at a glance (consolidated: each metric appears once) ===== -->
     <section class="statbar card" aria-label="Fleet at a glance">
       <div class="statbar-item">
         <div class="label">Jobs completed</div>
@@ -1018,7 +1018,7 @@
       "ai.synth": "Synthetic data",
     };
 
-    // worker_ids the admin has approved this session - keeps an Approve button disabled
+    // worker_ids the admin has approved this session, keeps an Approve button disabled
     // optimistically until the next poll confirms the flip server-side.
     const approvingWorkers = new Set();
 
@@ -1052,12 +1052,12 @@
       E.statusText.textContent = text;
     }
 
-    // Defensive: older /state payloads may omit `approved` - treat MISSING as TRUE so
+    // Defensive: older /state payloads may omit `approved`, treat MISSING as TRUE so
     // a worker never regresses into the pending gate when the field isn't present.
     const isApproved = (w) => w.approved !== false;
 
     function workerState(w) {
-      // A worker awaiting dashboard approval can't pull work yet - surface that first.
+      // A worker awaiting dashboard approval can't pull work yet. Surface that first.
       if (!isApproved(w)) return "pending";
       if (w.blacklisted) return "blacklisted";
       if ((yieldedUntil.get(w.worker_id) || 0) > Date.now()) return "yielded";
@@ -1089,7 +1089,7 @@
         if (!res.ok) throw new Error(`approve ${res.status}`);
         // Success: leave the button disabled; the next /state poll renders it as JOINED.
       } catch {
-        // Let the admin retry - re-enable and drop the optimistic guard.
+        // Let the admin retry: re-enable and drop the optimistic guard.
         approvingWorkers.delete(workerId);
         if (btn) { btn.disabled = false; btn.textContent = "Approve"; }
       }
@@ -1235,7 +1235,7 @@
       const seen = new Set();
       for (const w of workers) {
         seen.add(w.worker_id);
-        if (pendingRemoval.has(w.worker_id)) continue; // just disconnected - don't rebuild its tile
+        if (pendingRemoval.has(w.worker_id)) continue; // just disconnected, don't rebuild its tile
         let tile = tileEls.get(w.worker_id);
         if (!tile) { tile = buildTile(w); tileEls.set(w.worker_id, tile); E.tiles.appendChild(tile); }
 
@@ -1650,7 +1650,7 @@
         btn.textContent = "Launched ✓";
         setTimeout(() => { btn.disabled = false; btn.textContent = prev; }, 1400);
       } catch {
-        btn.textContent = "Launch failed - retry";
+        btn.textContent = "Launch failed: retry";
         setTimeout(() => { btn.disabled = false; btn.textContent = prev; }, 1600);
       }
     }
@@ -1694,7 +1694,7 @@
             renderResult(wid, wl);
             done = Number.isFinite(wl.total) && wl.completed >= wl.total;
           }
-        } catch { /* transient - keep polling */ }
+        } catch { /* transient, keep polling */ }
         if (!done && tries < 160) setTimeout(tick, 700);
       };
       tick();
@@ -1798,9 +1798,9 @@
     }
     function renderHashcrack(panel, wl) {
       const s = wl.summary;
-      if (!s) { panel.body.innerHTML = `<div class="res-running">Hashing - ${wl.completed}/${wl.total} ranges searched</div>`; return; }
+      if (!s) { panel.body.innerHTML = `<div class="res-running">Hashing: ${wl.completed}/${wl.total} ranges searched</div>`; return; }
       if (!s.found) {
-        panel.body.innerHTML = `<div class="res-running">${(s.hashes_tried || 0).toLocaleString()} hashes tried - no nonce with prefix <b>${esc(s.target_prefix || "")}</b> yet</div>`;
+        panel.body.innerHTML = `<div class="res-running">${(s.hashes_tried || 0).toLocaleString()} hashes tried, no nonce with prefix <b>${esc(s.target_prefix || "")}</b> yet</div>`;
         return;
       }
       panel.body.innerHTML =
@@ -1831,7 +1831,7 @@
       generic: renderSummary,
     };
 
-    // ===================== Live Fleet Harvest - dependency-free 2.5D terrain =====================
+    // ===================== Live Fleet Harvest: dependency-free 2.5D terrain =====================
     // Renders one ridge per device (depth = device, X = time, height = CPU%), reading the same
     // rolling usageHistory the tile sparklines use. GPU shown as a dashed overlay ridgeline.
     (function harvest() {
