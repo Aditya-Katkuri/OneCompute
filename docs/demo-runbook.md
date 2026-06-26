@@ -51,7 +51,7 @@ This binds `0.0.0.0:8080` and prints, for each LAN IP, the **dashboard URL** and
 Note your dev-box LAN IP (call it `<dev-box-ip>`). Optional flags: `--port <n>`,
 `--db <path>` (state persists across restarts; default `./reeve-orchestrator.db`).
 
-> **AI backend (beats 3 & 4):** the worker resolves an LLM backend in precedence order — a
+> **AI backend (beats 3 & 4):** the worker resolves an LLM backend in precedence order: a
 > **local Ollama** model first (`ONECOMPUTE_LLM_URL`, default `http://127.0.0.1:11434/v1`), then
 > `OPENAI_API_KEY`, then `ANTHROPIC_API_KEY`. The local model is the default the demo relies on
 > (the fleet is CPU-only, no cloud); for cloud inference instead, set a key **in the worker

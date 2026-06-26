@@ -107,7 +107,7 @@ from trust import Signer, verify_manifest, make_challenge, check_challenge
 # make_challenge() -> tuple[dict, dict]          (job_input, expected_output) for a `challenge` job
 # check_challenge(output: dict, expected: dict) -> bool   (exact, integer, no FP)
 ```
-Integration (Wave B, COS): signing is **ON by default** — `create_app(signer=None)` instantiates a real
+Integration (Wave B, COS): signing is **ON by default**: `create_app(signer=None)` instantiates a real
 `Signer()` internally, so the orchestrator signs on assignment and the worker calls `verify_manifest(sm)`
 **and** checks `sha256_hex(input) == manifest.input_sha256` before running (tamper-refusal). To disable
 signing you must pass an explicit no-op signer.

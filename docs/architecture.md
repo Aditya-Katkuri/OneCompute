@@ -52,10 +52,10 @@ flowchart TB
 1. **Worker agent**: Python process on each opt-in PC. Detects idleness, advertises capability, pulls signed jobs, runs them in a sandbox, returns results, yields instantly when the human returns. When the fleet runs gated, it first **joins via a device-code approval** (shows a short code, waits until an admin approves it in the dashboard) and then streams live per-device usage (~1s).
 2. **Orchestrator**: FastAPI app on the dev box. Control plane + scheduler + verifier + ledger + dashboard. One process for the PoC. It also exposes a **dashboard-facing API** (approve a worker, launch a whole workload across the fleet in one call, read a workload/job's output, list the launch catalog); see §4.1 and [`dashboard-api.md`](./dashboard-api.md).
 3. **Job/manifest model**: the signed contract between submitter and worker.
-4. **Sandbox runtime**: a **Docker container per job** (`--network none`, read-only mounts, `--rm`) isolating each job on the worker, with an always-available **subprocess + Job Object** fallback when Docker is unreachable (Windows Sandbox is the documented ideal — see §3.3).
+4. **Sandbox runtime**: a **Docker container per job** (`--network none`, read-only mounts, `--rm`) isolating each job on the worker, with an always-available **subprocess + Job Object** fallback when Docker is unreachable (Windows Sandbox is the documented ideal; see §3.3).
 5. **Rewards/metering service**: turns verified work into points.
 
-> **Demo workloads.** The PoC fans an **example workload catalog — originally four, now ~10 launchable kinds** (`fractal`, `optimize`, `ai.batch_infer`, `ai.synth`, `montecarlo`, `hashcrack`, `ai.infer`, `ai.eval`, `ai.graph`, `data.transform`) — across the fleet. The original worked example is two non-AI (`fractal`, `optimize`) and two AI (`ai.batch_infer`, `ai.synth`), with a **hardcoded split (one tile per machine)**; the dynamic governor (§3.2) is deliberately set aside for the demo. Fully documented in [`workloads.md`](./workloads.md) (and §6).
+> **Demo workloads.** The PoC fans an **example workload catalog, originally four, now ~10 launchable kinds** (`fractal`, `optimize`, `ai.batch_infer`, `ai.synth`, `montecarlo`, `hashcrack`, `ai.infer`, `ai.eval`, `ai.graph`, `data.transform`), across the fleet. The original worked example is two non-AI (`fractal`, `optimize`) and two AI (`ai.batch_infer`, `ai.synth`), with a **hardcoded split (one tile per machine)**; the dynamic governor (§3.2) is deliberately set aside for the demo. Fully documented in [`workloads.md`](./workloads.md) (and §6).
 
 ---
 
@@ -207,7 +207,7 @@ A job is a **signed manifest** + input payload. The manifest is the trust contra
 
 ## 6. Workload adapters
 
-The same fabric carries different job kinds via small adapters. The PoC ships an **example workload catalog — originally four, now ~10 launchable kinds** — fanned across the fleet via a **hardcoded split: one tile per machine** (`src/workloads/partition.py`, `even_ranges`/`weighted_ranges`); the dynamic governor is set aside for the demo. The four below are the original worked examples: two non-AI and two AI, to show range. Full per-workload detail (inputs, outputs, aggregation, preemptibility) lives in [`workloads.md`](./workloads.md), not duplicated here.
+The same fabric carries different job kinds via small adapters. The PoC ships an **example workload catalog, originally four, now ~10 launchable kinds**, fanned across the fleet via a **hardcoded split: one tile per machine** (`src/workloads/partition.py`, `even_ranges`/`weighted_ranges`); the dynamic governor is set aside for the demo. The four below are the original worked examples: two non-AI and two AI, to show range. Full per-workload detail (inputs, outputs, aggregation, preemptibility) lives in [`workloads.md`](./workloads.md), not duplicated here.
 
 | Job kind | AI? | Runtime on worker | PoC demo use |
 |---|---|---|---|
@@ -284,7 +284,7 @@ sequenceDiagram
 2. **Orchestrator skeleton**: FastAPI: `register`, `jobs/next` (long-poll), `heartbeat`, `results`; SQLite state; in-process scheduler.
 3. **Worker agent v0**: register, long-poll, run a trivial subprocess job, heartbeat, report result.
 4. **Idle gate**: `GetLastInputInfo` + lock/unlock + AC + GPU util; checkpoint-and-yield on the "human's back" lever.
-5. **Sandbox wrapper**: a Docker container per job (`--network none`, read-only mounts, `--rm`); run job inside, copy result out, confirm wipe; subprocess + Job Object fallback with caps. *(Windows Sandbox `.wsb` is the documented upgrade — see §3.3 / §13.)*
+5. **Sandbox wrapper**: a Docker container per job (`--network none`, read-only mounts, `--rm`); run job inside, copy result out, confirm wipe; subprocess + Job Object fallback with caps. *(Windows Sandbox `.wsb` is the documented upgrade; see §3.3 / §13.)*
 6. **Signing**: cosign-sign manifests; worker verifies before run.
 7. **Two real workloads**: `ai.batch_infer` (prompt-set slice via local model server) + `data.transform`/`render` (CPU/GPU non-AI).
 8. **Verifier + rewards**: challenge tasks; points ledger.

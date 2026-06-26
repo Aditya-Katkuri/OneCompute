@@ -99,7 +99,7 @@ Launch one across the fleet in a single call:
   Poll until `completed === total`. `completed/total` drives a progress bar; per-job `state` +
   `assigned_worker` show which machine ran which tile. `summary` is the orchestrator's render-ready
   merge of the completed tiles' outputs (shape depends on `kind`; `null` until a tile finishes, and
-  for `fractal` it stays `null` since the dashboard reassembles that tile-by-tile) — draw it directly
+  for `fractal` it stays `null` since the dashboard reassembles that tile-by-tile); draw it directly
   instead of re-implementing each workload's aggregation in the browser.
 - `GET /jobs/{job_id}` → the same single-job shape (incl. `output`).
 
