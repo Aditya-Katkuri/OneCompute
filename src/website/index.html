@@ -431,7 +431,8 @@
   .launch__bubble{position:absolute;left:50%;transform:translate(-50%,-50%);z-index:4;
     width:clamp(150px,18vw,232px);height:clamp(150px,18vw,232px);display:grid;place-items:center;text-align:center}
   .launch__bubble--ihf{top:34%}
-  .launch__bubble--lc{top:84%;opacity:0}
+  .launch__bubble--lc{top:84%;opacity:0;width:clamp(160px,19vw,236px);height:auto;min-height:0;
+    display:block;place-items:normal;text-align:left;pointer-events:none;will-change:opacity,transform}
   .launch__bubble-glow{position:absolute;inset:-46%;border-radius:50%;pointer-events:none;z-index:0;opacity:.9;
     filter:blur(24px);mix-blend-mode:screen;will-change:opacity,transform}
   .launch__bubble--ihf .launch__bubble-glow{
@@ -451,6 +452,403 @@
   .launch__bubble-label{position:relative;z-index:3;font-family:var(--disp);font-weight:700;color:var(--plum);
     font-size:clamp(13px,1.5vw,18px);line-height:1.16;letter-spacing:.01em;max-width:11ch;text-wrap:balance;
     text-shadow:0 1px 10px rgba(255,255,255,.82)}
+
+  /* ---- OneCompute dashboard clip-art card (replaces the Launch Center orb) ---- */
+  .launch__bubble--lc > .launch__bubble-glow,
+  .launch__bubble--lc > .launch__bubble-core,
+  .launch__bubble--lc > .launch__ring,
+  .launch__bubble--lc > .launch__bubble-label{display:none}
+  .launch__bubble--lc .lc-card{width:100%;max-width:100%;box-sizing:border-box}
+
+.lc-card,
+.lc-card * {
+  box-sizing: border-box;
+}
+
+.lc-card {
+  --lc-surface: color-mix(in srgb, var(--cream) 68%, white);
+  --lc-surface-bright: color-mix(in srgb, var(--paper) 44%, white);
+  --lc-line: color-mix(in srgb, var(--plum) 13%, transparent);
+  --lc-line-strong: color-mix(in srgb, var(--plum) 22%, transparent);
+  --lc-shadow: color-mix(in srgb, var(--plum) 35%, transparent);
+  --lc-glow: color-mix(in srgb, var(--pink) 48%, transparent);
+  --lc-muted: color-mix(in srgb, var(--ink) 22%, var(--cream));
+  container-type: inline-size;
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: auto;
+  max-height: 100%;
+  aspect-ratio: 1.17 / 1;
+  overflow: hidden;
+  padding: clamp(0.56rem, 6.8cqw, 1.06rem);
+  border: 1px solid color-mix(in srgb, var(--cream) 78%, white);
+  border-radius: clamp(1.1rem, 10cqw, 1.75rem);
+  background:
+    radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--pink) 34%, transparent) 0 19%, transparent 43%),
+    radial-gradient(circle at 88% 96%, color-mix(in srgb, var(--peach) 44%, transparent) 0 23%, transparent 48%),
+    linear-gradient(142deg, var(--lc-surface-bright) 0%, var(--lc-surface) 52%, color-mix(in srgb, var(--paper) 76%, white) 100%);
+  box-shadow:
+    0 1.05rem 2.9rem -1.05rem var(--lc-shadow),
+    0 0 2.5rem -0.7rem var(--lc-glow),
+    inset 0 0.08rem 0 color-mix(in srgb, white 72%, transparent),
+    inset 0 -0.08rem 0 color-mix(in srgb, var(--plum) 8%, transparent);
+  color: var(--plum);
+  font-family: var(--sans, "Segoe UI Variable Text", "Segoe UI", Aptos, Calibri, sans-serif);
+  font-size: clamp(0.48rem, 5.6cqw, 0.82rem);
+  line-height: 1;
+  transform: translateZ(0) rotate(-1deg);
+}
+
+.lc-card::before,
+.lc-card::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.lc-card::before {
+  inset: 0;
+  background: linear-gradient(118deg, color-mix(in srgb, white 58%, transparent) 0%, transparent 38% 100%);
+  opacity: 0.72;
+}
+
+.lc-card::after {
+  right: -8%;
+  bottom: -14%;
+  width: 52%;
+  height: 46%;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--lilac) 38%, transparent), transparent 68%);
+  filter: blur(0.15rem);
+}
+
+.lc-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.72em;
+  min-height: 2.4em;
+  margin-bottom: 0.82em;
+}
+
+.lc-card__brand {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 0.54em;
+}
+
+.lc-card__mark {
+  flex: 0 0 auto;
+  width: 2.18em;
+  height: 2.18em;
+  object-fit: contain;
+  filter: drop-shadow(0 0.28em 0.55em color-mix(in srgb, var(--mauve) 34%, transparent));
+}
+
+.lc-card__wordmark {
+  min-width: 0;
+  font-family: var(--serif, "DM Serif Display", Georgia, serif);
+  font-size: 1.42em;
+  font-weight: 400;
+  letter-spacing: -0.025em;
+  line-height: 0.95;
+  white-space: nowrap;
+}
+
+.lc-card__wordmark b {
+  color: var(--plum);
+  font-weight: 400;
+}
+
+.lc-card__wordmark span {
+  color: var(--magenta-ink);
+}
+
+.lc-card__window {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.32em;
+  padding: 0.34em 0.42em;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--cream) 72%, white);
+  border: 1px solid var(--lc-line);
+}
+
+.lc-card__window i,
+.lc-card__status i,
+.lc-card__device i {
+  display: block;
+  border-radius: 999px;
+}
+
+.lc-card__window i {
+  width: 0.42em;
+  height: 0.42em;
+  background: var(--pink);
+}
+
+.lc-card__window i:nth-child(2) {
+  background: var(--peach);
+}
+
+.lc-card__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
+  grid-template-rows: minmax(0, 0.92fr) minmax(0, 0.8fr);
+  grid-template-areas:
+    "stats chart"
+    "fleet chart";
+  gap: 0.72em;
+}
+
+.lc-card__stats {
+  grid-area: stats;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.62em;
+  min-width: 0;
+  min-height: 0;
+}
+
+.lc-card__stat,
+.lc-card__fleet,
+.lc-card__chart {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--lc-line);
+  border-radius: 1.1em;
+  box-shadow: inset 0 0.06em 0 color-mix(in srgb, white 58%, transparent);
+}
+
+.lc-card__stat {
+  display: grid;
+  align-content: space-between;
+  gap: 0.5em;
+  padding: 0.66em;
+}
+
+.lc-card__stat--lilac {
+  background:
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--purple) 42%, transparent), transparent 55%),
+    color-mix(in srgb, var(--lilac) 30%, white);
+}
+
+.lc-card__stat--pink {
+  background:
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--coral) 35%, transparent), transparent 56%),
+    color-mix(in srgb, var(--blush) 38%, white);
+}
+
+.lc-card__tile-icon {
+  width: 1.35em;
+  height: 1.35em;
+  border-radius: 0.46em;
+  background: linear-gradient(135deg, var(--lilac), var(--pink) 62%, var(--peach));
+  box-shadow: 0 0.22em 0.52em color-mix(in srgb, var(--mauve) 24%, transparent);
+}
+
+.lc-card__bar {
+  display: block;
+  height: 0.42em;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 18%, transparent);
+}
+
+.lc-card__bar--wide { width: 84%; }
+.lc-card__bar--mid { width: 66%; }
+.lc-card__bar--short { width: 48%; }
+.lc-card__bar--tiny { width: 32%; }
+
+.lc-card__fleet {
+  grid-area: fleet;
+  display: grid;
+  align-content: center;
+  gap: 0.44em;
+  padding: 0.64em;
+  background: color-mix(in srgb, var(--paper) 58%, white);
+}
+
+.lc-card__device {
+  display: grid;
+  grid-template-columns: 0.55em minmax(0, 1fr) 1.15em;
+  align-items: center;
+  gap: 0.42em;
+}
+
+.lc-card__device i {
+  width: 0.5em;
+  height: 0.5em;
+  background: var(--mauve);
+  box-shadow: 0 0 0 0.16em color-mix(in srgb, var(--mauve) 18%, transparent);
+}
+
+.lc-card__device:nth-child(2) i { background: var(--magenta-ink); }
+.lc-card__device:nth-child(3) i { background: var(--coral); }
+
+.lc-card__device b {
+  display: block;
+  height: 0.52em;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--lilac), var(--pink) 58%, var(--peach));
+}
+
+.lc-card__device:nth-child(2) b { width: 72%; }
+.lc-card__device:nth-child(3) b { width: 54%; }
+
+.lc-card__chart {
+  grid-area: chart;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0.76em;
+  background:
+    linear-gradient(color-mix(in srgb, var(--plum) 7%, transparent) 1px, transparent 1px) 0 0 / 100% 25%,
+    linear-gradient(135deg, color-mix(in srgb, white 60%, var(--paper)), color-mix(in srgb, var(--blush) 28%, white));
+}
+
+.lc-card__chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.52em;
+  margin-bottom: 0.42em;
+}
+
+.lc-card__status {
+  display: flex;
+  gap: 0.2em;
+  flex: 0 0 auto;
+}
+
+.lc-card__status i {
+  width: 0.42em;
+  height: 0.42em;
+  background: var(--lilac);
+}
+
+.lc-card__status i:nth-child(2) { background: var(--pink); }
+.lc-card__status i:nth-child(3) { background: var(--coral); }
+
+.lc-card__ridge {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: flex-end;
+  gap: 0.26em;
+  min-height: 2.2em;
+  padding: 0.24em 0.18em 0;
+  transform: skewX(-7deg);
+}
+
+.lc-card__col {
+  flex: 1 1 0;
+  min-width: 0;
+  border-radius: 0.42em 0.42em 0.18em 0.18em;
+  background: linear-gradient(180deg, var(--pink), var(--mauve));
+  box-shadow: 0 0.18em 0.45em color-mix(in srgb, var(--mauve) 25%, transparent);
+}
+
+.lc-card__col--a { height: 34%; background: linear-gradient(180deg, var(--lilac), var(--purple)); }
+.lc-card__col--b { height: 54%; }
+.lc-card__col--c { height: 82%; background: linear-gradient(180deg, var(--peach), var(--coral)); }
+.lc-card__col--d { height: 66%; }
+.lc-card__col--e { height: 88%; background: linear-gradient(180deg, var(--blush), var(--magenta-ink)); }
+.lc-card__col--f { height: 58%; background: linear-gradient(180deg, var(--lilac), var(--mauve)); }
+.lc-card__col--g { height: 44%; background: linear-gradient(180deg, var(--peach), var(--pink)); }
+
+.lc-card__spark {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 2.05em;
+  margin-top: -0.08em;
+  overflow: visible;
+}
+
+.lc-card__spark-area {
+  fill: color-mix(in srgb, var(--pink) 22%, transparent);
+}
+
+.lc-card__spark-line {
+  fill: none;
+  stroke: var(--magenta-ink);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+@container (max-width: 12.25rem) {
+  .lc-card__window {
+    display: none;
+  }
+
+  .lc-card__header {
+    min-height: 2.05em;
+    gap: 0.45em;
+    margin-bottom: 0.66em;
+  }
+
+  .lc-card__mark {
+    width: 1.94em;
+    height: 1.94em;
+  }
+
+  .lc-card__wordmark {
+    font-size: 1.28em;
+    letter-spacing: -0.035em;
+  }
+
+  .lc-card__body {
+    gap: 0.55em;
+  }
+
+  .lc-card__stat,
+  .lc-card__fleet,
+  .lc-card__chart {
+    border-radius: 0.95em;
+  }
+
+  .lc-card__stat,
+  .lc-card__fleet {
+    padding: 0.55em;
+  }
+
+  .lc-card__chart {
+    padding: 0.62em;
+  }
+}
+
+@container (max-width: 10rem) {
+  .lc-card__spark {
+    display: none;
+  }
+
+  .lc-card__ridge {
+    min-height: 0;
+    padding-bottom: 0.16em;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .lc-card {
+    transition: transform 320ms cubic-bezier(.2,.8,.2,1), box-shadow 320ms cubic-bezier(.2,.8,.2,1);
+  }
+
+  .lc-card:hover {
+    transform: translateY(-0.18em) rotate(-0.55deg);
+  }
+}
+
 
   /* device-nodes around the IHF bubble; they retract into the hub during merge-back */
   .launch__dev{position:absolute;left:50%;top:50%;z-index:2;width:clamp(58px,7vw,84px);
@@ -492,6 +890,7 @@
     .launch__world{position:static;transform:none;opacity:1;display:flex;flex-direction:column;align-items:center;gap:34px;width:100%}
     .launch__bubble{position:relative;inset:auto;transform:none;margin:0 auto;opacity:1;
       width:min(190px,56vw);height:min(190px,56vw)}
+    .launch__bubble--lc{width:min(236px,76vw);height:auto;min-height:0;display:block;text-align:left}
     .launch__dev,.launch__wire{display:none}
     .launch__filmwrap{position:relative;width:min(560px,92vw);aspect-ratio:16/9;opacity:1;
       border-radius:18px;overflow:hidden;box-shadow:0 30px 80px -40px rgba(22,15,29,.9)}
@@ -507,6 +906,7 @@
   .launch--static .launch__world{position:static;transform:none;opacity:1;display:flex;flex-direction:column;align-items:center;gap:36px;width:100%}
   .launch--static .launch__bubble{position:relative;inset:auto;transform:none;margin:0 auto;opacity:1;
     width:min(232px,42vw);height:min(232px,42vw)}
+  .launch--static .launch__bubble--lc{width:min(236px,76vw);height:auto;min-height:0;display:block;text-align:left}
   .launch--static .launch__dev,.launch--static .launch__wire{display:none}
   .launch--static .launch__filmwrap{position:relative;width:min(900px,92vw);aspect-ratio:16/9;opacity:1;
     border-radius:18px;overflow:hidden;box-shadow:0 30px 80px -40px rgba(22,15,29,.9)}
@@ -523,6 +923,7 @@
     .launch__world{position:static;transform:none;opacity:1;display:flex;flex-direction:column;align-items:center;gap:36px;width:100%}
     .launch__bubble{position:relative;inset:auto;transform:none;margin:0 auto;opacity:1;
       width:min(232px,56vw);height:min(232px,56vw)}
+    .launch__bubble--lc{width:min(236px,76vw);height:auto;min-height:0;display:block;text-align:left}
     .launch__dev,.launch__wire{display:none}
     .launch__filmwrap{position:relative;width:min(900px,92vw);aspect-ratio:16/9;opacity:1;
       border-radius:18px;overflow:hidden;box-shadow:0 30px 80px -40px rgba(22,15,29,.9)}
@@ -1865,12 +2266,54 @@ html.js .signoff__inner.in{opacity:1;transform:none}
           <span class="launch__ring launch__ring--2" aria-hidden="true"></span>
           <span class="launch__bubble-label">Internal Hardware Fleet</span>
         </div>
-        <div class="launch__bubble launch__bubble--lc">
-          <span class="launch__bubble-glow" aria-hidden="true"></span>
-          <span class="launch__bubble-core" aria-hidden="true"></span>
-          <span class="launch__ring launch__ring--1" aria-hidden="true"></span>
-          <span class="launch__ring launch__ring--2" aria-hidden="true"></span>
-          <span class="launch__bubble-label">Launch Center</span>
+        <div class="launch__bubble launch__bubble--lc" aria-hidden="true">
+          <div class="lc-card" aria-hidden="true">
+            <div class="lc-card__header">
+              <div class="lc-card__brand">
+                <img class="lc-card__mark" src="onecompute-mark.png" alt="">
+                <div class="lc-card__wordmark"><b>One</b><span>Compute</span></div>
+              </div>
+              <div class="lc-card__window" aria-hidden="true"><i></i><i></i></div>
+            </div>
+            <div class="lc-card__body">
+              <div class="lc-card__stats">
+                <div class="lc-card__stat lc-card__stat--lilac">
+                  <i class="lc-card__tile-icon"></i>
+                  <span class="lc-card__bar lc-card__bar--wide"></span>
+                  <span class="lc-card__bar lc-card__bar--short"></span>
+                </div>
+                <div class="lc-card__stat lc-card__stat--pink">
+                  <i class="lc-card__tile-icon"></i>
+                  <span class="lc-card__bar lc-card__bar--mid"></span>
+                  <span class="lc-card__bar lc-card__bar--tiny"></span>
+                </div>
+              </div>
+              <div class="lc-card__fleet">
+                <div class="lc-card__device"><i></i><span class="lc-card__bar lc-card__bar--wide"></span><b></b></div>
+                <div class="lc-card__device"><i></i><span class="lc-card__bar lc-card__bar--mid"></span><b></b></div>
+                <div class="lc-card__device"><i></i><span class="lc-card__bar lc-card__bar--short"></span><b></b></div>
+              </div>
+              <div class="lc-card__chart">
+                <div class="lc-card__chart-head">
+                  <span class="lc-card__bar lc-card__bar--wide"></span>
+                  <span class="lc-card__status"><i></i><i></i><i></i></span>
+                </div>
+                <div class="lc-card__ridge" aria-hidden="true">
+                  <i class="lc-card__col lc-card__col--a"></i>
+                  <i class="lc-card__col lc-card__col--b"></i>
+                  <i class="lc-card__col lc-card__col--c"></i>
+                  <i class="lc-card__col lc-card__col--d"></i>
+                  <i class="lc-card__col lc-card__col--e"></i>
+                  <i class="lc-card__col lc-card__col--f"></i>
+                  <i class="lc-card__col lc-card__col--g"></i>
+                </div>
+                <svg class="lc-card__spark" viewBox="0 0 120 38" aria-hidden="true" focusable="false">
+                  <path class="lc-card__spark-area" d="M5 31 C20 27 22 17 36 20 C50 23 51 10 66 13 C80 16 81 26 95 20 C106 15 111 11 116 8 L116 36 L5 36 Z" />
+                  <path class="lc-card__spark-line" d="M5 31 C20 27 22 17 36 20 C50 23 51 10 66 13 C80 16 81 26 95 20 C106 15 111 11 116 8" />
+                </svg>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -5356,8 +5799,10 @@ void main(){
         arrowsSvg.setAttribute("viewBox","0 0 "+sw+" "+sh);
         var r=(ihf.offsetWidth/2)||90, off=Math.max(13,r*0.17);
         var ix=sw*0.5, iy=sh*0.34, lx=sw*0.5, ly=sh*0.84;
-        surgeSX=lx-off; surgeSY=ly-r*0.92; surgeEX=ix-off; surgeEY=iy+r*0.92;
-        returnSX=ix+off; returnSY=iy+r*0.92; returnEX=lx+off; returnEY=ly-r*0.92;
+        var lcr=((lc&&lc.getBoundingClientRect().height)/2)||r;
+        var lcTopY=ly-lcr*0.86;
+        surgeSX=lx-off; surgeSY=lcTopY; surgeEX=ix-off; surgeEY=iy+r*0.92;
+        returnSX=ix+off; returnSY=iy+r*0.92; returnEX=lx+off; returnEY=lcTopY;
       }
       fitFilm();
     }
