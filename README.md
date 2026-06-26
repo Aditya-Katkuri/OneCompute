@@ -16,8 +16,8 @@ dozen example workloads (CPU/GPU/AI), and 159 passing tests.
 - **Capacity-constrained, not hardware-poor.** Microsoft's AI capex is on track for ~$100B this
   year, yet excess capacity at Redmond HQ alone ≈ **3.8B vCPU-hours/yr, a ~27,000-server data
   center**, sitting idle.
-- **NPUs are free compute.** 45 TOPS × ~210k Snapdragon laptops = **9.45 ExaOPS, ~99.5% unused**.
-- **Projected savings:** **~$432M in year one, ~$2.36B over five years** (net of added power + wear).
+- **NPUs are free compute.** ~100k Snapdragon Copilot+ laptops with **45–80 TOPS** NPUs ≈ **~5 ExaOPS** of on-device inference, idle almost the whole workday; even a conservative **~20% recyclable ≈ ~1 ExaOPS**, without buying a single new chip.
+- **Projected savings:** **~$101.6M in year one** (net of ~$8M added power + ~$17M wear), **over ~$700M across five years** at ~15% annual growth.
 - **Employees share in it:** a pledged **5% of realized savings** returned as Microsoft tech, merch, tickets.
 - **Complements Azure:** run spot/simple workloads on the desk fleet, burst to the cloud only when
   it's saturated. The upside compounds as **RTX / DGX Spark** hardware reaches employees' desks.
