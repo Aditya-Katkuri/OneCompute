@@ -128,6 +128,9 @@ OneCompute/
 ## Quickstart
 
 Setup to test in 2 minutes.
+Note that peer to peer Wifi must be enabled for testing
+Corporate wifi may block P2P connection, utilize mobile
+hotspot or other personal Wifi.
 
 **Prerequisites:** [`uv`](https://docs.astral.sh/uv/) + Python 3.13. On each machine: clone, then `uv sync --extra dev`.
 
