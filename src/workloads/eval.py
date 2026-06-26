@@ -2,7 +2,7 @@
 
 The fleet grades a batch of (question, answer) items with a local-model judge; each answer
 carries a ``label`` (which system produced it) so ``aggregate_eval`` builds a leaderboard +
-score distribution. This is the canonical NightShift use case (model eval / benchmarking).
+score distribution. This is the canonical OneCompute use case (model eval / benchmarking).
 Scale the item count for runtime (each item is one judging call on the local model).
 """
 

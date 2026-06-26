@@ -65,9 +65,9 @@ def test_active_boundary_matches_availability():
 
 
 def test_build_docker_command_mounts_only_work_dir(tmp_path: Path):
-    cmd = build_docker_command(tmp_path, "in.json", "out.json", Limits(mem_gb=2.0), "nightshift-abc")
+    cmd = build_docker_command(tmp_path, "in.json", "out.json", Limits(mem_gb=2.0), "onecompute-abc")
     # Container is named so yield/timeout can kill it by name.
-    assert "--name" in cmd and "nightshift-abc" in cmd
+    assert "--name" in cmd and "onecompute-abc" in cmd
     # We mount the clean temp work dir as /work and never the OneDrive repo `src`.
     assert f"{tmp_path}:/work" in cmd
     assert not any("/app/src" in part for part in cmd)

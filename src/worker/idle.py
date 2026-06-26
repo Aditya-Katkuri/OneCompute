@@ -1,4 +1,4 @@
-"""Conservative local idle gate for NightShift workers."""
+"""Conservative local idle gate for OneCompute workers."""
 
 from __future__ import annotations
 

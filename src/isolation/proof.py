@@ -30,7 +30,7 @@ def isolation_proof() -> dict:
         "print(p.exists()); print(list(p.iterdir())[:1])"
     )
     try:
-        with tempfile.TemporaryDirectory(prefix="nightshift-isolation-proof-") as temp_name:
+        with tempfile.TemporaryDirectory(prefix="onecompute-isolation-proof-") as temp_name:
             work_dir = Path(temp_name)
             in_path = work_dir / "in.json"
             out_path = work_dir / "out.json"

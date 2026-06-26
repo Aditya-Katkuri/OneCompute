@@ -1,4 +1,4 @@
-# NightShift
+# OneCompute
 
 > **Let your compute work when you are not.**
 > Turn the idle CPUs, GPUs, and NPUs of a company's existing PC fleet into a privacy-preserving, opt-in internal compute grid, and pay the employees who lend their machines.
@@ -9,9 +9,9 @@
 
 Every large company already owns a second supercomputer. It's just scattered across tens of thousands of employee laptops and desktops that sit idle overnight, on weekends, and through the long stretches of the day when they're only running a browser and a chat app.
 
-**NightShift** harvests that spare capacity. Employees opt in; NightShift runs sandboxed workloads in the machine's **spare compute headroom**: not only when it is fully idle, but *continuously*, sized to a learned per-machine usage profile so it rides the gap between what the employee actually uses and what the hardware can do, and **instantly steps aside** the moment their own work needs the capacity. Employees earn rewards (points, gift cards, subscriptions) for the compute they contribute. The company gets a low-marginal-cost pool of compute that can absorb work it would otherwise pay a cloud provider to run.
+**OneCompute** harvests that spare capacity. Employees opt in; OneCompute runs sandboxed workloads in the machine's **spare compute headroom**: not only when it is fully idle, but *continuously*, sized to a learned per-machine usage profile so it rides the gap between what the employee actually uses and what the hardware can do, and **instantly steps aside** the moment their own work needs the capacity. Employees earn rewards (points, gift cards, subscriptions) for the compute they contribute. The company gets a low-marginal-cost pool of compute that can absorb work it would otherwise pay a cloud provider to run.
 
-It is, in spirit, **BOINC / Folding@home for the internal AI-PC era**, but internal, incentivized, governed, and built for both AI and non-AI jobs. The closest commercial blueprint is **[Salad](https://salad.com/security)** (idle consumer GPUs → a paid compute cloud); NightShift's delta is *internal-only*, which buys a higher trust baseline and a cleaner privacy story.
+It is, in spirit, **BOINC / Folding@home for the internal AI-PC era**, but internal, incentivized, governed, and built for both AI and non-AI jobs. The closest commercial blueprint is **[Salad](https://salad.com/security)** (idle consumer GPUs → a paid compute cloud); OneCompute's delta is *internal-only*, which buys a higher trust baseline and a cleaner privacy story.
 
 ---
 
@@ -27,7 +27,7 @@ The industry's default answer to AI demand is to **build more datacenters**. Tha
 
 ### The contrast: distributed idle compute is *already built*
 
-| | Build a new datacenter | Harvest the idle fleet (NightShift) |
+| | Build a new datacenter | Harvest the idle fleet (OneCompute) |
 |---|---|---|
 | **Capex** | ~$475M/facility, ~$1T industry | **$0**: hardware already bought |
 | **Marginal cost** | land + power + water + cooling + GPUs | **~$10–20/mo/machine** of incremental electricity |
@@ -36,7 +36,7 @@ The industry's default answer to AI demand is to **build more datacenters**. Tha
 | **Resilience** | concentrated failure domain | naturally geo-distributed |
 | **Scaling** | new construction | **grows for free** with each PC refresh (see §3) |
 
-> **Honest framing:** NightShift does **not** replace datacenters for frontier *training*: that needs co-located, high-bandwidth GPU clusters. It's a **pressure-relief valve** for the large class of *substitutable* workloads (eval, batch inference, agent runs, synthetic data) that don't need to sit in a $475M building. **Every idle-compute-hour harvested is a dollar of datacenter capex/opex deferred.**
+> **Honest framing:** OneCompute does **not** replace datacenters for frontier *training*: that needs co-located, high-bandwidth GPU clusters. It's a **pressure-relief valve** for the large class of *substitutable* workloads (eval, batch inference, agent runs, synthetic data) that don't need to sit in a $475M building. **Every idle-compute-hour harvested is a dollar of datacenter capex/opex deferred.**
 
 ---
 
@@ -47,9 +47,9 @@ The pitch gets stronger every hardware refresh, because the compute sitting insi
 - **Every Copilot+ PC ships an NPU above the 40-TOPS floor** Microsoft set for the program: Qualcomm Snapdragon X Elite/Plus at **45 TOPS (INT8)**, AMD Ryzen AI 300 at **50 TOPS**, Intel Lunar Lake up to **48 TOPS**, *on top of* the CPU and integrated GPU. ([Copilot+ requirements](https://learn.microsoft.com/en-us/windows/ai/npu-devices/) · [Qualcomm](https://www.qualcomm.com/news/onq/2024/06/what-on-earth-is-a-copilot-plus-pc) · [AMD](https://www.amd.com/en/partner/articles/ryzen-ai-300-series-processors.html))
 - **Discrete laptop GPUs are where the real harvestable AI throughput lives.** NVIDIA's RTX 50-series *mobile* parts deliver **440 → 1,824 AI TOPS (INT8)** depending on tier (5050 → 5090), an order of magnitude beyond the NPU. ([NVIDIA RTX 50 laptops](https://www.nvidia.com/en-us/geforce/laptops/50-series/)) This is exactly why the PoC harvests **CPU + GPU**.
 - **Datacenter-class silicon is becoming a *personal* device.** At **Build 2026**, Microsoft unveiled the **Surface RTX Spark Dev Box**, a developer desktop built on NVIDIA's **RTX Spark superchip** (Blackwell RTX GPU + Grace CPU) delivering **~1 petaflop of AI compute and 128 GB of unified memory** for running large models locally. ([Microsoft Surface](https://www.microsoft.com/en-us/surface/devices/surface-rtx-spark-dev-box) · [Windows Devices Blog](https://blogs.windows.com/devices/2026/06/02/building-the-next-generation-of-devices-for-developers-surface-rtx-spark-dev-box/)) Announced alongside it, NVIDIA's **DGX Station for Windows** (GB300 Grace Blackwell Ultra) puts **up to 20 PFLOP (FP4), 748 GB** of coherent memory, and **trillion-parameter** local inference on a single desk. ([NVIDIA](https://nvidianews.nvidia.com/news/nvidia-dgx-station-for-windows-puts-a-trillion-parameter-ai-supercomputer-on-every-enterprise-desk) · [SiliconANGLE](https://siliconangle.com/2026/06/01/nvidia-squeezes-powerful-1-trillion-parameter-ai-supercomputer-deskside-form-factor/))
-- **Net effect:** *individual* machines are absorbing workloads that used to require a datacenter. The **Surface RTX Spark Dev Box** and **DGX Station** become NightShift's future **"super-node"** tier, and every fleet refresh grows the latent idle capacity for free.
+- **Net effect:** *individual* machines are absorbing workloads that used to require a datacenter. The **Surface RTX Spark Dev Box** and **DGX Station** become OneCompute's future **"super-node"** tier, and every fleet refresh grows the latent idle capacity for free.
 
-> **Accuracy note:** **TOPS is a nameplate INT8 peak, not delivered throughput.** Real harvested performance is materially lower (precision, thermals, memory bandwidth, contention with foreground work). NightShift's scheduler **benchmarks each machine's real throughput** rather than trusting the spec sheet. ([why TOPS ≠ real-world](https://www.newtechguy.com/ai-pc-buying-guide-2025-npu-tops-ratings-performance-benchmarks-and-what-actually-matters/))
+> **Accuracy note:** **TOPS is a nameplate INT8 peak, not delivered throughput.** Real harvested performance is materially lower (precision, thermals, memory bandwidth, contention with foreground work). OneCompute's scheduler **benchmarks each machine's real throughput** rather than trusting the spec sheet. ([why TOPS ≠ real-world](https://www.newtechguy.com/ai-pc-buying-guide-2025-npu-tops-ratings-performance-benchmarks-and-what-actually-matters/))
 
 ---
 
@@ -79,7 +79,7 @@ Work that runs on paid Azure AI compute today but doesn't strictly need to:
 
 ---
 
-## 5. What NightShift is
+## 5. What OneCompute is
 
 A three-sided system:
 
@@ -88,18 +88,18 @@ A three-sided system:
 3. **Submitters & rewards**: internal teams submit jobs; contributing employees accrue reward points redeemable for gift cards, subscriptions, or perks.
 
 ### Design pillars
-- **Opt-in and demand-adaptive: never competes with the user.** NightShift doesn't just wait for a fully-idle machine; it continuously harvests the **spare headroom** that exists even while someone works, sized to a learned per-machine usage profile, and **steps aside sub-second** the moment their own work needs the capacity. This unobtrusiveness (*always backing off under real load*), not raw throughput, is what made or broke every prior enterprise grid (see [HTCondor](https://en.wikipedia.org/wiki/HTCondor), [MSR Cyclotron](https://www.microsoft.com/en-us/research/publication/cyclotron-a-secure-isolated-virtual-cycle-scavenging-grid-in-the-enterprise-2/)).
+- **Opt-in and demand-adaptive: never competes with the user.** OneCompute doesn't just wait for a fully-idle machine; it continuously harvests the **spare headroom** that exists even while someone works, sized to a learned per-machine usage profile, and **steps aside sub-second** the moment their own work needs the capacity. This unobtrusiveness (*always backing off under real load*), not raw throughput, is what made or broke every prior enterprise grid (see [HTCondor](https://en.wikipedia.org/wiki/HTCondor), [MSR Cyclotron](https://www.microsoft.com/en-us/research/publication/cyclotron-a-secure-isolated-virtual-cycle-scavenging-grid-in-the-enterprise-2/)).
 - **Win-win incentives.** The company offloads cost; employees get tangible rewards for compute they weren't using.
 - **Privacy-preserving on both sides.** The worker's data is never exposed to jobs; the job's data is never exposed to the worker (see §8).
 - **Heterogeneous by design.** CPU *and* GPU (NPU later); AI *and* non-AI workloads.
 
 ### Demand-adaptive headroom harvesting (beyond idle-only)
 
-First-generation cycle-scavengers (HTCondor, SETI@home) were **binary**: run flat-out when the machine is idle, freeze the instant a key is pressed. NightShift goes further: it treats each machine's spare capacity as a **continuously-managed budget**, so useful work keeps flowing even during light foreground use (a browser, a chat app, a doc) instead of the machine sitting dark until 2 a.m.
+First-generation cycle-scavengers (HTCondor, SETI@home) were **binary**: run flat-out when the machine is idle, freeze the instant a key is pressed. OneCompute goes further: it treats each machine's spare capacity as a **continuously-managed budget**, so useful work keeps flowing even during light foreground use (a browser, a chat app, a doc) instead of the machine sitting dark until 2 a.m.
 
 - **Profile, don't guess.** The agent observes the machine over a **rolling window (≈30 days)** and learns its real usage envelope: the **min / average / peak** CPU, GPU, NPU, and RAM the employee actually consumes, bucketed by time-of-day and day-of-week (local-only telemetry; see §8).
-- **Size the always-on allocation to the headroom.** From that profile NightShift computes a **right-sized background allocation** that lives in the gap between the employee's typical demand *right now* and the hardware ceiling, so a machine can contribute *through the working day*, not only when fully idle, while leaving comfortable margin for the person.
-- **Throttle / yield on live demand, resume after.** A fast control loop watches real-time utilization; when the employee's own usage rises past a **time-aware threshold** (derived from their profile), NightShift **throttles down or kills** the job sub-second and **requeues it elsewhere**, then **resumes** once demand falls back into the headroom. The hard *"human touched the mouse → instant yield"* reflex is the **floor** of this behavior, not the whole of it.
+- **Size the always-on allocation to the headroom.** From that profile OneCompute computes a **right-sized background allocation** that lives in the gap between the employee's typical demand *right now* and the hardware ceiling, so a machine can contribute *through the working day*, not only when fully idle, while leaving comfortable margin for the person.
+- **Throttle / yield on live demand, resume after.** A fast control loop watches real-time utilization; when the employee's own usage rises past a **time-aware threshold** (derived from their profile), OneCompute **throttles down or kills** the job sub-second and **requeues it elsewhere**, then **resumes** once demand falls back into the headroom. The hard *"human touched the mouse → instant yield"* reflex is the **floor** of this behavior, not the whole of it.
 - **Conservative by construction.** Employee caps, schedules, *never-on-battery*, and instant opt-out still bound everything; the adaptive budget only ever **shrinks** the footprint when the person is active and only **grows** into capacity that would otherwise be wasted. It never trades the employee's experience for throughput.
 
 > **Why it matters:** a laptop running a browser is ~90% idle, not 0%. Idle-only harvesting leaves most of the day on the table. Headroom harvesting reclaims that continuously, multiplying harvested compute-hours per machine, *without* degrading the employee's experience, because it is governed by their own learned demand. (**Implementation status:** the PoC ships the binary instant-yield *floor* today; the rolling-window profiler + adaptive governor are the next build, see `architecture.md` §3.2.)
@@ -108,7 +108,7 @@ First-generation cycle-scavengers (HTCondor, SETI@home) were **binary**: run fla
 
 ## 6. Workloads: AI *and* non-AI, CPU *and* GPU
 
-NightShift is deliberately **not** an AI-only grid. The same fabric that dispatches an inference job can dispatch a render or a data-processing job. This widens the set of internal teams who can use it and lets the demo show range.
+OneCompute is deliberately **not** an AI-only grid. The same fabric that dispatches an inference job can dispatch a render or a data-processing job. This widens the set of internal teams who can use it and lets the demo show range.
 
 **AI / accelerator workloads** (lean on GPU / NPU):
 - Batch LLM / small-model inference · model evaluation & scoring · synthetic data generation · embedding generation
@@ -159,7 +159,7 @@ Two trust boundaries; both must hold.
 
 > **PoC scope:** signed manifests + per-job sandbox + no-persistence + challenge-task spot-checking. Full **confidential compute / TEE** is documented as roadmap: it needs **datacenter GPUs** (H100-class); consumer RTX laptops and Copilot+ NPUs have no GPU TEE, so it's correctly future. Residual risks (sandbox escape, side-channels, weaker GPU-passthrough isolation) are disclosed honestly, not hidden.
 
-> **Enterprise-acceptance gate (the most under-stated risk):** the agent's sustained CPU/GPU bursts look *exactly* like **cryptojacking** to the company's own endpoint stack (Defender for Endpoint, Intune, Purview DLP). NightShift must be **code-signed, Intune-deployed, AV allow-listed, and route I/O through sanctioned channels**, designed to **pass, not bypass**, these controls. "Internal = safe" is an anti-pattern: the internal scope shrinks attack surface and makes every action attributable, but we still enforce signing/sandbox/audit at the boundary. ([Purview endpoint DLP](https://learn.microsoft.com/en-us/purview/endpoint-dlp-learn-about) · [CISA on cryptojacking detection](https://www.cisa.gov/news-events/news/defending-against-illicit-cryptocurrency-mining-activity))
+> **Enterprise-acceptance gate (the most under-stated risk):** the agent's sustained CPU/GPU bursts look *exactly* like **cryptojacking** to the company's own endpoint stack (Defender for Endpoint, Intune, Purview DLP). OneCompute must be **code-signed, Intune-deployed, AV allow-listed, and route I/O through sanctioned channels**, designed to **pass, not bypass**, these controls. "Internal = safe" is an anti-pattern: the internal scope shrinks attack surface and makes every action attributable, but we still enforce signing/sandbox/audit at the boundary. ([Purview endpoint DLP](https://learn.microsoft.com/en-us/purview/endpoint-dlp-learn-about) · [CISA on cryptojacking detection](https://www.cisa.gov/news-events/news/defending-against-illicit-cryptocurrency-mining-activity))
 
 ---
 
@@ -204,7 +204,7 @@ A small but *real* end-to-end slice that proves the concept:
 | [**Akash / Golem / Render**](https://akash.network/docs/getting-started/intro-to-akash/bids-and-leases/) | Decentralized GPU marketplaces; manifest→match→lease→score | Clean scheduler pattern, but **drop the blockchain/auction**; use a central scheduler + internal points ledger. |
 | [**iExec**](https://docs.iex.ec/protocol/tee/intel-sgx) | Confidential compute (Docker-in-SGX) + verifiable results | The credible **roadmap** answer for truly sensitive workloads, not the PoC. |
 | [**HTCondor**](https://en.wikipedia.org/wiki/HTCondor) | Idle-cycle scavenger; keyboard-idle gating, instant eviction | **Unobtrusiveness + isolation, not throughput, is the adoption blocker.** This is the make-or-break demo moment. |
-| [**SETI@home**](https://en.wikipedia.org/wiki/SETI@home) | Pioneering volunteer project (1999–2020) | **Cautionary tale:** weak replication → cheating tax. Internal trust is what lets NightShift avoid it. |
+| [**SETI@home**](https://en.wikipedia.org/wiki/SETI@home) | Pioneering volunteer project (1999–2020) | **Cautionary tale:** weak replication → cheating tax. Internal trust is what lets OneCompute avoid it. |
 
 ---
 

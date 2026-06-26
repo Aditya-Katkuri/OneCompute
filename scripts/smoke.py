@@ -38,7 +38,7 @@ def _free_port() -> int:
 
 
 def _start_server(base: str, port: int):
-    db = os.path.join(tempfile.mkdtemp(prefix="nightshift_"), "state.db")
+    db = os.path.join(tempfile.mkdtemp(prefix="onecompute_"), "state.db")
     config = uvicorn.Config(create_app(db), host="127.0.0.1", port=port, log_level="warning")
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)
@@ -62,7 +62,7 @@ def main() -> None:
         {"items": [1, 2, 3, 4], "op": "square"},
         {"items": ["a", "b", "c"], "op": "upper"},
         {"items": [10, 20], "op": "square"},
-        {"items": ["nightshift"], "op": "sha256"},
+        {"items": ["onecompute"], "op": "sha256"},
         {"items": [5, 6, 7], "op": "square"},
     ]
     with httpx.Client(base_url=base, timeout=5.0) as submitter:

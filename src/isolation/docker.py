@@ -1,4 +1,4 @@
-"""Docker command construction + honest daemon-availability probe for NightShift.
+"""Docker command construction + honest daemon-availability probe for OneCompute.
 
 Importing this module never requires Docker and never touches the daemon. Availability
 means **the Docker daemon actually responds** (a short, cached ``docker version`` probe),

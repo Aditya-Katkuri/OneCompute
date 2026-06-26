@@ -1,4 +1,4 @@
-"""``python -m orchestrator``: run the NightShift control plane on a LAN PC.
+"""``python -m orchestrator``: run the OneCompute control plane on a LAN PC.
 
 Binds uvicorn to a configurable host/port (default ``0.0.0.0:8080`` so worker
 machines on the same network can reach it) and persists the fleet/queue/ledger to
@@ -62,7 +62,7 @@ def _prepare_db_path(raw: str) -> str:
     """Return an absolute DB path, creating its parent dir if missing. Never raises.
 
     SQLite will not create missing parent directories, so we do it here to keep
-    startup from throwing on a fresh path like ``C:\\nightshift\\fleet.db``.
+    startup from throwing on a fresh path like ``C:\\onecompute\\fleet.db``.
     """
     db_path = os.path.abspath(raw)
     parent = os.path.dirname(db_path)
@@ -80,7 +80,7 @@ def _banner_lines(host: str, port: int, db_path: str, scheme: str = "http") -> l
     line = "=" * 60
     out = [
         line,
-        "  NightShift Orchestrator",
+        "  OneCompute Orchestrator",
         f"  Bind:  {host}:{port}  ({scheme.upper()})",
         f"  DB:    {db_path}  (persistent)",
         "",
@@ -136,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(
         prog="python -m orchestrator",
-        description="Run the NightShift orchestrator on a LAN PC.",
+        description="Run the OneCompute orchestrator on a LAN PC.",
     )
     parser.add_argument("--host", default=None, help=f"Bind host (default {env_host})")
     parser.add_argument("--port", type=int, default=None, help=f"Bind port (default {env_port})")

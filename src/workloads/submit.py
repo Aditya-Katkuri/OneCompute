@@ -1,4 +1,4 @@
-"""Submit demo jobs to a NightShift orchestrator."""
+"""Submit demo jobs to a OneCompute orchestrator."""
 
 from __future__ import annotations
 

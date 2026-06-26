@@ -337,7 +337,7 @@ def create_app(db_path: str = ":memory:", signer=None, require_approval: bool = 
     conn = open_serialized_db(db_path)
     if signer is None:
         signer = Signer()  # signing is ON by default; the worker verifies before running
-    app = FastAPI(title="NightShift Orchestrator")
+    app = FastAPI(title="OneCompute Orchestrator")
     app.state.conn = conn
 
     @app.middleware("http")

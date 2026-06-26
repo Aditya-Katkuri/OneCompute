@@ -1,4 +1,4 @@
-"""GPU (host-side) demo workload for ReeveOS / NightShift.
+"""GPU (host-side) demo workload for ReeveOS / OneCompute.
 
 `render` jobs run a sized matmul that uses real CUDA (``cupy``) when a device is present and
 an honest CPU fallback otherwise (see ``jobkit.execute._render``). They advertise

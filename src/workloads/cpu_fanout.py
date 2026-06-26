@@ -1,4 +1,4 @@
-"""Deterministic CPU fan-out jobs for the NightShift demo."""
+"""Deterministic CPU fan-out jobs for the OneCompute demo."""
 
 from __future__ import annotations
 

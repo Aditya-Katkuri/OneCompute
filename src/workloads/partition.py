@@ -1,4 +1,4 @@
-"""Hardcoded work-splitting helpers for the NightShift fleet demo.
+"""Hardcoded work-splitting helpers for the OneCompute fleet demo.
 
 The demo fans ONE big workload across N physical machines by carving the total
 work into N contiguous tiles. These helpers are pure (no I/O, stdlib-only) so

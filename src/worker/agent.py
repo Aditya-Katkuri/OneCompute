@@ -1,4 +1,4 @@
-"""HTTP worker agent for the NightShift control-plane contracts."""
+"""HTTP worker agent for the OneCompute control-plane contracts."""
 
 from __future__ import annotations
 
@@ -302,7 +302,7 @@ class WorkerAgent:
 
         self._yield_watcher_thread = threading.Thread(
             target=watch,
-            name="nightshift-yield-watcher",
+            name="onecompute-yield-watcher",
             daemon=True,
         )
         self._yield_watcher_thread.start()

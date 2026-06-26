@@ -1,4 +1,4 @@
-"""NightShift shared contracts (FROZEN).
+"""OneCompute shared contracts (FROZEN).
 
 These pydantic models are the single source of truth for the seams between teams.
 T1 (orchestrator), T2 (worker), T4 (trust), and T5 (dashboard) all import from here.

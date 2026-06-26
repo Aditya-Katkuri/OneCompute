@@ -1,4 +1,4 @@
-"""Command-line entrypoint for the NightShift worker."""
+"""Command-line entrypoint for the OneCompute worker."""
 
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ def _start_usage_heartbeat(agent: WorkerAgent, period_s: float = 1.0) -> threadi
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run a NightShift worker agent")
+    parser = argparse.ArgumentParser(description="Run a OneCompute worker agent")
     parser.add_argument("--url", required=True, help="Orchestrator base URL")
     parser.add_argument("--once", action="store_true", help="Run at most one job then exit")
     parser.add_argument("--idle-threshold", type=float, default=60.0, help="Input idle seconds before work")

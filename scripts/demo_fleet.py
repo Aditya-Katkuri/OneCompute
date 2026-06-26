@@ -1,4 +1,4 @@
-"""OneCompute / NightShift: Stage Demo driver (FOUR variety beats across a 3-machine fleet).
+"""OneCompute: Stage Demo driver (FOUR variety beats across a 3-machine fleet).
 
 A self-contained, recordable demo. It stands up a REAL signed orchestrator (with the
 dashboard-approval credential gate ON), registers THREE real HTTP workers with human
@@ -189,7 +189,7 @@ def main() -> None:
     port = _free_port()
     base = f"http://127.0.0.1:{port}"
     server, thread = _start_server(base, port)
-    print("\n==================  OneCompute / NightShift: fleet demo  ==================")
+    print("\n==================  OneCompute: fleet demo  ==================")
     print(f"  Dashboard:  {base}/")
     print(f"  Signing ON (Ed25519) | isolation: {active_boundary()} | credential gate: dashboard approval")
     print("  Fleet: dev-box (GPU, 5x credit), laptop-ana (CPU), laptop-ben (CPU)")

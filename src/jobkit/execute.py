@@ -1,4 +1,4 @@
-"""Canonical NightShift job execution (FROZEN, shared).
+"""Canonical OneCompute job execution (FROZEN, shared).
 
 ONE source of truth for "how to execute a job kind". Used both in-process by the
 worker (T2) and inside the sandbox by isolation (T3, via `python -m jobkit`). This

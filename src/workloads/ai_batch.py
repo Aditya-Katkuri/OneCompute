@@ -1,13 +1,13 @@
-"""AI prompt-slice job builders for the NightShift demo."""
+"""AI prompt-slice job builders for the OneCompute demo."""
 
 from __future__ import annotations
 
 DEFAULT_PROMPTS = [
-    "Summarize the NightShift demo in one sentence.",
+    "Summarize the OneCompute demo in one sentence.",
     "List two risks for idle compute harvesting.",
     "Draft a friendly worker opt-in message.",
     "Explain why measured throughput beats TOPS.",
-    "Name one good batch workload for NightShift.",
+    "Name one good batch workload for OneCompute.",
     "Write a short judge-facing value prop.",
     "Describe the instant-yield moment.",
     "Suggest a trust signal for worker results.",

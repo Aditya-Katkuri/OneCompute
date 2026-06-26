@@ -28,9 +28,9 @@ def test_coerce_port_out_of_range_falls_back_with_warning():
 
 
 def test_banner_lists_worker_command_and_trust_caveat():
-    lines = main_mod._banner_lines("0.0.0.0", 8080, "C:\\nightshift\\fleet.db")
+    lines = main_mod._banner_lines("0.0.0.0", 8080, "C:\\onecompute\\fleet.db")
     text = "\n".join(lines)
-    assert "NightShift Orchestrator" in text
+    assert "OneCompute Orchestrator" in text
     assert "python -m worker --url http://" in text
     assert ":8080" in text
     assert "Trust:" in text

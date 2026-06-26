@@ -1,4 +1,4 @@
-"""NightShift shared contracts package (FROZEN seams)."""
+"""OneCompute shared contracts package (FROZEN seams)."""
 
 from contracts.hashing import canonical_bytes, sha256_hex
 from contracts.models import (

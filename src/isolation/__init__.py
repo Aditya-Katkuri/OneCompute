@@ -1,4 +1,4 @@
-"""NightShift isolation seam."""
+"""OneCompute isolation seam."""
 
 from isolation.docker import docker_available, reset_docker_probe_cache
 from isolation.proof import isolation_proof

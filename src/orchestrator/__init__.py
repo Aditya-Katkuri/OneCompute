@@ -1,1 +1,1 @@
-"""NightShift orchestrator package."""
+"""OneCompute orchestrator package."""

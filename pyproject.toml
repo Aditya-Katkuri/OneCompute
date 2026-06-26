@@ -1,9 +1,9 @@
 [project]
-name = "nightshift"
+name = "onecompute"
 version = "0.1.0"
 description = "Let your compute work when you are not: distributed workloads across an idle PC/GPU fleet."
 requires-python = ">=3.11"
-# Dependency set borrowed from the CoworkBench repo so NightShift starts with
+# Dependency set borrowed from the CoworkBench repo so OneCompute starts with
 # the same working toolbox (HTTP/LLM clients, data + document handling, web API).
 dependencies = [
     "anthropic>=0.30.0",
@@ -43,7 +43,7 @@ dev = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-# NightShift ships several top-level packages under src/. Installing the project
+# OneCompute ships several top-level packages under src/. Installing the project
 # (editable, via `uv sync`) puts them on the path so the documented entry points
 # (`python -m orchestrator` and `python -m worker`) run from any checkout
 # without setting PYTHONPATH.

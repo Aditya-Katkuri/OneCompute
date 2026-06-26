@@ -277,7 +277,7 @@ def _start_subprocess(in_path: Path, out_path: Path, cwd: Path, limits: Limits) 
 
 
 def _new_container_name() -> str:
-    return f"nightshift-{uuid.uuid4().hex[:12]}"
+    return f"onecompute-{uuid.uuid4().hex[:12]}"
 
 
 def start_in_isolation(
@@ -286,7 +286,7 @@ def start_in_isolation(
     limits: Limits = Limits(),
 ) -> JobHandle:
     """Start a jobkit task and return a handle that can kill or wait for it."""
-    temp_dir = tempfile.TemporaryDirectory(prefix="nightshift-isolation-")
+    temp_dir = tempfile.TemporaryDirectory(prefix="onecompute-isolation-")
     work_dir = Path(temp_dir.name)
     in_path = work_dir / "in.json"
     out_path = work_dir / "out.json"
@@ -443,7 +443,7 @@ def run_in_isolation(
     host-side where CUDA sees the real device, and the Job Object's kill-on-close still
     delivers the sub-second instant-yield.
     """
-    with tempfile.TemporaryDirectory(prefix="nightshift-isolation-") as temp_name:
+    with tempfile.TemporaryDirectory(prefix="onecompute-isolation-") as temp_name:
         work_dir = Path(temp_name)
         in_path = work_dir / "in.json"
         out_path = work_dir / "out.json"

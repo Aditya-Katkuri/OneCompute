@@ -1,4 +1,4 @@
-# NightShift: Architecture
+# OneCompute: Architecture
 
 > Proposed system design for the hackathon proof-of-concept.
 > Companion to [`idea.md`](./idea.md). Every choice here is biased toward **demoable on a few Windows PCs in hackathon time**, with a clear line between *PoC* and *roadmap*.
@@ -90,7 +90,7 @@ On startup and registration the agent reports a **resource dict** (the abstracti
 
 ### 3.2 Demand-adaptive admission (the make-or-break UX)
 
-NightShift doesn't just wait for a fully-idle machine: it harvests the **learned spare headroom** even during light foreground use, and backs off the instant the employee needs the machine (idea.md §5). The worker runs a **demand-adaptive governor** (`src/worker/governor.py`) over the same Win32/NVML signals, all callable from Python via `ctypes`/`pynvml`:
+OneCompute doesn't just wait for a fully-idle machine: it harvests the **learned spare headroom** even during light foreground use, and backs off the instant the employee needs the machine (idea.md §5). The worker runs a **demand-adaptive governor** (`src/worker/governor.py`) over the same Win32/NVML signals, all callable from Python via `ctypes`/`pynvml`:
 
 | Signal | Win32 API | Why |
 |---|---|---|
@@ -101,7 +101,7 @@ NightShift doesn't just wait for a fully-idle machine: it harvests the **learned
 | GPU utilization | [NVML / `pynvml`](https://github.com/gpuopenanalytics/pynvml) (ships with NVIDIA driver) | **Keyboard-idle ≠ GPU-idle**: a user can be away while a render/game runs. |
 
 **Two thresholds, two phases:**
-- **Admission** (between jobs, when no NightShift job runs, so live CPU ≈ the employee's own demand): admit only when on-AC, unlocked, GPU below cap, the **hour-of-week bucket has headroom**, and live CPU is below a **time-aware threshold** (`profiled_mean + margin`). This is what lets it run during *light* use, not only at full idle.
+- **Admission** (between jobs, when no OneCompute job runs, so live CPU ≈ the employee's own demand): admit only when on-AC, unlocked, GPU below cap, the **hour-of-week bucket has headroom**, and live CPU is below a **time-aware threshold** (`profiled_mean + margin`). This is what lets it run during *light* use, not only at full idle.
 - **Yield** (during a job, polled ~10×/s): yield once the **employee's own attributed demand** (`system − our job tree`, via `psutil`) exceeds the **time-aware yield threshold** for several samples → close the Job Object → the process tree dies sub-second → requeue, **resuming** when demand falls back into the headroom. It tolerates mere input (typing while we use spare headroom is fine); the hard *mouse-touch → instant-yield* reflex remains the binary `IdleGate`'s behavior (`--governor idle`) and the demo's explicit beat.
 
 **Usage profile (`src/worker/profiler.py`):** a rolling, **on-device** store of per-(hour-of-week) min / avg / peak CPU·GPU·RAM, learned **only from job-free samples** so the envelope reflects the *employee's* usage and not the agent's. Persisted locally (e.g. `%LOCALAPPDATA%\OneCompute`); only the derived spare-capacity number is ever advertised (idea.md §8).

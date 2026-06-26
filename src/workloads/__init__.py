@@ -1,2 +1,2 @@
-"""Demo workload helpers for NightShift."""
+"""Demo workload helpers for OneCompute."""
 

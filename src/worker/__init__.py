@@ -1,1 +1,1 @@
-"""Worker agent package for NightShift Phase 1."""
+"""Worker agent package for OneCompute Phase 1."""

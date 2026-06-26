@@ -1,4 +1,4 @@
-# OneCompute / NightShift: fleet demo runbook
+# OneCompute: fleet demo runbook
 
 The demo shows ONE fleet (2 laptops + 1 dev box, side by side) running **four distinct
 compute workloads, one after another**, each fanned across **every** machine. Joining a
@@ -28,13 +28,13 @@ There are two ways to run it:
 
 All three machines need the repo checked out and `uv` available. Commands use the project
 `uv` (`C:\Users\<you>\.local\bin\uv.exe`). **Run `uv sync` once per machine first**. It
-installs NightShift into the project venv, so `uv run python -m orchestrator` and
+installs OneCompute into the project venv, so `uv run python -m orchestrator` and
 `uv run python -m worker` work from any checkout (no `PYTHONPATH` needed).
 
 ### A1. Dev box: start the orchestrator (with the credential gate ON)
 
 ```powershell
-uv sync                 # one-time: installs NightShift + deps into .venv
+uv sync                 # one-time: installs OneCompute + deps into .venv
 uv run python -m orchestrator --require-approval
 ```
 

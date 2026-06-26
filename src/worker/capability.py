@@ -1,4 +1,4 @@
-"""Capability detection for NightShift workers."""
+"""Capability detection for OneCompute workers."""
 
 from __future__ import annotations
 

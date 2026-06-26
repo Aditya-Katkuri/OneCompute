@@ -1,4 +1,4 @@
-# NightShift: Frozen Contracts (Phase 0)
+# OneCompute: Frozen Contracts (Phase 0)
 
 > The seams between teams. **Frozen**. Change only with Chief-of-Staff sign-off.
 > Data models: [`src/contracts/models.py`](../src/contracts/models.py). Hashing:

@@ -1,4 +1,4 @@
-"""Static dashboard assets for NightShift."""
+"""Static dashboard assets for OneCompute."""
 
 from dashboard.paths import INDEX_HTML
 

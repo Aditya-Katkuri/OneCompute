@@ -1,4 +1,4 @@
--- NightShift orchestrator state (FROZEN). SQLite, run in WAL mode.
+-- OneCompute orchestrator state (FROZEN). SQLite, run in WAL mode.
 -- Owned by T1; the `ledger` table is shared with T4.
 
 CREATE TABLE IF NOT EXISTS workers (
