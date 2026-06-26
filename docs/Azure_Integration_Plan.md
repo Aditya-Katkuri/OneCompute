@@ -106,9 +106,3 @@ Azure AI Foundry remains responsible for model management, governance, security,
 - Intune deployment
 - Defender and Purview integration
 - Automatic Azure fallback
-
-## README Executive Overview
-
-### OneCompute + Azure AI Foundry
-
-OneCompute turns idle enterprise devices into a distributed compute tier for Azure AI Foundry. By securely routing batch inference, evaluations, and other AI workloads to managed laptops, dev boxes, and workstations, OneCompute expands available AI capacity using hardware Microsoft already owns. Azure AI Foundry continues to provide model governance, orchestration, and developer tooling, while OneCompute supplies an elastic execution layer that improves utilization, reduces infrastructure costs, and unlocks additional compute at enterprise scale.
