@@ -104,12 +104,12 @@ def _data_transform(input: dict, should_yield: YieldFn) -> dict:
 
 
 def _challenge(input: dict, should_yield: YieldFn) -> dict:
-    # Deterministic, integer-exact (T4 verifies bitwise — no FP ambiguity).
+    # Deterministic, integer-exact (T4 verifies bitwise - no FP ambiguity).
     x = int(input["x"])
     return {"y": x * x + 1}
 
 
-# Local model (Ollama) — the CPU-only, no-API inference backend (its OpenAI-compatible
+# Local model (Ollama) - the CPU-only, no-API inference backend (its OpenAI-compatible
 # endpoint). Overridable per worker via env so a laptop can point at its own model.
 _LLM_LOCAL_URL = os.environ.get("ONECOMPUTE_LLM_URL", "http://127.0.0.1:11434/v1")
 _LLM_LOCAL_MODEL = os.environ.get("ONECOMPUTE_LLM_MODEL", "llama3.2:3b")
@@ -689,7 +689,7 @@ def _ai_eval_one(
     if backend is None:
         # Disclosed deterministic heuristic so the workload runs with no model present.
         score = int(sha256_hex(question + "||" + answer)[:4], 16) % 11
-        return score, "[fallback heuristic score — no model]"
+        return score, "[fallback heuristic score - no model]"
     prompt = (
         "Grade the ANSWER to the QUESTION from 0-10 using the RUBRIC. Reply with ONLY a JSON "
         'object: {"score": <integer 0-10>, "verdict": "<one short sentence>"}.\n'

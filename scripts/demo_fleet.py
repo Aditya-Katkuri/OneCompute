@@ -1,10 +1,10 @@
-"""OneCompute / NightShift — Stage Demo driver (FOUR variety beats across a 3-machine fleet).
+"""OneCompute / NightShift - Stage Demo driver (FOUR variety beats across a 3-machine fleet).
 
 A self-contained, recordable demo. It stands up a REAL signed orchestrator (with the
 dashboard-approval credential gate ON), registers THREE real HTTP workers with human
 machine names ("dev-box" GPU + two CPU laptops), shows their pending device codes and
 auto-approves them (mirroring the admin clicking Approve in the dashboard), then fans
-FOUR distinct workloads — ONE AFTER ANOTHER — across the whole fleet using the hardcoded
+FOUR distinct workloads - ONE AFTER ANOTHER - across the whole fleet using the hardcoded
 N-tile split (N = number of machines):
 
   BEAT 1  FRACTAL          distributed Mandelbrot; tiles reassemble into ONE PNG (money shot)
@@ -161,7 +161,7 @@ def _approve_fleet(base: str, fleet: list[WorkerAgent]) -> None:
     POST /workers/{id}/approve to keep the recording hands-free. The worker then heartbeats and
     sees approved=true, exactly as it would after a human approval.
     """
-    print("Workers joining — each shows a device code and waits for dashboard approval:")
+    print("Workers joining - each shows a device code and waits for dashboard approval:")
     for w in fleet:
         w.register()
         tag = "GPU" if w.capability.has_gpu else "CPU"
@@ -173,7 +173,7 @@ def _approve_fleet(base: str, fleet: list[WorkerAgent]) -> None:
         if w.heartbeat().approved:
             w.approved = True
             w.device_code = None
-        print(f"   [+] Access granted — {w.capability.worker_id} joined the fleet")
+        print(f"   [+] Access granted - {w.capability.worker_id} joined the fleet")
     print()
 
 
@@ -189,7 +189,7 @@ def main() -> None:
     port = _free_port()
     base = f"http://127.0.0.1:{port}"
     server, thread = _start_server(base, port)
-    print("\n==================  OneCompute / NightShift — fleet demo  ==================")
+    print("\n==================  OneCompute / NightShift - fleet demo  ==================")
     print(f"  Dashboard:  {base}/")
     print(f"  Signing ON (Ed25519) | isolation: {active_boundary()} | credential gate: dashboard approval")
     print("  Fleet: dev-box (GPU, 5x credit), laptop-ana (CPU), laptop-ben (CPU)")
@@ -211,12 +211,12 @@ def main() -> None:
     _start_heartbeat_pulse(base, fleet, pulse_stop)
     n = len(fleet)
 
-    # ====================  BEAT 1 — FRACTAL (non-AI, money shot)  ============
-    _hr("BEAT 1/4 — distributed MANDELBROT FRACTAL (non-AI)")
+    # ====================  BEAT 1 - FRACTAL (non-AI, money shot)  ============
+    _hr("BEAT 1/4 - distributed MANDELBROT FRACTAL (non-AI)")
     jobs = build_fractal_jobs(n_tiles=n, **FRACTAL)
     submit_all(base, jobs)
     print(f"Submitted {len(jobs)} fractal tiles ({FRACTAL['width']}x{FRACTAL['height']}, "
-          f"{FRACTAL['max_iter']} iters) — one horizontal band per machine.")
+          f"{FRACTAL['max_iter']} iters) - one horizontal band per machine.")
     collect: dict = {}
     t0 = time.perf_counter()
     _drain(fleet, collect)
@@ -227,15 +227,15 @@ def main() -> None:
     serial_est = fleet_s * n
     speedup = serial_est / fleet_s if fleet_s > 0 else float(n)
     print(f"   -> reassembled ONE image across {n} machines: {FRACTAL_PNG}")
-    print(f"      open this image — rendered across {n} machines.")
+    print(f"      open this image - rendered across {n} machines.")
     print(f"      fleet: {fleet_s:.2f}s   |   1-machine estimate: ~{serial_est:.2f}s   |   ~{speedup:.1f}x")
 
-    # ====================  BEAT 2 — PARAM-SWEEP OPTIMIZE (non-AI)  ===========
-    _hr("BEAT 2/4 — distributed PARAM-SWEEP OPTIMIZATION (non-AI)")
+    # ====================  BEAT 2 - PARAM-SWEEP OPTIMIZE (non-AI)  ===========
+    _hr("BEAT 2/4 - distributed PARAM-SWEEP OPTIMIZATION (non-AI)")
     jobs = build_optimize_jobs(n_tiles=n, **OPTIMIZE)
     submit_all(base, jobs)
     print(f"Submitted {len(jobs)} optimize slices ({OPTIMIZE['n_candidates']:,} candidates, "
-          f"dims={OPTIMIZE['dims']}) — each machine scores a slice; global best wins.")
+          f"dims={OPTIMIZE['dims']}) - each machine scores a slice; global best wins.")
     collect = {}
     _drain(fleet, collect)
     best = aggregate_optimize(_outputs(collect))
@@ -254,11 +254,11 @@ def main() -> None:
     print(f"      best params: [{params}{tail}]  found by {winner}  "
           f"(evaluated {best['evaluated']:,} configs)")
 
-    # ====================  BEAT 3 — MODEL INFERENCE (AI)  ===================
-    _hr("BEAT 3/4 — MODEL INFERENCE over a prompt set (AI)")
+    # ====================  BEAT 3 - MODEL INFERENCE (AI)  ===================
+    _hr("BEAT 3/4 - MODEL INFERENCE over a prompt set (AI)")
     jobs = build_prompt_jobs(slice_size=3)
     submit_all(base, jobs)
-    print(f"Submitted {len(jobs)} ai.batch_infer slices — runs HOST-SIDE (real SDK if a key is set, "
+    print(f"Submitted {len(jobs)} ai.batch_infer slices - runs HOST-SIDE (real SDK if a key is set, "
           "else a disclosed deterministic fallback).")
     collect = {}
     _drain(fleet, collect)
@@ -276,11 +276,11 @@ def main() -> None:
         print(f"      Q: {prompt[:60]}")
         print(f"      A: {text[:90]}")
 
-    # ====================  BEAT 4 — SYNTHETIC DATA (AI)  ===================
-    _hr("BEAT 4/4 — SYNTHETIC DATA GENERATION (AI)")
+    # ====================  BEAT 4 - SYNTHETIC DATA (AI)  ===================
+    _hr("BEAT 4/4 - SYNTHETIC DATA GENERATION (AI)")
     jobs = build_synth_jobs(n_tiles=n, total_rows=SYNTH_ROWS)
     submit_all(base, jobs)
-    print(f"Submitted {len(jobs)} ai.synth slices ({SYNTH_ROWS} rows total) — each machine generates "
+    print(f"Submitted {len(jobs)} ai.synth slices ({SYNTH_ROWS} rows total) - each machine generates "
           "a slice; merged into ONE dataset.")
     collect = {}
     _drain(fleet, collect)
@@ -292,7 +292,7 @@ def main() -> None:
         print(f"      {compact}")
 
     # ====================  INSTANT-YIELD beat  ==============================
-    _hr("INSTANT YIELD — touch a laptop, it steps aside, the fleet finishes")
+    _hr("INSTANT YIELD - touch a laptop, it steps aside, the fleet finishes")
     submit_all(base, [SubmitRequest(
         kind="optimize",
         input={"idx_start": 0, "idx_end": 120_000, "dims": 8, "seed": 0},
@@ -312,7 +312,7 @@ def main() -> None:
         print("   (no slice leased to laptop-ana; skipping yield demo)")
 
     # ====================  Ledger + close  =================================
-    _hr("LEDGER (measured, honest — dev-box GPU earns 5x)")
+    _hr("LEDGER (measured, honest - dev-box GPU earns 5x)")
     state = _state(base)
     completed = sum(1 for j in state["jobs"] if j["state"] == "completed")
     for w in sorted(state["workers"], key=lambda v: -v["credits"]):
@@ -328,7 +328,7 @@ def main() -> None:
         server.should_exit = True
         thread.join(timeout=5)
         return
-    print(f"\n   Dashboard live at {base}/  —  press Ctrl-C to stop.")
+    print(f"\n   Dashboard live at {base}/  -  press Ctrl-C to stop.")
     try:
         while True:
             time.sleep(1)

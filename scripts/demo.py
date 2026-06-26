@@ -1,4 +1,4 @@
-"""OneCompute — full integrated live demo (the unified product).
+"""OneCompute - full integrated live demo (the unified product).
 
 Starts a REAL signed orchestrator, serves the live dashboard, and drives every demo
 beat across a heterogeneous fleet of real HTTP workers:
@@ -235,7 +235,7 @@ def main() -> None:
         server.should_exit = True
         thread.join(timeout=5)
         return
-    print(f"\n   Dashboard live at {base}/  —  press Ctrl-C to stop.")
+    print(f"\n   Dashboard live at {base}/  -  press Ctrl-C to stop.")
     try:
         while True:
             time.sleep(1)

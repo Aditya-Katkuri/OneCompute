@@ -2,7 +2,7 @@
 
 These pydantic models are the single source of truth for the seams between teams.
 T1 (orchestrator), T2 (worker), T4 (trust), and T5 (dashboard) all import from here.
-Do not change a public field without Chief-of-Staff sign-off — other teams build against it.
+Do not change a public field without Chief-of-Staff sign-off - other teams build against it.
 """
 
 from __future__ import annotations
@@ -196,7 +196,7 @@ LAUNCHABLE_KINDS: tuple[str, ...] = (
 
 
 class JobDetail(BaseModel):
-    """A job record plus its parsed output — what a dashboard reads to show results."""
+    """A job record plus its parsed output - what a dashboard reads to show results."""
 
     job_id: str
     kind: JobKind

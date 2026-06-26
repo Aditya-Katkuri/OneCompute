@@ -50,7 +50,7 @@ Thumbs.db
 onecompute-worker.spec
 
 # ---------------------------------------------------------------------------
-# Submission excludes — kept on disk for local use / the launch video, but NOT
+# Submission excludes - kept on disk for local use / the launch video, but NOT
 # part of the public technical submission a judge clones.
 # ---------------------------------------------------------------------------
 

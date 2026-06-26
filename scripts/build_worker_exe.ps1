@@ -28,7 +28,7 @@ if (Test-Path $exe) {
     Write-Output "BUILT: $exe ($size MB)"
     Write-Output "SHA256: $hash"
     "$hash *onecompute-worker.exe" | Out-File "dist\onecompute-worker.exe.sha256" -Encoding ascii
-    Write-Output "(unsigned build — sign with the corporate cert, then re-hash for the allow-list)"
+    Write-Output "(unsigned build - sign with the corporate cert, then re-hash for the allow-list)"
 } else {
     Write-Output "BUILD FAILED: $exe not found"
 }

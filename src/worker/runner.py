@@ -1,4 +1,4 @@
-"""Worker job runner — a thin wrapper over the shared `jobkit` so that in-process
+"""Worker job runner - a thin wrapper over the shared `jobkit` so that in-process
 execution (here) and isolated execution (T3, via `python -m jobkit`) are identical."""
 
 from __future__ import annotations

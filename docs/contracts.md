@@ -1,6 +1,6 @@
-# NightShift — Frozen Contracts (Phase 0)
+# NightShift - Frozen Contracts (Phase 0)
 
-> The seams between teams. **Frozen** — change only with Chief-of-Staff sign-off.
+> The seams between teams. **Frozen** - change only with Chief-of-Staff sign-off.
 > Data models: [`src/contracts/models.py`](../src/contracts/models.py). Hashing:
 > [`src/contracts/hashing.py`](../src/contracts/hashing.py). DB: [`src/contracts/schema.sql`](../src/contracts/schema.sql).
 > Import everything as `from contracts import ...` (tests run with `pythonpath = ["src"]`).
@@ -12,20 +12,20 @@ Outbound-only from workers; short-poll. All bodies are the pydantic models in `c
 | Method & path | Request | Response | Notes |
 |---|---|---|---|
 | `POST /register` | `Capability` | `RegisterResponse` | assigns `class_weight` (GPU=5, CPU=1) server-side |
-| `GET /jobs/next?worker_id=…` | — | `JobAssignment` (200) or **204** | 204 = no matching work; capability-matched. **Also 204 until the worker is approved** (gated flows) |
+| `GET /jobs/next?worker_id=…` | - | `JobAssignment` (200) or **204** | 204 = no matching work; capability-matched. **Also 204 until the worker is approved** (gated flows) |
 | `POST /heartbeat` | `HeartbeatRequest` | `HeartbeatResponse` | renews lease; `preempt=true` asks worker to yield |
 | `POST /results/{job_id}` | `ResultRequest` | `ResultResponse` | verifies, credits ledger, returns points |
 | `POST /jobs` | `SubmitRequest` | `SubmitResponse` | submitter enqueues a job (orchestrator fills hashes/signs) |
-| `GET /state` | — | `FleetState` | dashboard read model (T5) |
-| `POST /workers/{worker_id}/approve` | — | `{"ok": true, "worker_id": …}` (200) or **404** | **(additive)** admits a pending worker; emits the `approved` event |
-| `GET /jobs/{job_id}` | — | `JobDetail` (200) or **404** | **(additive)** one job + its parsed output; registered after `/jobs/next` so the long-poll literal route still wins |
+| `GET /state` | - | `FleetState` | dashboard read model (T5) |
+| `POST /workers/{worker_id}/approve` | - | `{"ok": true, "worker_id": …}` (200) or **404** | **(additive)** admits a pending worker; emits the `approved` event |
+| `GET /jobs/{job_id}` | - | `JobDetail` (200) or **404** | **(additive)** one job + its parsed output; registered after `/jobs/next` so the long-poll literal route still wins |
 | `POST /workloads` | `WorkloadLaunchRequest` | `WorkloadLaunchResponse` | **(additive)** one-call fleet launch; **400** on unknown/non-launchable kind |
-| `GET /workloads/{workload_id}` | — | `WorkloadView` (200) or **404** | **(additive)** all jobs + outputs for a launched workload; registered after `/workloads/catalog` |
-| `GET /workloads/catalog` | — | `{"workloads": [...]}` | **(additive)** the launchable example workloads (UI launch buttons) |
+| `GET /workloads/{workload_id}` | - | `WorkloadView` (200) or **404** | **(additive)** all jobs + outputs for a launched workload; registered after `/workloads/catalog` |
+| `GET /workloads/catalog` | - | `{"workloads": [...]}` | **(additive)** the launchable example workloads (UI launch buttons) |
 
-## 2. Callable seams (pin these names exactly — parallel builds depend on them)
+## 2. Callable seams (pin these names exactly - parallel builds depend on them)
 
-**T1 — orchestrator** (`src/orchestrator/`)
+**T1 - orchestrator** (`src/orchestrator/`)
 ```python
 from orchestrator.app import create_app          # create_app(db_path: str = ":memory:", signer=None, require_approval: bool = False) -> FastAPI
 from orchestrator.db import init_db, connect      # init_db(db_path) -> sqlite3.Connection (schema applied, WAL)
@@ -35,11 +35,11 @@ from orchestrator.submit import submit_job        # submit_job(conn, req: Submit
   requeues jobs whose `lease_expires` has passed (state `leased` → `queued`, `assigned_worker=NULL`).
 - Scheduler: capability bin-fit (`Requires` vs `Capability`); never hand a `needs_gpu` job to a CPU-only worker.
   Matched dimensions: `needs_gpu`, `min_vram_gb`, `min_ram_gb`, `min_cpus`, `accel`. `min_ram_gb` is gated on the
-  worker's **live free RAM** — reported at registration (`Capability.free_ram_gb`) and refreshed every
-  `/heartbeat` (`HeartbeatRequest.free_ram_gb`) — falling back to total `ram_gb` until the first heartbeat.
+  worker's **live free RAM** - reported at registration (`Capability.free_ram_gb`) and refreshed every
+  `/heartbeat` (`HeartbeatRequest.free_ram_gb`) - falling back to total `ram_gb` until the first heartbeat.
 - On accepted result: `credits = units * class_weight`, written to `ledger`; job → `completed`.
 
-**T2 — worker** (`src/worker/`)
+**T2 - worker** (`src/worker/`)
 ```python
 from worker.capability import detect_capability   # detect_capability() -> Capability  (pynvml guarded → has_gpu=False)
 from worker.agent import WorkerAgent
@@ -84,12 +84,12 @@ uv = C:\Users\t-cfinney\AppData\Local\Programs\Python\Python312-arm64\Scripts\uv
 
 ## 5. Phase-2 seams (FROZEN)
 
-### 5.1 Shared execution — `jobkit` (COS-owned, DONE)
+### 5.1 Shared execution - `jobkit` (COS-owned, DONE)
 - `from jobkit.execute import execute` → `execute(kind: str, input: dict, should_yield=lambda: False) -> dict`.
   The single source of truth for executing a job kind. Used in-process by the worker **and** inside the
   sandbox by isolation, so a job's result is identical either way.
 - Sandbox entrypoint: `python -m jobkit <in.json> <out.json>` (in.json = `{"kind","input"}`). Requires
-  `src` on `PYTHONPATH` (the caller — T3 — sets it when spawning).
+  `src` on `PYTHONPATH` (the caller - T3 - sets it when spawning).
 - Output shapes: `data.transform`→`{"results":[...], "yielded": bool}`; `challenge`→`{"y": int}`;
   `ai.batch_infer`→`{"results":[{"prompt","completion","tokens"}], "backend":"openai|anthropic|fallback", "yielded": bool}`.
 
@@ -97,19 +97,19 @@ uv = C:\Users\t-cfinney\AppData\Local\Programs\Python\Python312-arm64\Scripts\uv
 `input = {"prompts": [str, ...], "model": str?, "max_tokens": int=64}`. Each worker scores a *slice* of the
 prompt set; real SDK call if `OPENAI_API_KEY`/`ANTHROPIC_API_KEY` is set, else a disclosed token-proportional fallback.
 
-### 5.3 Trust — `src/trust/` (T4 owns)
+### 5.3 Trust - `src/trust/` (T4 owns)
 ```python
 from trust import Signer, verify_manifest, make_challenge, check_challenge
 # Signer(private_key_hex: str | None = None): .public_key_hex; .sign(m: JobManifest) -> SignedManifest
 #   (Ed25519 over contracts.canonical_bytes(m.model_dump()))
 # verify_manifest(sm: SignedManifest) -> bool   (empty signature is INVALID once signing is on)
 # make_challenge() -> tuple[dict, dict]          (job_input, expected_output) for a `challenge` job
-# check_challenge(output: dict, expected: dict) -> bool   (exact, integer — no FP)
+# check_challenge(output: dict, expected: dict) -> bool   (exact, integer - no FP)
 ```
 Integration (Wave B, COS): `create_app(signer=Signer())` signs on assignment; the worker calls
 `verify_manifest(sm)` **and** checks `sha256_hex(input) == manifest.input_sha256` before running (tamper-refusal).
 
-### 5.4 Isolation — `src/isolation/` (T3 owns)
+### 5.4 Isolation - `src/isolation/` (T3 owns)
 ```python
 from isolation import run_in_isolation, isolation_proof, JobHandle
 # run_in_isolation(kind: str, input: dict, limits: Limits, should_yield=lambda: False) -> dict
@@ -123,11 +123,11 @@ from isolation import run_in_isolation, isolation_proof, JobHandle
 - `GET /state` → `FleetState` (exists). `WorkerView` now also carries **live** `cpu_pct`/`gpu_pct`/`free_ram_gb`
   (the worker streams `HeartbeatRequest` every ~1s, so `/state` reflects live per-device usage).
 - `GET /events?since=<id>` → `{"events":[{"id","ts","type":"registered|approved|submitted|assigned|completed|yielded|failed|blacklisted",
-  "worker_id","job_id","detail"}], "last_id": int}` — COS adds this in integration for the live activity feed.
+  "worker_id","job_id","detail"}], "last_id": int}` - COS adds this in integration for the live activity feed.
 
 ---
 
-## 6. Additive seams (Wave C, COS) — frozen contracts above still hold
+## 6. Additive seams (Wave C, COS) - frozen contracts above still hold
 
 These were **added** on top of the frozen Phase-0/Phase-2 seams; nothing above changed.
 
@@ -157,7 +157,7 @@ One-call fleet launch + per-job/per-workload output retrieval. Full UI-integrati
   workload_id, kind, job_ids }`. Builds the hardcoded split (one tile per machine) and enqueues each tile
   tagged with a shared `workload_id`. **400** on an unknown/non-launchable kind.
 - **Catalog:** `GET /workloads/catalog` → `{"workloads": [ {kind,label,category,ai,blurb,default_params,split} ]}`
-  — the launchable examples a UI renders as buttons (registered before `/workloads/{workload_id}`).
+  - the launchable examples a UI renders as buttons (registered before `/workloads/{workload_id}`).
 - **Output retrieval:** `GET /jobs/{job_id}` → `JobDetail` (job record + parsed output; registered after
   `/jobs/next`) and `GET /workloads/{workload_id}` → `WorkloadView{ workload_id, kind, total, completed,
   jobs:[JobDetail] }`.

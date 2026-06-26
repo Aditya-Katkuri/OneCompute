@@ -1,4 +1,4 @@
-"""Rolling per-machine usage profiler — the "learn the envelope" half of the demand-adaptive
+"""Rolling per-machine usage profiler - the "learn the envelope" half of the demand-adaptive
 governor (idea.md §5 "Demand-adaptive headroom harvesting").
 
 It samples how much CPU / GPU / RAM the *machine* actually uses and maintains, per
@@ -6,7 +6,7 @@ It samples how much CPU / GPU / RAM the *machine* actually uses and maintains, p
 governor sizes a right-sized background allocation that lives in the spare headroom, and a
 time-aware threshold above which it must yield.
 
-Privacy (idea.md §8): this is **on-device only** — raw activity never leaves the machine; the
+Privacy (idea.md §8): this is **on-device only** - raw activity never leaves the machine; the
 profile is persisted locally and only a derived spare-capacity number is ever advertised.
 
 Conventions: pure `ctypes` + `pynvml` (no heavy deps, per architecture.md §11); every OS call

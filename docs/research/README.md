@@ -1,4 +1,4 @@
-# NightShift — Research Layer (Staff-Engineer Dossiers)
+# NightShift - Research Layer (Staff-Engineer Dossiers)
 
 > Each Staff Engineer ran a deep web-research pass on the **compute ↔ hardware ↔ software**
 > interconnections most relevant to their subsystem, and filed a cited dossier here. These are
@@ -15,7 +15,7 @@
 | **T4** Trust | [`trust-rewards/`](./trust-rewards/README.md) | FP determinism + tolerance-aware verify · signed manifests/roots of trust · challenge tasks · anti-Sybil identity · validated-work rewards |
 | **T5** Dashboard | [`dashboard-demo/`](./dashboard-demo/README.md) | measured throughput > TOPS · embarrassingly-parallel workloads · dashboard reliability > transport cleverness · displaced-batch economics · visual+honest trust beats |
 
-## Cross-cutting themes (these bind the teams — guard them at the seams)
+## Cross-cutting themes (these bind the teams - guard them at the seams)
 
 1. **"Measure, don't trust the nameplate" is a system-wide law.** It recurs in every dossier:
    T1 ranks workers by *measured* throughput, T2 benchmarks real throughput and NVML-gates GPU use,
@@ -24,7 +24,7 @@
 
 2. **The Job Object is a shared contract between T2 and T3.** `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`
    simultaneously provides T3's resource governance *and* T2's sub-second instant-yield. Build and review
-   the kill-on-close handshake **together** — it is the single most demo-critical seam.
+   the kill-on-close handshake **together** - it is the single most demo-critical seam.
 
 3. **`Capability` ⟷ `Requires` is the spine.** T1's scheduler is only as good as the honesty of T2's
    capability dict. Co-design them; never let advertised capability drift from what the worker can prove.

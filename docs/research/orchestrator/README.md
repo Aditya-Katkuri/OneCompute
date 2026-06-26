@@ -1,4 +1,4 @@
-# NightShift T1 research dossier — Orchestrator & Scheduler
+# NightShift T1 research dossier - Orchestrator & Scheduler
 
 ## 1. How to use this
 
@@ -11,7 +11,7 @@ Deeper notes:
 - [SQLite queue design and scale boundary](sqlite-queue.md)
 - [Signed manifests, idempotency, and duplicate-safe results](signed-manifests-and-results.md)
 
-## 2. Executive summary — 5 highest-impact learning areas, ranked
+## 2. Executive summary - 5 highest-impact learning areas, ranked
 
 1. **Capability matching as a first-class contract.** Jobs declare `Requires`; workers declare `Capability`; the scheduler does deterministic admission control before ranking. This is the highest-impact area because NightShift's core value is harvesting heterogeneous CPU/GPU/NPU-ish hardware without sending CUDA work to CPU-only PCs or memory-heavy jobs to low-VRAM GPUs. It informs `/register`, `GET /jobs/next`, `Requires` fields, server-side `class_weight`, and the PoC scheduler's match/rank query.
 2. **Lease + heartbeat + reaper semantics for churning laptops.** NightShift workers are preemptible: users return, machines sleep, Wi-Fi drops, and GPU drivers fail. This area informs at-least-once assignment, short leases, `/heartbeat`, `preempt=true`, requeue-on-expiry, idempotent jobs, and duplicate-safe `/results/{job_id}`.
@@ -114,32 +114,32 @@ For the orchestrator, "exactly once" execution is unrealistic because leases can
 
 ## 7. Sources
 
-[1] Ray Core resources — https://docs.ray.io/en/latest/ray-core/scheduling/resources.html  
-[2] Ray accelerator support — https://docs.ray.io/en/latest/ray-core/scheduling/accelerators.html  
-[3] Kubernetes device plugins — https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/device-plugins/  
-[4] Kubernetes GPU scheduling — https://kubernetes.io/docs/tasks/manage-gpus/scheduling-gpus/  
-[5] Slurm Generic Resource Scheduling — https://slurm.schedmd.com/gres.html  
-[6] HTCondor matchmaking with ClassAds — https://htcondor.readthedocs.io/en/v10_0/users-manual/matchmaking-with-classads.html  
-[7] HTCondor ClassAd mechanism — https://htcondor.readthedocs.io/en/latest/classads/classad-mechanism.html  
-[8] Temporal Task Queues — https://docs.temporal.io/task-queue  
-[9] Temporal worker performance — https://docs.temporal.io/develop/worker-performance  
-[10] Temporal detecting Activity failures / heartbeats — https://docs.temporal.io/encyclopedia/detecting-activity-failures  
-[11] NATS JetStream consumers — https://docs.nats.io/nats-concepts/jetstream/consumers  
-[12] NATS JetStream streams / WorkQueue retention — https://docs.nats.io/nats-concepts/jetstream/streams  
-[13] Celery tasks — https://docs.celeryq.dev/en/stable/userguide/tasks.html  
-[14] Celery optimizing / prefetch / late ack — https://docs.celeryq.dev/en/stable/userguide/optimizing.html  
-[15] SQLite WAL — https://www.sqlite.org/wal.html  
-[16] SQLite isolation — https://www.sqlite.org/isolation.html  
-[17] SQLite when to use — https://www.sqlite.org/whentouse.html  
-[18] ONNX Runtime execution providers — https://onnxruntime.ai/docs/execution-providers/  
-[19] gRPC performance best practices — https://grpc.io/docs/guides/performance/  
-[20] Microsoft: use gRPC in browser apps — https://learn.microsoft.com/en-us/aspnet/core/grpc/browser?view=aspnetcore-10.0  
-[21] Microsoft GetLastInputInfo — https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getlastinputinfo  
-[22] Microsoft GetSystemPowerStatus — https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getsystempowerstatus  
-[23] Microsoft WM_WTSSESSION_CHANGE — https://learn.microsoft.com/en-us/windows/win32/termserv/wm-wtssession-change  
-[24] Microsoft Job Objects — https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects  
-[25] Microsoft system power states — https://learn.microsoft.com/en-us/windows/win32/power/system-power-states  
-[26] Microsoft Windows Sandbox configuration — https://learn.microsoft.com/en-us/windows/security/application-security/application-isolation/windows-sandbox/windows-sandbox-configure-using-wsb-file  
-[27] NVIDIA NVML API reference — https://docs.nvidia.com/deploy/nvml-api/nvml-api-reference.html  
-[28] MDN HTTP protocol upgrade mechanism — https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Protocol_upgrade_mechanism  
-[29] Microsoft Copilot+ PCs developer guide / NPUs — https://learn.microsoft.com/en-us/windows/ai/npu-devices/
+[1] Ray Core resources - https://docs.ray.io/en/latest/ray-core/scheduling/resources.html  
+[2] Ray accelerator support - https://docs.ray.io/en/latest/ray-core/scheduling/accelerators.html  
+[3] Kubernetes device plugins - https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/device-plugins/  
+[4] Kubernetes GPU scheduling - https://kubernetes.io/docs/tasks/manage-gpus/scheduling-gpus/  
+[5] Slurm Generic Resource Scheduling - https://slurm.schedmd.com/gres.html  
+[6] HTCondor matchmaking with ClassAds - https://htcondor.readthedocs.io/en/v10_0/users-manual/matchmaking-with-classads.html  
+[7] HTCondor ClassAd mechanism - https://htcondor.readthedocs.io/en/latest/classads/classad-mechanism.html  
+[8] Temporal Task Queues - https://docs.temporal.io/task-queue  
+[9] Temporal worker performance - https://docs.temporal.io/develop/worker-performance  
+[10] Temporal detecting Activity failures / heartbeats - https://docs.temporal.io/encyclopedia/detecting-activity-failures  
+[11] NATS JetStream consumers - https://docs.nats.io/nats-concepts/jetstream/consumers  
+[12] NATS JetStream streams / WorkQueue retention - https://docs.nats.io/nats-concepts/jetstream/streams  
+[13] Celery tasks - https://docs.celeryq.dev/en/stable/userguide/tasks.html  
+[14] Celery optimizing / prefetch / late ack - https://docs.celeryq.dev/en/stable/userguide/optimizing.html  
+[15] SQLite WAL - https://www.sqlite.org/wal.html  
+[16] SQLite isolation - https://www.sqlite.org/isolation.html  
+[17] SQLite when to use - https://www.sqlite.org/whentouse.html  
+[18] ONNX Runtime execution providers - https://onnxruntime.ai/docs/execution-providers/  
+[19] gRPC performance best practices - https://grpc.io/docs/guides/performance/  
+[20] Microsoft: use gRPC in browser apps - https://learn.microsoft.com/en-us/aspnet/core/grpc/browser?view=aspnetcore-10.0  
+[21] Microsoft GetLastInputInfo - https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getlastinputinfo  
+[22] Microsoft GetSystemPowerStatus - https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getsystempowerstatus  
+[23] Microsoft WM_WTSSESSION_CHANGE - https://learn.microsoft.com/en-us/windows/win32/termserv/wm-wtssession-change  
+[24] Microsoft Job Objects - https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects  
+[25] Microsoft system power states - https://learn.microsoft.com/en-us/windows/win32/power/system-power-states  
+[26] Microsoft Windows Sandbox configuration - https://learn.microsoft.com/en-us/windows/security/application-security/application-isolation/windows-sandbox/windows-sandbox-configure-using-wsb-file  
+[27] NVIDIA NVML API reference - https://docs.nvidia.com/deploy/nvml-api/nvml-api-reference.html  
+[28] MDN HTTP protocol upgrade mechanism - https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Protocol_upgrade_mechanism  
+[29] Microsoft Copilot+ PCs developer guide / NPUs - https://learn.microsoft.com/en-us/windows/ai/npu-devices/

@@ -1,4 +1,4 @@
-"""Demand-adaptive governor — the decision half of headroom harvesting (idea.md §5).
+"""Demand-adaptive governor - the decision half of headroom harvesting (idea.md §5).
 
 A **drop-in replacement for `IdleGate`**: it exposes the same `should_run()` / `active_now()`
 the worker already uses, but instead of a binary "fully idle?" gate it runs work in the
@@ -16,13 +16,13 @@ Two thresholds for two phases:
   *light* foreground use, not only full idle. The sample is folded into the profile **after**
   the decision, so a cold/just-reset bucket can't authorize itself.
 * **Yield** (`active_now`, polled during our job): yield once ``user_cpu`` (system minus our own
-  job tree) stays above a **yield threshold** (admission + hysteresis) for several samples — the
+  job tree) stays above a **yield threshold** (admission + hysteresis) for several samples - the
   employee now wants more than the margin we left them. It deliberately does **not** yield on
   mere input (typing while we use spare headroom is fine) and does **not** record into the
   profile (our job is running, so the sample isn't the employee's baseline).
 
 > PoC scope: host-side job subprocesses are attributed via ``psutil``; a Docker job's container
-> runs in the WSL VM (not a child process), so its CPU isn't subtracted yet — container-level
+> runs in the WSL VM (not a child process), so its CPU isn't subtracted yet - container-level
 > accounting (``docker stats``) or a Job Object ``CpuRate`` self-cap is the next refinement. The
 > hard "mouse-touch → instant yield" reflex remains available via the binary ``IdleGate``
 > (`--governor idle`) and the demo's explicit trigger; the adaptive governor is purely

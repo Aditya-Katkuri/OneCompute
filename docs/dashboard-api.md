@@ -1,4 +1,4 @@
-# OneCompute — Dashboard API reference
+# OneCompute - Dashboard API reference
 
 Everything a front-end needs to build the operator dashboard. The backend is complete and
 verified; a UI integrates by polling and calling these HTTP endpoints on the orchestrator
@@ -43,7 +43,7 @@ its `device_code` + an Approve button calling this endpoint.
 ## 2. Show connected devices + usage graphs
 
 Read the `workers` array from `GET /state`. Each worker carries live **`cpu_pct`**, **`gpu_pct`**
-(`null` on non-GPU machines), and **`free_ram_gb`** — the worker streams these every ~1 s
+(`null` on non-GPU machines), and **`free_ram_gb`** - the worker streams these every ~1 s
 (tunable via the worker's `--usage-interval`, floored at 0.25 s), so a UI that keeps a rolling
 per-`worker_id` history can draw a live usage sparkline/graph per device.
 `busy` (has a leased job) and `idle` drive the tile state; `credits` is the reward tally
@@ -51,7 +51,7 @@ per-`worker_id` history can draw a live usage sparkline/graph per device.
 
 ## 3. Launch the example workloads
 
-Get the launchable catalog (so buttons aren't hardcoded — add entries server-side to add more):
+Get the launchable catalog (so buttons aren't hardcoded - add entries server-side to add more):
 
 - `GET /workloads/catalog` →
   ```jsonc
@@ -112,5 +112,5 @@ Launch one across the fleet in a single call:
 | GET | `/healthz` | reachability probe |
 
 > The bundled `src/dashboard/index.html` already implements the live poll loop, fleet tiles, the
-> device approval flow, and the events feed against these endpoints — extend it (launch panel,
+> device approval flow, and the events feed against these endpoints - extend it (launch panel,
 > results panels, usage graphs) rather than starting from scratch.

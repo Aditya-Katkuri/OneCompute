@@ -155,7 +155,7 @@ def _stop_container(name: str, proc: subprocess.Popen) -> None:
     it may register slightly late), so we keep issuing ``docker rm -f`` while the run process
     is still alive, then guarantee a final force-removal. A single ``docker rm -f`` both
     SIGKILLs *and* removes a running container in one CLI invocation, so we pay only one
-    ``docker`` process spawn per attempt (not a ``kill`` *and* a ``rm``) — meaningfully faster
+    ``docker`` process spawn per attempt (not a ``kill`` *and* a ``rm``) - meaningfully faster
     on Windows, where each docker CLI invocation has notable startup cost. The container can
     never survive to run to completion once we've decided to preempt.
     """

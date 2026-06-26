@@ -1,4 +1,4 @@
-# NightShift T4 research dossier — trust, verification, and rewards
+# NightShift T4 research dossier - trust, verification, and rewards
 
 ## 1. How to use this
 
@@ -10,7 +10,7 @@ Deeper notes:
 - [Signing, roots of trust, and manifest integrity](signing-roots.md)
 - [Verification, anti-cheat, and rewards](verification-rewards.md)
 
-## 2. Executive summary — 5 highest-impact learning areas, ranked
+## 2. Executive summary - 5 highest-impact learning areas, ranked
 
 1. **Verification must be workload-aware, with FP tolerance as the hidden make-or-break.** IEEE 754 operations round, operation order changes answers, and FMA performs one rounding where separate multiply/add performs two; NVIDIA explicitly shows CPU and GPU can both be IEEE-correct while returning different low-order bits [9]. **NightShift feature:** exact equality only for deterministic integer/string challenge jobs; roadmap numerical jobs need per-kind absolute/relative tolerance, NaN policy, and maybe embedding/logit-distance comparators.
 2. **Signed manifests are the PoC trust root; cosign/OIDC and TPM/Pluton are production roots.** Ed25519 has small keys/signatures, high performance, no per-signature random nonce requirement, and 128-bit-classical security [1]; Python `cryptography` exposes a direct `sign()`/`verify()` API whose verifier raises on invalid signatures [2]. **NightShift feature:** local Ed25519 over canonical manifest bytes plus `code_sha256`/`input_sha256`; roadmap maps signer identity to corporate OIDC and hardware-backed keys.
@@ -32,7 +32,7 @@ The deepest hardware/software trap is **floating-point determinism**. IEEE 754 s
 
 ## 4. Deep dives
 
-### Area 1 — FP determinism and tolerance-aware verification
+### Area 1 - FP determinism and tolerance-aware verification
 
 **What it is.** Floating-point computation is a contract between numeric format, hardware instruction set, compiler, math library, and framework scheduler. IEEE 754 defines basic binary formats and requires operations such as add, multiply, divide, square root, and fused multiply-add, but rounding means algebraic identities do not automatically hold in finite precision [9].
 
@@ -40,7 +40,7 @@ The deepest hardware/software trap is **floating-point determinism**. IEEE 754 s
 
 **Feature/decision.** **PoC:** make `challenge` integer/deterministic and verify exactly. **Roadmap:** add `ComparatorPolicy` to manifests: `exact`, `json_exact`, `float_close(abs_tol, rel_tol)`, `vector_l2`, `topk_overlap`, and `custom_hash`. Python's `math.isclose`/PEP 485 gives the baseline symmetric rule `abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)` and emphasizes absolute tolerance near zero [14]. See [fp-determinism.md](fp-determinism.md).
 
-### Area 2 — Manifest signing and roots of trust
+### Area 2 - Manifest signing and roots of trust
 
 **What it is.** Signing binds “what to run” to a trusted publisher. Ed25519 is a strong PoC primitive because RFC 8032 calls out high performance, no unique random value per signature, side-channel resilience, and 32-byte public keys/64-byte signatures for Ed25519 [1]. The `cryptography` library directly supports `Ed25519PrivateKey.sign()` and `Ed25519PublicKey.verify()` [2].
 
@@ -48,7 +48,7 @@ The deepest hardware/software trap is **floating-point determinism**. IEEE 754 s
 
 **Feature/decision.** **PoC:** canonical JSON -> Ed25519 signature -> worker verifies signature and hashes before run; flipped byte refuses. **Roadmap:** cosign `sign-blob` bundle for manifests, signer identity constrained to corporate OIDC, key in Azure Key Vault or hardware-backed store, and optional Rekor-style audit. See [signing-roots.md](signing-roots.md).
 
-### Area 3 — Result verification: ringer tasks, replication, and zk roadmap
+### Area 3 - Result verification: ringer tasks, replication, and zk roadmap
 
 **What it is.** In open or semi-trusted distributed compute, the hard problem is proving the worker actually performed useful work. Golle and Mironov's “uncheatable distributed computations” introduces decoy/ringer tasks with known answers; cheaters who skip work risk detection because ringers are indistinguishable from real units [15]. BOINC adds mature validation/quorum and CreditNew mechanisms; its credit system explicitly notes peak FLOPS can be wrong and cheaters can falsify device attributes or elapsed time [23].
 
@@ -56,7 +56,7 @@ The deepest hardware/software trap is **floating-point determinism**. IEEE 754 s
 
 **Feature/decision.** **PoC:** inject one deterministic challenge; if wrong, blacklist and forfeit. **Roadmap:** reputation score, probabilistic challenge rate, adaptive replication on suspicious/high-value work, and cryptographic verifiable-computation experiments. Pinocchio shows public verifiable computation with tiny proofs and fast verification for compiled computations [17], while Proofs of Useful Work formalizes the desire to make otherwise wasteful proof work useful but remains roadmap-level for NightShift [18]. See [verification-rewards.md](verification-rewards.md).
 
-### Area 4 — Anti-Sybil identity and hardware-backed claims
+### Area 4 - Anti-Sybil identity and hardware-backed claims
 
 **What it is.** Sybil resistance prevents one actor from pretending to be many workers; hardware-backed identity prevents easy copying of device credentials. TPMs can generate/store/limit cryptographic keys and store boot measurements; keys can be made unavailable outside the TPM [4]. Pluton integrates a secure subsystem into the SoC and provides hardware root of trust, secure identity, attestation, and cryptographic services [5]. Secure Boot makes firmware verify signatures of boot software before handing control to the OS [6].
 
@@ -64,7 +64,7 @@ The deepest hardware/software trap is **floating-point determinism**. IEEE 754 s
 
 **Feature/decision.** **PoC:** one registered worker ID, server-assigned `class_weight`, and ledger credits only after verifier acceptance. **Roadmap:** Entra-authenticated worker enrollment, one employee/device policy, device compliance gate, TPM/Pluton-backed private key, and attested capability sampling.
 
-### Area 5 — Incentive and credit mechanism design
+### Area 5 - Incentive and credit mechanism design
 
 **What it is.** Incentives define what participants optimize. BOINC's CreditNew history is directly relevant: claimed credit based on peak performance was unfair, actual-FLOPs reporting was not universal and did not prevent cheating under single replication, and the newer system normalizes/caps using validated jobs [23]. Folding@home's QRB gates bonus points on passkey, at least 10 eligible WUs, 80%+ successful returns, and before-timeout return [24]. Render scores nodes using compute work, bandwidth, GPU model, and uptime with explicit weights [25].
 

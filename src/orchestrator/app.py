@@ -170,7 +170,7 @@ WORKLOAD_CATALOG: list[dict] = [
     },
     {
         "kind": "ai.infer", "label": "Local LLM inference", "category": "AI", "ai": True,
-        "blurb": "A big batch of prompts runs through the on-device model on every machine — no cloud.",
+        "blurb": "A big batch of prompts runs through the on-device model on every machine - no cloud.",
         "default_params": {"n_prompts": 120}, "split": "per_machine",
     },
     {
@@ -310,7 +310,7 @@ def _require_worker_token(
         if worker is not None and token_matches:
             return worker
     # A request for a worker we don't have (e.g. one an admin disconnected, or one that never
-    # registered) isn't a credential attack — fail it quietly so a removed-but-still-running agent
+    # registered) isn't a credential attack - fail it quietly so a removed-but-still-running agent
     # can't flood the activity feed. Only a token mismatch on a KNOWN worker is worth surfacing.
     if worker is not None:
         _emit(conn, "auth_failed", worker_id=worker_id, detail=detail)
@@ -690,7 +690,7 @@ def create_app(db_path: str = ":memory:", signer=None, require_approval: bool = 
 
     @app.get("/jobs/{job_id}", response_model=JobDetail)
     def job_detail(job_id: str) -> JobDetail:
-        """Full job record incl. its output — the dashboard reads this to show a job's result.
+        """Full job record incl. its output - the dashboard reads this to show a job's result.
         Defined after /jobs/next so the literal route still wins for the long-poll."""
         row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
         if row is None:
@@ -730,7 +730,7 @@ def create_app(db_path: str = ":memory:", signer=None, require_approval: bool = 
 
     @app.get("/workloads/{workload_id}", response_model=WorkloadView)
     def workload_detail(workload_id: str) -> WorkloadView:
-        """All jobs (with outputs) for a launched workload — the dashboard results panel."""
+        """All jobs (with outputs) for a launched workload - the dashboard results panel."""
         rows = conn.execute(
             "SELECT * FROM jobs WHERE workload_id = ? ORDER BY created_at ASC, job_id ASC",
             (workload_id,),

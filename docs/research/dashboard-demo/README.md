@@ -9,7 +9,7 @@ Use this as the implementation filter for T5: build the dashboard and demo beats
 - [Dashboard and demo patterns](dashboard-and-demo-patterns.md)
 - [Honest pitch and pitfalls](honest-pitch-and-pitfalls.md)
 
-## 2. Executive summary — 5 highest-impact learning areas, ranked
+## 2. Executive summary - 5 highest-impact learning areas, ranked
 
 1. **Measured throughput beats TOPS.** TOPS is a peak marketing ceiling; real work is bounded by precision, memory bandwidth, thermal limits, foreground contention, and software stack efficiency. **Feature decision:** show a measured live throughput bar and a separate ghost-bar baseline; keep `benchmarked_tops` as a disclosed display/calibration value only [1][2][3].
 2. **Embarrassingly parallel workloads are the demo sweet spot.** Independent prompt slices and CPU chunks map cleanly onto heterogeneous PCs and avoid fragile cross-machine model sharding. **Feature decision:** ship `data.transform` fan-out first, AI SDK prompt-slice second, and roadmap model sharding [4][5][6].
@@ -26,11 +26,11 @@ Use this as the implementation filter for T5: build the dashboard and demo beats
 | Software runtime | MLPerf measures trained-model inference with standardized scenarios/quality targets; Nsight Compute exposes GPU occupancy, stalls, memory, and scheduling details [2][3]. | For PoC, measure simple accepted units/sec. Roadmap: add calibration jobs per device and track tokens/sec, hashes/sec, joules/job, and p95 yield latency. |
 | Scheduler/contracts | T5 consumes `GET /state`, `POST /jobs`, fleet/ledger state, and worker/result status from frozen contracts. | The dashboard must render read-model facts: worker state, job progress, points, blacklist, yielded/requeued slices. No dashboard-only truth. |
 | Security/control | Windows Sandbox `.wsb` controls networking, vGPU, mapped folders, logon command, and deletes contents on close; Docker `--network none` creates only loopback [13][22]. | CPU isolation beat can be real Sandbox or Docker. GPU isolation is roadmap unless hardware path is proven; never imply Job Objects are a security boundary. |
-| Economics | Cloud batch economics reward delay tolerance: OpenAI Batch and Anthropic Message Batches advertise 50% lower cost; Azure Retail Prices API gives current VM retail meters [9][11][12]. | Pitch NightShift as internal spot/batch capacity for evals, synthetic data, embeddings, test fan-out, and render chunks—not latency-sensitive prod serving. |
+| Economics | Cloud batch economics reward delay tolerance: OpenAI Batch and Anthropic Message Batches advertise 50% lower cost; Azure Retail Prices API gives current VM retail meters [9][11][12]. | Pitch NightShift as internal spot/batch capacity for evals, synthetic data, embeddings, test fan-out, and render chunks-not latency-sensitive prod serving. |
 
 ## 4. Deep dives
 
-### Area 1 — Measuring harvested compute honestly
+### Area 1 - Measuring harvested compute honestly
 
 **Compute:** Use wall-clock useful work per second, not claimed FLOPS/TOPS. Roofline explains why a kernel with low operational intensity can be bandwidth-bound even on a high-peak chip [1]. MLPerf reinforces that inference benchmarking needs defined models, quality targets, scenarios, and metrics rather than raw silicon numbers [2].
 
@@ -40,7 +40,7 @@ Use this as the implementation filter for T5: build the dashboard and demo beats
 
 **Feature/decision:** A live bar labelled **Measured harvested throughput** and a grey **1-machine ghost baseline** is stronger than a fake ExaOPS number.
 
-### Area 2 — Edge-AI hardware trend without overclaiming
+### Area 2 - Edge-AI hardware trend without overclaiming
 
 **Compute:** Microsoft defines Copilot+ PCs as Windows PCs with an NPU that can perform more than 40 TOPS [17]. Microsoft launched the category around CPU+GPU+NPU system architecture rather than NPU alone [18].
 
@@ -50,7 +50,7 @@ Use this as the implementation filter for T5: build the dashboard and demo beats
 
 **Feature/decision:** Use one slide: **Ceiling: 40,000 Copilot+ PCs × 45 TOPS ≈ 1.8 ExaOPS peak INT8 NPU** [6][30]; **Today: measured live CPU/GPU/SDK throughput from our demo fleet**.
 
-### Area 3 — Parallel-workload economics
+### Area 3 - Parallel-workload economics
 
 **Compute:** NightShift is valuable for jobs that split into independent chunks: prompt scoring, evals, embeddings, synthetic data, build/test fan-out, transforms, rendering, and parameter sweeps. Batch APIs exist because delayed/asynchronous processing can trade latency for lower cost and higher throughput [11][12].
 
@@ -60,7 +60,7 @@ Use this as the implementation filter for T5: build the dashboard and demo beats
 
 **Feature/decision:** Demo ROI as **measured accepted units × comparable cloud unit cost**, not as theoretical idle-device peak value.
 
-### Area 4 — Real-time dashboard patterns for a hackathon
+### Area 4 - Real-time dashboard patterns for a hackathon
 
 **Compute:** Judges need to see concurrency, not read it: worker tiles, moving slices, points ticking, yielded/requeued work, and one cheater going to zero.
 
@@ -70,7 +70,7 @@ Use this as the implementation filter for T5: build the dashboard and demo beats
 
 **Feature/decision:** Build seeded-data dashboard first, then replace seed with `GET /state`. Keep the refresh loop dumb and visible; save WebSocket/SSE for roadmap only.
 
-### Area 5 — Honest trust, isolation, and demo risk framing
+### Area 5 - Honest trust, isolation, and demo risk framing
 
 **Compute:** Challenge/ringer tasks with known answers catch dishonest workers cheaply; failed challenge means blacklist and points forfeited, not a vague trust score [29].
 

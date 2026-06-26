@@ -1,7 +1,7 @@
 """Phase-1 live smoke demo (Chief-of-Staff integration artifact).
 
 Starts a REAL orchestrator (uvicorn on localhost), then runs a small heterogeneous
-fleet of REAL HTTP workers that drain a batch of jobs — proving the over-the-network
+fleet of REAL HTTP workers that drain a batch of jobs - proving the over-the-network
 slice and showing the rewards ledger tick up (GPU workers earn 5x via the
 server-assigned class weight). Run:
 
