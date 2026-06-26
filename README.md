@@ -17,10 +17,17 @@ dozen example workloads (CPU/GPU/AI), and 159 passing tests.
   year, yet excess capacity at Redmond HQ alone ≈ **3.8B vCPU-hours/yr, a ~27,000-server data
   center**, sitting idle.
 - **NPUs are free compute.** ~100k Snapdragon Copilot+ laptops with **45–80 TOPS** NPUs ≈ **~5 ExaOPS** of on-device inference, idle almost the whole workday; even a conservative **~20% recyclable ≈ ~1 ExaOPS**, without buying a single new chip.
-- **Projected savings:** **~$101.6M in year one** (net of ~$8M added power + ~$17M wear), **over ~$700M across five years** at ~15% annual growth.
 - **Employees share in it:** a pledged **5% of realized savings** returned as Microsoft tech, merch, tickets.
 - **Complements Azure:** run spot workloads on the desk fleet, burst to the cloud only when
   it's saturated. The upside compounds as **RTX / DGX Spark** hardware reaches employees' desks.
+
+---
+
+## Financial impact
+
+OneCompute could unlock approximately **$100 million in Year 1 net cost savings** by reclaiming underutilized compute capacity from Microsoft-owned endpoint devices, after accounting for an estimated **$8 million in incremental energy costs** and **$17 million in accelerated depreciation**. The underlying target-case model estimates **$125.6 million in gross Azure-equivalent compute value** before these cost adjustments. With device performance growth, broader participation, and improved workload coverage, the model projects approximately **$678 million in cumulative net savings over five years**, which can be rounded to roughly **$700 million** for high-level pitch framing.
+
+Full model and assumptions: [`docs/Financial_Impact.md`](docs/Financial_Impact.md).
 
 ---
 
@@ -111,7 +118,7 @@ OneCompute/
 │   └── dashboard/      Self-contained live console (polls the orchestrator API)
 ├── scripts/            submit_jobs.py (feed the fleet) · demo_fleet.py (one-box demo)
 ├── tests/              159 tests across orchestrator, worker, jobkit, isolation, trust
-├── docs/               architecture · contracts · workloads · dashboard API · runbook · Azure integration plan
+├── docs/               architecture · contracts · workloads · dashboard API · runbook · Azure integration plan · financial impact
 └── pyproject.toml      uv project (Python 3.13); entry points: python -m orchestrator | worker
 ```
 
