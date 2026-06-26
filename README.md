@@ -19,7 +19,7 @@ dozen example workloads (CPU/GPU/AI), and 159 passing tests.
 - **NPUs are free compute.** ~100k Snapdragon Copilot+ laptops with **45–80 TOPS** NPUs ≈ **~5 ExaOPS** of on-device inference, idle almost the whole workday; even a conservative **~20% recyclable ≈ ~1 ExaOPS**, without buying a single new chip.
 - **Projected savings:** **~$101.6M in year one** (net of ~$8M added power + ~$17M wear), **over ~$700M across five years** at ~15% annual growth.
 - **Employees share in it:** a pledged **5% of realized savings** returned as Microsoft tech, merch, tickets.
-- **Complements Azure:** run spot/simple workloads on the desk fleet, burst to the cloud only when
+- **Complements Azure:** run spot workloads on the desk fleet, burst to the cloud only when
   it's saturated. The upside compounds as **RTX / DGX Spark** hardware reaches employees' desks.
 
 ---
