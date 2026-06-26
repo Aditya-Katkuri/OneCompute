@@ -111,7 +111,7 @@ OneCompute/
 │   └── dashboard/      Self-contained live console (polls the orchestrator API)
 ├── scripts/            submit_jobs.py (feed the fleet) · demo_fleet.py (one-box demo)
 ├── tests/              159 tests across orchestrator, worker, jobkit, isolation, trust
-├── docs/               architecture · contracts · workloads · dashboard API · runbook
+├── docs/               architecture · contracts · workloads · dashboard API · runbook · Azure integration plan
 └── pyproject.toml      uv project (Python 3.13); entry points: python -m orchestrator | worker
 ```
 
@@ -161,6 +161,8 @@ against them (a job needing 8 GB only lands where 8 GB is free *right now*).
 - **NPU harvesting** on Copilot+ PCs (40–55 TOPS) via ONNX Runtime + DirectML, another `accel` class.
 - **RTX / NVIDIA DGX Spark** desks: a ~1 petaFLOP worker drops into the pool with no protocol change.
 - **Cross-machine model sharding** for models too big for one box; **TEE confidential compute** as desk GPU enclaves arrive.
+
+**Azure AI Foundry integration.** OneCompute is designed to plug into Foundry as a distributed execution tier: Foundry stays the control plane (model management, governance, evaluations, orchestration) while OneCompute adds elastic capacity from idle managed devices, with intelligent routing (`compute: azure | spot | onecompute | auto`) and automatic Azure fallback. Full phased plan: [`docs/Azure_Integration_Plan.md`](docs/Azure_Integration_Plan.md).
 
 Market case and roadmap: [`docs/idea.md`](docs/idea.md).
 
