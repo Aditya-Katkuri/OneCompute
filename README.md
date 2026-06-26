@@ -1,6 +1,6 @@
 # OneCompute
 
-**Turn Microsoft's idle and underutilized PCs into an on-demand compute grid.**
+**Turn Microsoft's idle and underutilized PCs into an on-demand/spot compute grid.**
 
 OneCompute harvests the spare CPU/GPU capacity already sitting in employee laptops, desktops,
 dev boxes, SAWs, and break-room Xboxes, and runs real distributed and AI workloads on it,
