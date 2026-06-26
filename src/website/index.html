@@ -3312,6 +3312,61 @@ html.js .chest__items          { opacity: 0; transform: translateY(44px); }
 /* ---- Microsoft merch (Higgsfield cartoon SVGs) inside the chest ---- */
 .chest__merch { filter: drop-shadow(0 7px 11px rgba(43,34,51,.30)); }
 
+  /* ---- Higgsfield video chest (closed -> opens to reveal Microsoft merch) ---- */
+.chest__video,
+.chest__video-still {
+  width: min(620px, 90vw);
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+  border: 1px solid rgba(255, 255, 255, .58);
+  border-radius: 28px;
+  background: var(--paper, #F3E7EE);
+  box-shadow:
+    0 30px 88px -48px rgba(43, 34, 51, .58),
+    0 14px 34px -26px rgba(178, 61, 128, .42),
+    inset 0 1px 0 rgba(255, 255, 255, .58);
+  object-fit: cover;
+  object-position: center;
+}
+
+.chest__video {
+  aspect-ratio: 1 / 1;
+}
+
+.chest__video-still {
+  display: none;
+}
+
+.chest__stage.is-video-fallback .chest__video {
+  display: none;
+}
+
+.chest__stage.is-video-fallback .chest__video-still {
+  display: block;
+}
+
+html:not(.js) .chest__video {
+  display: block;
+}
+
+html:not(.js) .chest__video-still {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chest__video,
+  html:not(.js) .chest__video {
+    display: none;
+  }
+
+  .chest__video-still,
+  html:not(.js) .chest__video-still {
+    display: block;
+  }
+}
+
 /* ---- Sweeping light beams (CSS loop) ---- */
 .chest__sweep {
   animation: ch-sweep 5s cubic-bezier(.22,1,.36,1) 0.3s infinite;
@@ -3407,393 +3462,15 @@ html.js .chest__items          { opacity: 0; transform: translateY(44px); }
     <header class="chest__head">
       <span class="eyebrow chest__eyebrow">Win-win · the payback</span>
       <h2 class="chest__h2">Idle compute, <em class="it">paid back.</em></h2>
-      <p class="chest__sub">Everyone who lends headroom earns something real — gift cards, gear, and perks, credited automatically for every verified compute-hour.</p>
+      <p class="chest__sub">Everyone who lends headroom earns something real: gift cards, gear, and perks, credited automatically for every verified compute-hour.</p>
     </header>
 
     <!-- ---- Chest stage ---- -->
     <div class="chest__stage" aria-label="Animated treasure chest opening to reveal Microsoft merch and tech rewards">
-      <svg class="chest__svg" viewBox="0 0 560 520" xmlns="http://www.w3.org/2000/svg"
-           role="img" aria-hidden="true" overflow="visible">
-
-        <defs>
-          <!-- Ground shadow -->
-          <radialGradient id="ch-shadow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%"   stop-color="#2B2233" stop-opacity=".22"/>
-            <stop offset="100%" stop-color="#2B2233" stop-opacity="0"/>
-          </radialGradient>
-
-          <!-- Chest body — warm gold tones harmonised with palette -->
-          <linearGradient id="ch-body-front" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%"   stop-color="#F5DFA0"/>
-            <stop offset="55%"  stop-color="#E8C07A"/>
-            <stop offset="100%" stop-color="#C99048"/>
-          </linearGradient>
-          <linearGradient id="ch-body-right" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%"   stop-color="#C99048"/>
-            <stop offset="100%" stop-color="#9E6E2A"/>
-          </linearGradient>
-          <linearGradient id="ch-body-top" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%"   stop-color="#F5DFA0"/>
-            <stop offset="100%" stop-color="#D4A860"/>
-          </linearGradient>
-
-          <!-- Chest lid -->
-          <linearGradient id="ch-lid-front" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%"   stop-color="#FBF0CC"/>
-            <stop offset="55%"  stop-color="#F2D49B"/>
-            <stop offset="100%" stop-color="#DEB86A"/>
-          </linearGradient>
-          <linearGradient id="ch-lid-right" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%"   stop-color="#D4A860"/>
-            <stop offset="100%" stop-color="#9E6E2A"/>
-          </linearGradient>
-          <linearGradient id="ch-lid-top" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%"   stop-color="#FBF0CC"/>
-            <stop offset="100%" stop-color="#D4A860"/>
-          </linearGradient>
-
-          <!-- Metal bands — lilac/purple matching site palette -->
-          <linearGradient id="ch-band" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%"   stop-color="#DCCFF8"/>
-            <stop offset="50%"  stop-color="#C9B8F0"/>
-            <stop offset="100%" stop-color="#B59FE3"/>
-          </linearGradient>
-          <linearGradient id="ch-band-right" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%"   stop-color="#B59FE3"/>
-            <stop offset="100%" stop-color="#9F86C9"/>
-          </linearGradient>
-
-          <!-- Lock / clasp -->
-          <radialGradient id="ch-lock" cx="35%" cy="32%" r="68%">
-            <stop offset="0%"   stop-color="#FFFAE8"/>
-            <stop offset="55%"  stop-color="#F2D49B"/>
-            <stop offset="100%" stop-color="#C99048"/>
-          </radialGradient>
-
-          <!-- Interior warm glow -->
-          <radialGradient id="ch-interior" cx="50%" cy="45%" r="65%">
-            <stop offset="0%"   stop-color="#FFFBF2"/>
-            <stop offset="35%"  stop-color="#FFF0D5" stop-opacity=".92"/>
-            <stop offset="70%"  stop-color="#F8D3BC" stop-opacity=".68"/>
-            <stop offset="100%" stop-color="#C9B8F0" stop-opacity=".25"/>
-          </radialGradient>
-          <radialGradient id="ch-interior-deep" cx="50%" cy="80%" r="60%">
-            <stop offset="0%"   stop-color="#2B2233" stop-opacity=".18"/>
-            <stop offset="100%" stop-color="#2B2233" stop-opacity="0"/>
-          </radialGradient>
-
-          <!-- Light ray (gold, fades to transparent at tip) -->
-          <linearGradient id="ch-ray" x1="0%" y1="100%" x2="0%" y2="0%">
-            <stop offset="0%"   stop-color="#FFF8E0" stop-opacity=".88"/>
-            <stop offset="60%"  stop-color="#F2D49B" stop-opacity=".35"/>
-            <stop offset="100%" stop-color="#F2D49B" stop-opacity="0"/>
-          </linearGradient>
-
-          <!-- Sweep beam -->
-          <linearGradient id="ch-sweep-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%"   stop-color="white" stop-opacity="0"/>
-            <stop offset="35%"  stop-color="white" stop-opacity=".20"/>
-            <stop offset="55%"  stop-color="white" stop-opacity=".24"/>
-            <stop offset="100%" stop-color="white" stop-opacity="0"/>
-          </linearGradient>
-
-          <!-- Coin -->
-          <radialGradient id="ch-coin" cx="34%" cy="28%" r="72%">
-            <stop offset="0%"   stop-color="#FFEFC0"/>
-            <stop offset="55%"  stop-color="#F2D49B"/>
-            <stop offset="100%" stop-color="#C99048"/>
-          </radialGradient>
-
-          <!-- ---- Item gradients (site-style pastel) ---- -->
-          <!-- Surface laptop screen -->
-          <linearGradient id="ch-lap-screen" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%"   stop-color="#F3E7EE"/>
-            <stop offset="100%" stop-color="#C9B8F0"/>
-          </linearGradient>
-          <radialGradient id="ch-lap-glow" cx="32%" cy="28%" r="72%">
-            <stop offset="0%"   stop-color="#ffffff" stop-opacity=".58"/>
-            <stop offset="55%"  stop-color="#C9B8F0" stop-opacity=".18"/>
-            <stop offset="100%" stop-color="#B59FE3" stop-opacity="0"/>
-          </radialGradient>
-          <linearGradient id="ch-lap-kbd" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%"   stop-color="#F8D3BC"/>
-            <stop offset="100%" stop-color="#F2C4A8"/>
-          </linearGradient>
-          <linearGradient id="ch-lap-kbd-front" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%"   stop-color="#F2C4A8"/>
-            <stop offset="100%" stop-color="#E8A38C"/>
-          </linearGradient>
-
-          <!-- Xbox controller -->
-          <linearGradient id="ch-xbox" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%"   stop-color="#F8CCDD"/>
-            <stop offset="100%" stop-color="#C9B8F0"/>
-          </linearGradient>
-          <radialGradient id="ch-xbox-glow" cx="34%" cy="30%" r="68%">
-            <stop offset="0%"   stop-color="#ffffff" stop-opacity=".42"/>
-            <stop offset="100%" stop-color="#F8CCDD" stop-opacity="0"/>
-          </radialGradient>
-
-          <!-- Hoodie -->
-          <linearGradient id="ch-hoodie" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%"   stop-color="#F8D3BC"/>
-            <stop offset="100%" stop-color="#F2B5D4"/>
-          </linearGradient>
-
-          <!-- Gift card A (warm gold) -->
-          <linearGradient id="ch-card-a" x1="20%" y1="0%" x2="80%" y2="100%">
-            <stop offset="0%"   stop-color="#F5DFA0"/>
-            <stop offset="100%" stop-color="#E8A38C"/>
-          </linearGradient>
-          <!-- Gift card B (lilac) -->
-          <linearGradient id="ch-card-b" x1="20%" y1="0%" x2="80%" y2="100%">
-            <stop offset="0%"   stop-color="#D4C8F8"/>
-            <stop offset="100%" stop-color="#9F86C9"/>
-          </linearGradient>
-
-          <!-- Coffee mug -->
-          <linearGradient id="ch-mug" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%"   stop-color="#F8D3BC"/>
-            <stop offset="100%" stop-color="#E8A38C"/>
-          </linearGradient>
-
-          <!-- Trophy -->
-          <linearGradient id="ch-trophy" x1="20%" y1="0%" x2="80%" y2="100%">
-            <stop offset="0%"   stop-color="#FFFAE8"/>
-            <stop offset="50%"  stop-color="#F2D49B"/>
-            <stop offset="100%" stop-color="#C99048"/>
-          </linearGradient>
-          <radialGradient id="ch-trophy-glow" cx="34%" cy="28%" r="68%">
-            <stop offset="0%"   stop-color="#ffffff" stop-opacity=".62"/>
-            <stop offset="100%" stop-color="#F2D49B" stop-opacity="0"/>
-          </radialGradient>
-
-          <!-- Glow filter for rays -->
-          <filter id="ch-ray-blur" x="-20%" y="-5%" width="140%" height="115%">
-            <feGaussianBlur stdDeviation="3" result="b"/>
-            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-          </filter>
-          <!-- Soft glow filter for interior -->
-          <filter id="ch-glow" x="-25%" y="-25%" width="150%" height="150%">
-            <feGaussianBlur stdDeviation="8" result="b"/>
-            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-          </filter>
-        </defs>
-
-        <!-- ============================================================
-             SCENE (painted back → front)
-             ============================================================ -->
-
-        <!-- 1. Ground shadow -->
-        <ellipse cx="282" cy="472" rx="220" ry="26" fill="url(#ch-shadow)"/>
-
-        <!-- 2. Light rays (emanate from chest opening, burst upward) -->
-        <g class="chest__rays" filter="url(#ch-ray-blur)">
-          <!-- far-left wide ray -->
-          <polygon points="105,278 72,38 160,278"  fill="url(#ch-ray)" opacity=".50"/>
-          <!-- left ray -->
-          <polygon points="155,278 138,20 208,278" fill="url(#ch-ray)" opacity=".66"/>
-          <!-- centre-left tall ray -->
-          <polygon points="212,278 215,12 262,278" fill="url(#ch-ray)" opacity=".78"/>
-          <!-- centre-right tall ray -->
-          <polygon points="298,278 345,12 350,278" fill="url(#ch-ray)" opacity=".78"/>
-          <!-- right ray -->
-          <polygon points="352,278 422,20 412,278" fill="url(#ch-ray)" opacity=".66"/>
-          <!-- far-right wide ray -->
-          <polygon points="400,278 488,38 455,278" fill="url(#ch-ray)" opacity=".50"/>
-        </g>
-
-        <!-- 3. Interior glow (the light from inside) -->
-        <g class="chest__interior-glow" filter="url(#ch-glow)">
-          <ellipse cx="282" cy="270" rx="196" ry="82" fill="url(#ch-interior)"/>
-        </g>
-
-        <!-- 4. Items group ─ items peek above the chest opening; body covers their bases -->
-        <g class="chest__items">
-          <!-- Microsoft merch (Higgsfield-generated cartoon SVGs) spilling from the chest. Drawn back->front. -->
-          <image class="chest__merch chest__merch--surface" href="media/merch/surface.svg"  x="118" y="134" width="140" height="146" transform="rotate(-4 188 207)"/>
-          <image class="chest__merch chest__merch--bottle"  href="media/merch/bottle.svg"   x="352" y="118" width="120" height="160" transform="rotate(5 412 198)"/>
-          <image class="chest__merch chest__merch--gift"    href="media/merch/giftcard.svg" x="206" y="122" width="150" height="120" transform="rotate(-10 281 182)"/>
-          <image class="chest__merch chest__merch--hoodie"  href="media/merch/hoodie.svg"   x="320" y="150" width="158" height="158" transform="rotate(4 399 229)"/>
-          <image class="chest__merch chest__merch--tshirt"  href="media/merch/tshirt.svg"   x="244" y="158" width="156" height="156" transform="rotate(-3 322 236)"/>
-          <image class="chest__merch chest__merch--xbox"    href="media/merch/xbox.svg"     x="94"  y="150" width="168" height="168"/>
-          <image class="chest__merch chest__merch--plushie" href="media/merch/plushie.svg"  x="166" y="182" width="122" height="122"/>
-        </g><!-- /items -->
-
-        <!-- 5. Chest BODY (always visible, painted over bases of items below opening) -->
-        <g class="chest__body">
-          <!-- Interior depth shadow (inside the opening) -->
-          <polygon points="80,280 440,280 500,232 148,232"
-                   fill="url(#ch-interior-deep)" opacity=".5"/>
-          <!-- Body right face -->
-          <polygon points="440,280 500,232 500,355 440,402"
-                   fill="url(#ch-body-right)"
-                   stroke="#2B2233" stroke-width="1.5" stroke-opacity=".55" stroke-linejoin="round"/>
-          <!-- Body front face -->
-          <polygon points="80,280 440,280 440,402 80,402"
-                   fill="url(#ch-body-front)"
-                   stroke="#2B2233" stroke-width="1.5" stroke-opacity=".55" stroke-linejoin="round"/>
-          <!-- Body top rim/collar -->
-          <polygon points="80,272 440,272 500,224 148,224"
-                   fill="url(#ch-body-top)"
-                   stroke="#2B2233" stroke-width="1.5" stroke-opacity=".55" stroke-linejoin="round"/>
-
-          <!-- Horizontal metal band — front (lilac, ~mid body) -->
-          <rect x="80" y="326" width="360" height="10" rx="2"
-                fill="url(#ch-band)"
-                stroke="#2B2233" stroke-width=".8" stroke-opacity=".34"/>
-          <!-- Band — right face extension -->
-          <polygon points="440,326 500,282 500,292 440,336"
-                   fill="url(#ch-band-right)"
-                   stroke="#2B2233" stroke-width=".8" stroke-opacity=".34"/>
-
-          <!-- Second band — lower front -->
-          <rect x="80" y="375" width="360" height="8" rx="2"
-                fill="url(#ch-band)"
-                stroke="#2B2233" stroke-width=".8" stroke-opacity=".34"/>
-          <polygon points="440,375 500,331 500,339 440,383"
-                   fill="url(#ch-band-right)"
-                   stroke="#2B2233" stroke-width=".8" stroke-opacity=".34"/>
-
-          <!-- Front-face lock / clasp -->
-          <rect x="243" y="296" width="34" height="30" rx="6"
-                fill="url(#ch-lock)"
-                stroke="#2B2233" stroke-width="1.2" stroke-opacity=".54"/>
-          <rect x="250" y="303" width="20" height="16" rx="4"
-                fill="#C99048"
-                stroke="#2B2233" stroke-width=".8" stroke-opacity=".40"/>
-
-          <!-- Corner rivets on body -->
-          <circle cx="92"  cy="286" r="3.5" fill="url(#ch-lock)" stroke="#2B2233" stroke-width=".8" stroke-opacity=".40"/>
-          <circle cx="428" cy="286" r="3.5" fill="url(#ch-lock)" stroke="#2B2233" stroke-width=".8" stroke-opacity=".40"/>
-          <circle cx="92"  cy="395" r="3.5" fill="url(#ch-lock)" stroke="#2B2233" stroke-width=".8" stroke-opacity=".40"/>
-          <circle cx="428" cy="395" r="3.5" fill="url(#ch-lock)" stroke="#2B2233" stroke-width=".8" stroke-opacity=".40"/>
-
-          <!-- Top-rim highlight (bright white edge) -->
-          <line x1="80"  y1="272" x2="440" y2="272"
-                stroke="rgba(255,255,255,.62)" stroke-width="2.5" stroke-linecap="round"/>
-          <line x1="80"  y1="272" x2="148" y2="224"
-                stroke="rgba(255,255,255,.34)" stroke-width="1.5" stroke-linecap="round"/>
-          <line x1="440" y1="272" x2="500" y2="224"
-                stroke="rgba(255,255,255,.34)" stroke-width="1.5" stroke-linecap="round"/>
-        </g><!-- /body -->
-
-        <!-- 6. LID GROUP (animated via GSAP; starts closed with html.js, open by default) -->
-        <g id="chestLid">
-          <!-- Lid right face -->
-          <polygon points="440,180 500,132 500,224 440,272"
-                   fill="url(#ch-lid-right)"
-                   stroke="#2B2233" stroke-width="1.5" stroke-opacity=".55" stroke-linejoin="round"/>
-          <!-- Lid front face -->
-          <polygon points="80,180 440,180 440,272 80,272"
-                   fill="url(#ch-lid-front)"
-                   stroke="#2B2233" stroke-width="1.5" stroke-opacity=".55" stroke-linejoin="round"/>
-          <!-- Lid top face -->
-          <polygon points="80,180 440,180 500,132 148,132"
-                   fill="url(#ch-lid-top)"
-                   stroke="#2B2233" stroke-width="1.5" stroke-opacity=".55" stroke-linejoin="round"/>
-
-          <!-- Lid metal band — front -->
-          <rect x="80" y="218" width="360" height="10" rx="2"
-                fill="url(#ch-band)"
-                stroke="#2B2233" stroke-width=".8" stroke-opacity=".34"/>
-          <polygon points="440,218 500,174 500,184 440,228"
-                   fill="url(#ch-band-right)"
-                   stroke="#2B2233" stroke-width=".8" stroke-opacity=".34"/>
-
-          <!-- Hinge knobs (3 along back edge) -->
-          <circle cx="172" cy="230" r="5.5"
-                  fill="url(#ch-lock)" stroke="#2B2233" stroke-width="1" stroke-opacity=".44"/>
-          <circle cx="314" cy="216" r="5.5"
-                  fill="url(#ch-lock)" stroke="#2B2233" stroke-width="1" stroke-opacity=".44"/>
-          <circle cx="448" cy="226" r="5.5"
-                  fill="url(#ch-lock)" stroke="#2B2233" stroke-width="1" stroke-opacity=".44"/>
-
-          <!-- Corner rivets on lid -->
-          <circle cx="92"  cy="186" r="3.5" fill="url(#ch-lock)" stroke="#2B2233" stroke-width=".8" stroke-opacity=".40"/>
-          <circle cx="428" cy="186" r="3.5" fill="url(#ch-lock)" stroke="#2B2233" stroke-width=".8" stroke-opacity=".40"/>
-
-          <!-- Lid top-edge highlight -->
-          <line x1="80"  y1="180" x2="440" y2="180"
-                stroke="rgba(255,255,255,.65)" stroke-width="2.5" stroke-linecap="round"/>
-          <line x1="80"  y1="180" x2="148" y2="132"
-                stroke="rgba(255,255,255,.32)" stroke-width="1.5" stroke-linecap="round"/>
-          <line x1="440" y1="180" x2="500" y2="132"
-                stroke="rgba(255,255,255,.32)" stroke-width="1.5" stroke-linecap="round"/>
-
-          <!-- Subtle sheen on lid front face -->
-          <polygon points="80,180 270,180 305,272 80,272" fill="rgba(255,255,255,.06)"/>
-        </g><!-- /lid -->
-
-        <!-- 6.5 Gold air-blast — gold streaks blow out from the chest mouth as the lid pops (GSAP one-shot) -->
-        <g class="chest__blast" aria-hidden="true">
-          <line class="chest__blast-line" x1="232" y1="168" x2="150" y2="150"/>
-          <line class="chest__blast-line" x1="238" y1="160" x2="168" y2="116"/>
-          <line class="chest__blast-line" x1="248" y1="154" x2="214" y2="98"/>
-          <line class="chest__blast-line" x1="328" y1="168" x2="410" y2="150"/>
-          <line class="chest__blast-line" x1="322" y1="160" x2="392" y2="116"/>
-          <line class="chest__blast-line" x1="312" y1="154" x2="346" y2="98"/>
-        </g>
-
-        <!-- 7. Sweeping light beams (CSS animated) -->
-        <rect class="chest__sweep" x="0" y="100"
-              width="175" height="420" fill="url(#ch-sweep-grad)"/>
-        <rect class="chest__sweep chest__sweep--b" x="0" y="120"
-              width="120" height="350" fill="url(#ch-sweep-grad)" opacity=".70"/>
-
-        <!-- 8. Sparkle stars + glints (CSS animated) -->
-        <g class="chest__sparkles">
-          <!-- 4-pointed stars above chest -->
-          <path class="chest__spark"
-                d="M282,90 L285.5,100 L296,103 L285.5,106 L282,116 L278.5,106 L268,103 L278.5,100 Z"
-                fill="#F2D49B"/>
-          <path class="chest__spark chest__spark--b"
-                d="M178,118 L180.5,126 L189,129 L180.5,132 L178,140 L175.5,132 L167,129 L175.5,126 Z"
-                fill="#F8CCDD"/>
-          <path class="chest__spark chest__spark--c"
-                d="M392,103 L394.5,111 L403,114 L394.5,117 L392,125 L389.5,117 L381,114 L389.5,111 Z"
-                fill="#C9B8F0"/>
-          <path class="chest__spark chest__spark--d"
-                d="M106,175 L108,182 L115,184 L108,186 L106,193 L104,186 L97,184 L104,182 Z"
-                fill="#F2D49B" opacity=".82"/>
-          <path class="chest__spark chest__spark--e"
-                d="M466,165 L468,172 L475,174 L468,176 L466,183 L464,176 L457,174 L464,172 Z"
-                fill="#F8CCDD" opacity=".82"/>
-
-          <!-- Twinkle glints (small bright circles) -->
-          <circle class="chest__glint"     cx="234" cy="75" r="3.5" fill="rgba(255,248,220,.95)"/>
-          <circle class="chest__glint chest__glint--b" cx="352" cy="65" r="2.8" fill="rgba(255,248,220,.95)"/>
-          <circle class="chest__glint chest__glint--c" cx="148" cy="150" r="2.2" fill="rgba(255,248,220,.80)"/>
-          <circle class="chest__glint chest__glint--d" cx="442" cy="143" r="2.2" fill="rgba(255,248,220,.80)"/>
-          <circle class="chest__glint chest__glint--e" cx="282" cy="46"  r="2.0" fill="rgba(255,248,220,.75)"/>
-        </g>
-
-        <!-- 9. Floating coins (GSAP animated) -->
-        <g class="chest__coins" aria-hidden="true">
-          <g class="chest__coin">
-            <circle cx="196" cy="272" r="10"  fill="url(#ch-coin)" stroke="#C99048" stroke-width="1.2"/>
-            <text x="196" y="276" text-anchor="middle" font-family="system-ui,sans-serif"
-                  font-size="10" font-weight="700" fill="#9E6E2A">$</text>
-          </g>
-          <g class="chest__coin">
-            <circle cx="246" cy="269" r="8"   fill="url(#ch-coin)" stroke="#C99048" stroke-width="1.0"/>
-          </g>
-          <g class="chest__coin">
-            <circle cx="296" cy="267" r="10"  fill="url(#ch-coin)" stroke="#C99048" stroke-width="1.2"/>
-            <text x="296" y="271" text-anchor="middle" font-family="system-ui,sans-serif"
-                  font-size="10" font-weight="700" fill="#9E6E2A">$</text>
-          </g>
-          <g class="chest__coin">
-            <circle cx="346" cy="270" r="8"   fill="url(#ch-coin)" stroke="#C99048" stroke-width="1.0"/>
-          </g>
-          <g class="chest__coin">
-            <circle cx="393" cy="272" r="10"  fill="url(#ch-coin)" stroke="#C99048" stroke-width="1.2"/>
-            <text x="393" y="276" text-anchor="middle" font-family="system-ui,sans-serif"
-                  font-size="10" font-weight="700" fill="#9E6E2A">$</text>
-          </g>
-        </g>
-
-      </svg>
+      <video class="chest__video" muted playsinline preload="metadata" poster="media/chest/chest-closed.jpg" aria-hidden="true">
+        <source src="media/chest/chest-open.mp4" type="video/mp4">
+      </video>
+      <img class="chest__video-still" src="media/chest/chest-open-still.jpg" alt="An open treasure chest overflowing with Microsoft hardware, branded clothing, and swag." />
     </div><!-- /stage -->
 
   </div><!-- /wrap -->
@@ -4790,195 +4467,104 @@ void main(){
 })();
 </script>
 <script>
-/* chest/controller.js — bare IIFE, no <script> wrapper
-   Depends on window.gsap + window.ScrollTrigger (vendored).
-   Animates #chest treasure-chest section: lid opens on scroll,
-   items rise, rays burst, coins float in a repeating loop.
-   A "shines in different spaces" looping timeline drives sparkle
-   glints across the scene independently of scroll progress.
-*/
+/* chest/video-controller.js bare IIFE (no <script> wrapper).
+   Plays the Higgsfield closed-to-open chest reveal once when the
+   stage scrolls into view, then latches on the final frame. Reduced
+   motion or blocked autoplay falls back to the open still image. */
 (function () {
   'use strict';
 
-  var REDUCE = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var stage = document.querySelector('.chest__stage');
+  if (!stage) { return; }
 
-  /* --- Reduced-motion: open chest statically, no scroll or loop anim --- */
-  if (REDUCE) {
-    var lidEl = document.getElementById('chestLid');
-    if (lidEl) { lidEl.style.transform = 'scaleY(0)'; lidEl.style.opacity = '0'; }
-    var toShow = ['chest__interior-glow', 'chest__rays', 'chest__items'];
-    toShow.forEach(function (cls) {
-      var el = document.querySelector('.' + cls);
-      if (el) { el.style.opacity = '1'; el.style.transform = 'none'; }
-    });
-    /* Show coins at final float position */
-    document.querySelectorAll('.chest__coin').forEach(function (c, i) {
-      c.style.opacity = '0.75';
-      c.style.transform = 'translateY(' + (-(40 + i * 14)) + 'px)';
-    });
+  var video = stage.querySelector('.chest__video');
+  var still = stage.querySelector('.chest__video-still');
+  if (!video) { return; }
+
+  var reduceQuery = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  var reduce = !!(reduceQuery && reduceQuery.matches);
+  var hasPlayed = false;
+  var hasEnded = false;
+  var observer = null;
+
+  function revealStill() {
+    stage.classList.add('is-video-fallback');
+    try { video.pause(); } catch (err) {}
+    video.setAttribute('aria-hidden', 'true');
+    if (still) {
+      still.removeAttribute('hidden');
+    }
+    if (observer) {
+      observer.disconnect();
+      observer = null;
+    }
+  }
+
+  if (reduce) {
+    revealStill();
     return;
   }
 
-  /* --- Guard: need GSAP + ScrollTrigger --- */
-  if (!window.gsap || !window.ScrollTrigger) { return; }
-
-  gsap.registerPlugin(ScrollTrigger);
-
-  /* ── Initial closed state (html.js CSS already closes it;
-        gsap.set ensures correct transform for GSAP to animate from) ── */
-  gsap.set('#chestLid', {
-    scaleY: 1,
-    opacity: 1,
-    transformOrigin: '50% 100%'   /* pivot at hinge — bottom of lid bbox */
-  });
-  gsap.set('.chest__rays',          { opacity: 0, scale: 0.15, transformOrigin: 'center 278px' });
-  gsap.set('.chest__items',         { y: 44, opacity: 0 });
-  gsap.set('.chest__interior-glow', { opacity: 0 });
-  gsap.set('.chest__coin',          { opacity: 0 });
-
-  /* ── Scroll-driven main timeline ── */
-  var mainTl = gsap.timeline({
-    scrollTrigger: {
-      trigger: '.chest__stage',
-      start:   'center 66%',
-      once:    true            /* play the open once when prominent, then latch — stays open */
-    }
-  });
-
-  /* 0 → 0.55 : lid folds back (scaleY 1→0) + fades */
-  mainTl.to('#chestLid', {
-    scaleY:          0,
-    opacity:         0,
-    ease:            'power2.inOut',
-    duration:        0.55
-  }, 0);
-
-  /* 0.22 → 0.62 : interior glow wells up */
-  mainTl.to('.chest__interior-glow', {
-    opacity:  0.94,
-    ease:     'power2.out',
-    duration: 0.42
-  }, 0.22);
-
-  /* 0.28 → 0.74 : rays burst outward */
-  mainTl.to('.chest__rays', {
-    opacity:  0.82,
-    scale:    1,
-    ease:     'power2.out',
-    duration: 0.48
-  }, 0.28);
-
-  /* 0.34 → 0.92 : items rise and settle (staggered) */
-  mainTl.to('.chest__items', {
-    y:        0,
-    opacity:  1,
-    ease:     'power2.out',
-    duration: 0.58
-  }, 0.34);
-
-  /* ── Gold air-blast — gold streaks blow outward from the chest mouth the instant
-        the lid pops. Strokes "draw" outward (dashoffset) then the group puffs+fades.
-        Runs inside the one-shot timeline, so it fires exactly once on open.        */
-  gsap.utils.toArray('.chest__blast-line').forEach(function (ln) {
-    var L = 90;
-    try { L = ln.getTotalLength() || 90; } catch (e) {}
-    ln.style.strokeDasharray  = L;
-    ln.style.strokeDashoffset = L;
-  });
-  mainTl.set('.chest__blast', { opacity: 1 }, 0.06);
-  mainTl.to('.chest__blast-line', {
-    strokeDashoffset: 0,
-    duration: 0.20,
-    stagger:  0.03,
-    ease:     'power3.out'
-  }, 0.08);
-  mainTl.to('.chest__blast', {
-    opacity:   0,
-    scale:     1.22,
-    svgOrigin: '280 168',
-    ease:      'power2.in',
-    duration:  0.40
-  }, 0.24);
-
-  /* ── Coin float loops (start once chest is open enough) ──
-     Each coin floats independently with stagger.
-     Uses a GSAP timeline with repeat:-1 per coin.               */
-  var coins = gsap.utils.toArray('.chest__coin');
-  coins.forEach(function (coin, i) {
-    var floatDist = 88 + i * 16;
-    var dur       = 2.1 + i * 0.28;
-    var tl = gsap.timeline({ repeat: -1, delay: i * 0.52 + 0.6, repeatDelay: 0.35 });
-    tl.fromTo(coin,
-      { y: 0,          opacity: 0 },
-      { y: -floatDist, opacity: 0.88, duration: dur, ease: 'power1.out' }
-    ).to(coin,
-      { opacity: 0, duration: dur * 0.28, ease: 'none' },
-      '-=0.55'
-    );
-  });
-
-  /* ── Looping "shines in different spaces" glint timeline ──
-     Small GSAP repeating tl that pulses each glint/spark at
-     offset times — travels the scene independently of scroll.   */
-  var glints = gsap.utils.toArray('.chest__glint');
-  glints.forEach(function (g, i) {
-    gsap.fromTo(g,
-      { scale: 0,   opacity: 0 },
-      {
-        scale:       1.3,
-        opacity:     1,
-        duration:    0.32,
-        delay:       i * 0.85,
-        repeat:      -1,
-        repeatDelay: 2.4 + i * 0.5,
-        yoyo:        true,
-        ease:        'power2.out',
-        transformOrigin: 'center'
-      }
-    );
-  });
-
-  /* Secondary cross-scene glint sweep: a pair of gsap.fromTo that
-     animates x-position on two sparkle stars across the chest width,
-     creating the "light traveling across items" feel the CEO requested. */
-  var sparks = gsap.utils.toArray('.chest__spark');
-  if (sparks.length >= 2) {
-    /* star "a": sweeps left→right path across scene */
-    gsap.fromTo(sparks[0],
-      { x: -80,  opacity: 0 },
-      {
-        x:           80,
-        opacity:     1,
-        duration:    2.6,
-        delay:       1.2,
-        repeat:      -1,
-        repeatDelay: 3.8,
-        yoyo:        false,
-        ease:        'power1.inOut',
-        onRepeat:    function () {
-          gsap.set(sparks[0], { x: -80, opacity: 0 });
-        }
-      }
-    );
-    /* star "c": sweeps right→left */
-    gsap.fromTo(sparks[2],
-      { x: 80,   opacity: 0 },
-      {
-        x:           -80,
-        opacity:     1,
-        duration:    3.0,
-        delay:       2.8,
-        repeat:      -1,
-        repeatDelay: 4.2,
-        yoyo:        false,
-        ease:        'power1.inOut',
-        onRepeat:    function () {
-          gsap.set(sparks[2], { x: 80, opacity: 0 });
-        }
-      }
-    );
+  if (typeof video.play !== 'function') {
+    revealStill();
+    return;
   }
 
+  function playOnce() {
+    if (hasPlayed || hasEnded) { return; }
+    hasPlayed = true;
+
+    var playPromise;
+    try {
+      playPromise = video.play();
+    } catch (err) {
+      revealStill();
+      return;
+    }
+
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch(function () {
+        revealStill();
+      });
+    }
+  }
+
+  video.addEventListener('ended', function () {
+    hasEnded = true;
+    video.pause();
+    if (observer) {
+      observer.disconnect();
+      observer = null;
+    }
+  }, { once: true });
+
+  video.addEventListener('error', function () {
+    revealStill();
+  }, { once: true });
+
+  if (!('IntersectionObserver' in window)) {
+    playOnce();
+    return;
+  }
+
+  observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (entry.target !== stage) { return; }
+
+      if (entry.isIntersecting && entry.intersectionRatio >= 0.55) {
+        playOnce();
+        return;
+      }
+
+      if (!entry.isIntersecting && !hasPlayed && !video.paused) {
+        video.pause();
+      }
+    });
+  }, {
+    threshold: [0, 0.55, 0.66, 1]
+  });
+
+  observer.observe(stage);
 }());
 </script>
 <script>
