@@ -24,6 +24,9 @@ logs/*
 onecompute-fractal.png
 demo_out.txt
 
+# Local recording script (not for submission)
+/script.md
+
 # Local orchestrator state
 *.db
 *.sqlite
