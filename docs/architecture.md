@@ -52,7 +52,7 @@ flowchart TB
 1. **Worker agent**: Python process on each opt-in PC. Detects idleness, advertises capability, pulls signed jobs, runs them in a sandbox, returns results, yields instantly when the human returns. When the fleet runs gated, it first **joins via a device-code approval** (shows a short code, waits until an admin approves it in the dashboard) and then streams live per-device usage (~1s).
 2. **Orchestrator**: FastAPI app on the dev box. Control plane + scheduler + verifier + ledger + dashboard. One process for the PoC. It also exposes a **dashboard-facing API** (approve a worker, launch a whole workload across the fleet in one call, read a workload/job's output, list the launch catalog); see §4.1 and [`dashboard-api.md`](./dashboard-api.md).
 3. **Job/manifest model**: the signed contract between submitter and worker.
-4. **Sandbox runtime**: Windows Sandbox + Job Objects isolating each job on the worker.
+4. **Sandbox runtime**: a **Docker container per job** (`--network none`, read-only mounts, `--rm`) isolating each job on the worker, with an always-available **subprocess + Job Object** fallback when Docker is unreachable (Windows Sandbox is the documented ideal — see §3.3).
 5. **Rewards/metering service**: turns verified work into points.
 
 > **Demo workloads.** The PoC fans an **example workload catalog — originally four, now ~10 launchable kinds** (`fractal`, `optimize`, `ai.batch_infer`, `ai.synth`, `montecarlo`, `hashcrack`, `ai.infer`, `ai.eval`, `ai.graph`, `data.transform`) — across the fleet. The original worked example is two non-AI (`fractal`, `optimize`) and two AI (`ai.batch_infer`, `ai.synth`), with a **hardcoded split (one tile per machine)**; the dynamic governor (§3.2) is deliberately set aside for the demo. Fully documented in [`workloads.md`](./workloads.md) (and §6).
@@ -117,23 +117,26 @@ OneCompute doesn't just wait for a fully-idle machine: it harvests the **learned
 ```mermaid
 sequenceDiagram
     participant A as Worker agent
-    participant V as Manifest verify (cosign)
-    participant SB as Windows Sandbox (.wsb)
-    participant JO as Job Object (caps)
+    participant V as Manifest verify (sig + hashes)
+    participant DK as Docker container (per job)
+    participant JO as subprocess + Job Object (fallback)
     A->>V: verify signature + code/data hashes
     V-->>A: ok (else refuse)
-    A->>SB: launch disposable sandbox<br/>MappedFolders=ro, Networking=Disable, vGPU=Enable
-    SB->>JO: run job under CPU/mem cap
-    JO-->>SB: result artifact
-    SB-->>A: copy result out, sandbox auto-wipes
+    alt Docker daemon available (primary)
+        A->>DK: docker run --rm --network none<br/>read-only mount, --memory cap, python:3.12-slim
+        DK-->>A: copy result out, container removed (--rm)
+    else Docker unreachable (always-available fallback)
+        A->>JO: run under Job Object (CPU/mem cap, kill-on-close)
+        JO-->>A: result artifact
+    end
     A->>A: hash result, attach proof
 ```
 
-- **Boundary = [Windows Sandbox](https://learn.microsoft.com/en-us/windows/security/application-security/application-isolation/windows-sandbox/windows-sandbox-configure-using-wsb-file)** driven by a generated `.wsb`: Hyper-V kernel isolation, **disposable** (all state wiped on close → no-persistence for free), read-only `MappedFolders` for inputs, `Networking=Disable` by default, `vGPU=Enable` for GPU jobs, `LogonCommand` auto-runs the job runner.
-- **Resource governance = [Windows Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)** *inside* the sandbox: CPU rate cap (`CpuRate`), memory limit, kill-on-close.
-- These are **layered**: Job Objects/AppContainer are *resource governance*, the **Hyper-V isolation is the security boundary**. We never present the former alone as the boundary.
+- **Implemented boundary = a Docker Linux container per job** (`src/isolation/runner.py` → `isolation/docker.py`): `docker run --rm --network none`, read-only input mount, `--memory` cap, base image `python:3.12-slim`. **Disposable** (`--rm` → no-persistence for free), no inbound network, killable by name (`docker kill`) for sub-second yield, and it needs **no admin / Hyper-V / nested-virt**, so it runs on any demo PC.
+- **Always-available fallback = a subprocess under a [Windows Job Object](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)** (`src/isolation/jobobject.py`): CPU/memory caps + `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` (closing the handle tears down the whole process tree). `runner.py`'s `active_boundary()` reports which path is live and logs a WARNING when Docker is unreachable and it degrades to this path.
+- **Documented ideal (not built in the PoC) = [Windows Sandbox](https://learn.microsoft.com/en-us/windows/security/application-security/application-isolation/windows-sandbox/windows-sandbox-configure-using-wsb-file)** via a generated `.wsb`: Hyper-V kernel isolation, disposable, read-only `MappedFolders`, `Networking=Disable`. It needs Win Pro/Enterprise + Hyper-V + elevation (and won't nest in a VM), so the PoC ships the Docker path by default and keeps Hyper-V isolation as the security-boundary upgrade. See §13.
 
-> **GPU-in-Sandbox is documented NOT to work** (the critique pass confirmed this): `VGpu=Enable` exposes only the Microsoft Virtual Render Driver, so **CUDA DLLs are absent and CUDA jobs fail** ([Windows-Sandbox issue #42](https://github.com/microsoft/Windows-Sandbox/issues/42), closed "not planned"). **PoC decision (see §13):** CPU jobs get the real Windows-Sandbox isolation beat; **GPU jobs run host-side under a Job Object** where CUDA sees the real device, with the verbal caveat that GPU memory-isolation is the TEE roadmap. Timebox any GPU-in-Sandbox spike to ~3h, then take the fallback.
+> **GPU-in-Sandbox is documented NOT to work** (the critique pass confirmed this): `VGpu=Enable` exposes only the Microsoft Virtual Render Driver, so **CUDA DLLs are absent and CUDA jobs fail** ([Windows-Sandbox issue #42](https://github.com/microsoft/Windows-Sandbox/issues/42), closed "not planned"). **PoC decision (see §13):** CPU jobs run in the Docker container sandbox for a real isolation beat (Windows Sandbox where one is available); **GPU jobs run host-side under a Job Object** where CUDA sees the real device, with the verbal caveat that GPU memory-isolation is the TEE roadmap. Timebox any GPU-in-Sandbox spike to ~3h, then take the fallback.
 
 ---
 
@@ -191,7 +194,7 @@ A job is a **signed manifest** + input payload. The manifest is the trust contra
   "input_sha256": "…",
   "requires": { "needs_gpu": true, "min_vram_gb": 6, "accel": ["cuda"] },
   "limits":  { "cpu_pct": 60, "mem_gb": 8, "timeout_s": 600, "network": "none" },
-  "sandbox": { "type": "windows_sandbox", "vgpu": true, "mapped_ro": ["in/"] },
+  "sandbox": { "type": "docker", "vgpu": true, "mapped_ro": ["in/"] },
   "issued_at": "…", "expires_at": "…"
 }
 ```
@@ -245,11 +248,11 @@ sequenceDiagram
     W->>Orc: GET /jobs/next (long-poll, idle=true)
     Orc-->>W: signed manifest + input
     W->>W: verify sig + hashes
-    W->>W: launch Windows Sandbox, run under Job Object
+    W->>W: run job in Docker container (or Job Object fallback)
     loop every ~5s
         W->>Orc: heartbeat (idle/util, lease renew)
     end
-    Note over W: human returns → checkpoint + yield, sandbox wiped
+    Note over W: human returns → yield (docker kill / close Job Object), container removed
     W->>Orc: POST result + proof  (or lease expires → requeue)
     Orc->>Orc: verify (challenge/replication), credit points
     Orc-->>Sub: aggregated results
@@ -262,7 +265,7 @@ sequenceDiagram
 
 | Layer | PoC (build) | Roadmap (document) |
 |---|---|---|
-| **Isolation** | Windows Sandbox (Hyper-V) + Job Objects | AppContainer / Win32 App Isolation; [`microsoft/mxc`](https://github.com/microsoft/mxc) policy layer |
+| **Isolation** | **Docker container per job** (`--network none`, ro mounts, `--rm`) + subprocess/Job Object fallback | Windows Sandbox (Hyper-V) where available; AppContainer / Win32 App Isolation; [`microsoft/mxc`](https://github.com/microsoft/mxc) policy layer |
 | **Code/data integrity** | cosign-signed manifests, hash-verify before run | full SLSA-style provenance |
 | **Result trust** | challenge tasks + adaptive replication + fuzzy comparators | formal verifiable compute |
 | **Confidentiality** | data minimization, no-persistence | **TEE / confidential compute** (needs datacenter GPUs: consumer RTX/NPU have no GPU TEE) |
@@ -281,7 +284,7 @@ sequenceDiagram
 2. **Orchestrator skeleton**: FastAPI: `register`, `jobs/next` (long-poll), `heartbeat`, `results`; SQLite state; in-process scheduler.
 3. **Worker agent v0**: register, long-poll, run a trivial subprocess job, heartbeat, report result.
 4. **Idle gate**: `GetLastInputInfo` + lock/unlock + AC + GPU util; checkpoint-and-yield on the "human's back" lever.
-5. **Sandbox wrapper**: generate `.wsb`, run job inside, copy result out, confirm wipe; Job Object caps.
+5. **Sandbox wrapper**: a Docker container per job (`--network none`, read-only mounts, `--rm`); run job inside, copy result out, confirm wipe; subprocess + Job Object fallback with caps. *(Windows Sandbox `.wsb` is the documented upgrade — see §3.3 / §13.)*
 6. **Signing**: cosign-sign manifests; worker verifies before run.
 7. **Two real workloads**: `ai.batch_infer` (prompt-set slice via local model server) + `data.transform`/`render` (CPU/GPU non-AI).
 8. **Verifier + rewards**: challenge tasks; points ledger.
@@ -298,7 +301,7 @@ sequenceDiagram
 | Control plane | **FastAPI + uvicorn** (borrowed `uv` env) | Outbound long-poll, no inbound ports. |
 | State / queue / ledger | **SQLite** | Zero infra; one orchestrator. → NATS JetStream later. |
 | Worker agent | **Python + ctypes + pynvml** | Win32 idle APIs + GPU advert, no heavy deps. |
-| Isolation | **Windows Sandbox (`.wsb`) + Job Objects** | Disposable Hyper-V boundary; instant kill-on-close. |
+| Isolation | **Docker per job** (`--network none`, ro mounts, `--rm`) + subprocess/Job Object fallback | Per-job disposable boundary, no admin/Hyper-V needed; instant kill-on-close. Windows Sandbox is the documented ideal. |
 | Signing | **Local Ed25519** (`cryptography`) for the PoC | ~30 lines; demo the *refusal* on a flipped byte. cosign/OIDC is roadmap (needs egress + SSO wiring). |
 | AI workload | **Ollama** (local, OpenAI-compatible) + **anthropic / openai SDK** | Embarrassingly-parallel batch inference. |
 | Inference clients | **anthropic / openai SDKs** (borrowed env) | For eval/agent job kinds. |
