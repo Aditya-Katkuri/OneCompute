@@ -3373,6 +3373,16 @@ html.js .chest__items          { opacity: 0; transform: translateY(44px); }
 /* ---- Coins: driven by GSAP; start hidden ---- */
 .chest__coin { opacity: 0; }
 
+/* ---- Gold air-blast streaks: hidden by default; driven by GSAP one-shot ---- */
+.chest__blast { opacity: 0; }
+.chest__blast-line {
+  fill: none;
+  stroke: #F2D49B;
+  stroke-width: 5;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 3px rgba(255,240,190,.9));
+}
+
 /* ---- Reduced-motion: static open chest, no loops ---- */
 @media (prefers-reduced-motion: reduce) {
   #chestLid                      { transform: scaleY(0) !important; opacity: 0 !important; }
@@ -3384,6 +3394,7 @@ html.js .chest__items          { opacity: 0; transform: translateY(44px); }
   .chest__glint                  { animation: none !important; opacity: .7; transform: scale(1); }
   .chest__steam                  { animation: none !important; }
   .chest__coin                   { opacity: .75 !important; transform: translateY(-32px) !important; }
+  .chest__blast                  { opacity: 0 !important; }
 }
 </style>
 
@@ -3713,6 +3724,16 @@ html.js .chest__items          { opacity: 0; transform: translateY(44px); }
           <!-- Subtle sheen on lid front face -->
           <polygon points="80,180 270,180 305,272 80,272" fill="rgba(255,255,255,.06)"/>
         </g><!-- /lid -->
+
+        <!-- 6.5 Gold air-blast — gold streaks blow out from the chest mouth as the lid pops (GSAP one-shot) -->
+        <g class="chest__blast" aria-hidden="true">
+          <line class="chest__blast-line" x1="232" y1="168" x2="150" y2="150"/>
+          <line class="chest__blast-line" x1="238" y1="160" x2="168" y2="116"/>
+          <line class="chest__blast-line" x1="248" y1="154" x2="214" y2="98"/>
+          <line class="chest__blast-line" x1="328" y1="168" x2="410" y2="150"/>
+          <line class="chest__blast-line" x1="322" y1="160" x2="392" y2="116"/>
+          <line class="chest__blast-line" x1="312" y1="154" x2="346" y2="98"/>
+        </g>
 
         <!-- 7. Sweeping light beams (CSS animated) -->
         <rect class="chest__sweep" x="0" y="100"
@@ -4818,10 +4839,9 @@ void main(){
   /* ── Scroll-driven main timeline ── */
   var mainTl = gsap.timeline({
     scrollTrigger: {
-      trigger: '#chest',
-      start:   'top 80%',
-      end:     'center center',
-      scrub:   1.4
+      trigger: '.chest__stage',
+      start:   'center 66%',
+      once:    true            /* play the open once when prominent, then latch — stays open */
     }
   });
 
@@ -4855,6 +4875,30 @@ void main(){
     ease:     'power2.out',
     duration: 0.58
   }, 0.34);
+
+  /* ── Gold air-blast — gold streaks blow outward from the chest mouth the instant
+        the lid pops. Strokes "draw" outward (dashoffset) then the group puffs+fades.
+        Runs inside the one-shot timeline, so it fires exactly once on open.        */
+  gsap.utils.toArray('.chest__blast-line').forEach(function (ln) {
+    var L = 90;
+    try { L = ln.getTotalLength() || 90; } catch (e) {}
+    ln.style.strokeDasharray  = L;
+    ln.style.strokeDashoffset = L;
+  });
+  mainTl.set('.chest__blast', { opacity: 1 }, 0.06);
+  mainTl.to('.chest__blast-line', {
+    strokeDashoffset: 0,
+    duration: 0.20,
+    stagger:  0.03,
+    ease:     'power3.out'
+  }, 0.08);
+  mainTl.to('.chest__blast', {
+    opacity:   0,
+    scale:     1.22,
+    svgOrigin: '280 168',
+    ease:      'power2.in',
+    duration:  0.40
+  }, 0.24);
 
   /* ── Coin float loops (start once chest is open enough) ──
      Each coin floats independently with stagger.
