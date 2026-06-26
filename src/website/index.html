@@ -257,8 +257,8 @@
       linear-gradient(180deg, #f6eee9 0%, rgba(246,238,233,0.55) 9%, rgba(246,238,233,0) 26%),
       radial-gradient(150% 120% at 50% 118%, var(--paper) 0%, var(--cream) 64%)}
   .cinema__canvas{position:absolute;inset:0;width:100%;height:100%;z-index:1;display:block}
-  .cinema__copy{position:absolute;left:clamp(22px,5vw,90px);top:clamp(84px,12vh,128px);z-index:4;max-width:30ch;pointer-events:none}
-  .cinema__copy h2{font-size:clamp(28px,4.6vw,58px);color:var(--plum);margin-top:14px;text-shadow:0 1px 26px rgba(247,239,233,.7)}
+  .cinema__copy{position:absolute;left:clamp(22px,5vw,90px);top:clamp(84px,12vh,128px);z-index:4;max-width:none;pointer-events:none}
+  .cinema__copy h2{font-size:clamp(28px,4.6vw,58px);color:var(--plum);margin-top:14px;text-shadow:0 1px 26px rgba(247,239,233,.7);max-width:7.3em;text-wrap:balance}
 
   .cloud{position:absolute;left:50%;top:55%;transform:translate(-50%,-50%);
     width:min(660px,95vw);height:min(400px,56vh);z-index:2;display:grid;place-items:center}
@@ -297,7 +297,7 @@
   .term__meter{padding:10px 16px 14px;border-top:1px solid var(--surface-line);
     font-size:12px;color:var(--muted);letter-spacing:.02em}
   .term__num{font-family:var(--mono);font-weight:700;color:var(--plum);font-variant-numeric:tabular-nums}
-  @media(max-width:720px){.cinema__copy{top:80px;max-width:22ch}.term{width:min(360px,86vw)}}
+  @media(max-width:720px){.cinema__copy{top:80px;max-width:none}.term{width:min(360px,86vw)}}
   @media(prefers-reduced-motion:reduce){.cinema{height:110vh}.term__cur{animation:none}.cloud__glow{opacity:.42}}
 
   /* ====== Stage 3: internal hardware fleet — idle sources fan into one hub ====== */
@@ -4258,7 +4258,7 @@ html.js .finale__inner.in {
       <canvas class="cinema__canvas" aria-hidden="true"></canvas>
       <div class="cinema__copy">
         <span class="eyebrow">Routing &middot; reclaiming</span>
-        <h2>Spare cycles, gathered like rain into a lake of compute.</h2>
+        <h2>We extract more TOPS from Microsoft lapTOPS</h2>
       </div>
       <div class="cloud">
         <div class="cloud__glow" aria-hidden="true"></div>
