@@ -156,7 +156,7 @@ against them (a job needing 8 GB only lands where 8 GB is free *right now*).
 
 ---
 
-## Roadmap
+## Azure AI Foundry Roadmap
 
 - **NPU harvesting** on Copilot+ PCs (40–55 TOPS) via ONNX Runtime + DirectML - another `accel` class.
 - **RTX / NVIDIA DGX Spark** desks - a ~1 petaFLOP worker drops into the pool with no protocol change.
