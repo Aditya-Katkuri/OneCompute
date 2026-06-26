@@ -19,7 +19,7 @@ dashboard wired to the orchestrator API, a dozen example workloads, and 159 pass
 ## How to verify it yourself (do this first)
 
 ```bash
-uv sync
+uv sync --extra dev
 uv run pytest -q                 # expect: 159 passed
 uv run python scripts/demo_fleet.py   # real orchestrator + 3 real workers on one box; writes onecompute-fractal.png
 ```
@@ -46,7 +46,7 @@ machines happen to be local.
 
 ## Build / test / run commands
 
-- Install: `uv sync`
+- Install: `uv sync --extra dev`
 - Test: `uv run pytest -q`
 - Lint: `uv run ruff check src tests`
 - Orchestrator: `uv run python -m orchestrator [--require-approval]`

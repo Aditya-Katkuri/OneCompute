@@ -18,6 +18,7 @@ Outbound-only from workers; short-poll. All bodies are the pydantic models in `c
 | `POST /jobs` | `SubmitRequest` | `SubmitResponse` | submitter enqueues a job (orchestrator fills hashes/signs) |
 | `GET /state` | - | `FleetState` | dashboard read model (T5) |
 | `POST /workers/{worker_id}/approve` | - | `{"ok": true, "worker_id": …}` (200) or **404** | **(additive)** admits a pending worker; emits the `approved` event |
+| `DELETE /workers/{worker_id}` | - | `{"ok": true, "worker_id": …}` (200) or **404** | **(additive)** admin disconnect: re-queues the worker's held jobs, deletes the worker; emits the `removed` event |
 | `GET /jobs/{job_id}` | - | `JobDetail` (200) or **404** | **(additive)** one job + its parsed output; registered after `/jobs/next` so the long-poll literal route still wins |
 | `POST /workloads` | `WorkloadLaunchRequest` | `WorkloadLaunchResponse` | **(additive)** one-call fleet launch; **400** on unknown/non-launchable kind |
 | `GET /workloads/{workload_id}` | - | `WorkloadView` (200) or **404** | **(additive)** all jobs + outputs for a launched workload; registered after `/workloads/catalog` |
@@ -106,8 +107,10 @@ from trust import Signer, verify_manifest, make_challenge, check_challenge
 # make_challenge() -> tuple[dict, dict]          (job_input, expected_output) for a `challenge` job
 # check_challenge(output: dict, expected: dict) -> bool   (exact, integer, no FP)
 ```
-Integration (Wave B, COS): `create_app(signer=Signer())` signs on assignment; the worker calls
-`verify_manifest(sm)` **and** checks `sha256_hex(input) == manifest.input_sha256` before running (tamper-refusal).
+Integration (Wave B, COS): signing is **ON by default** — `create_app(signer=None)` instantiates a real
+`Signer()` internally, so the orchestrator signs on assignment and the worker calls `verify_manifest(sm)`
+**and** checks `sha256_hex(input) == manifest.input_sha256` before running (tamper-refusal). To disable
+signing you must pass an explicit no-op signer.
 
 ### 5.4 Isolation: `src/isolation/` (T3 owns)
 ```python
@@ -122,7 +125,7 @@ from isolation import run_in_isolation, isolation_proof, JobHandle
 ### 5.5 Dashboard read models (T1 serves → T5 reads)
 - `GET /state` → `FleetState` (exists). `WorkerView` now also carries **live** `cpu_pct`/`gpu_pct`/`free_ram_gb`
   (the worker streams `HeartbeatRequest` every ~1s, so `/state` reflects live per-device usage).
-- `GET /events?since=<id>` → `{"events":[{"id","ts","type":"registered|approved|submitted|assigned|completed|yielded|failed|blacklisted",
+- `GET /events?since=<id>` → `{"events":[{"id","ts","type":"registered|approved|submitted|assigned|completed|yielded|failed|blacklisted|removed|auth_failed",
   "worker_id","job_id","detail"}], "last_id": int}`. COS adds this in integration for the live activity feed.
 
 ---
@@ -132,9 +135,11 @@ from isolation import run_in_isolation, isolation_proof, JobHandle
 These were **added** on top of the frozen Phase-0/Phase-2 seams; nothing above changed.
 
 ### 6.1 New JobKinds
-`JobKind` gained `"fractal"`, `"optimize"`, `"ai.synth"` (alongside the existing
-`ai.batch_infer | eval | data.transform | render | challenge`). See [`docs/workloads.md`](workloads.md)
-for the four launchable workloads.
+`JobKind` now has 13 members:
+`ai.batch_infer | eval | data.transform | render | challenge | fractal | optimize | ai.synth |
+montecarlo | hashcrack | ai.infer | ai.eval | ai.graph` (the original five plus the additive
+`fractal`, `optimize`, `ai.synth`, then the long-running `montecarlo`, `hashcrack`, `ai.infer`,
+`ai.eval`, `ai.graph`). See [`docs/workloads.md`](workloads.md) for the launchable workloads.
 
 ### 6.2 Device-code approval gate (additive; off by default)
 - `create_app(db_path=":memory:", signer=None, require_approval: bool = False)`. With `require_approval=False`
@@ -157,10 +162,11 @@ One-call fleet launch + per-job/per-workload output retrieval. Full UI-integrati
   workload_id, kind, job_ids }`. Builds the hardcoded split (one tile per machine) and enqueues each tile
   tagged with a shared `workload_id`. **400** on an unknown/non-launchable kind.
 - **Catalog:** `GET /workloads/catalog` → `{"workloads": [ {kind,label,category,ai,blurb,default_params,split} ]}`
-  . The launchable examples a UI renders as buttons (registered before `/workloads/{workload_id}`).
+  . The 9 launchable examples a UI renders as buttons (registered before `/workloads/{workload_id}`).
 - **Output retrieval:** `GET /jobs/{job_id}` → `JobDetail` (job record + parsed output; registered after
   `/jobs/next`) and `GET /workloads/{workload_id}` → `WorkloadView{ workload_id, kind, total, completed,
-  jobs:[JobDetail] }`.
+  jobs:[JobDetail], summary }`, where `summary: dict | None` is the server-merged result of the workload's
+  completed tiles (None until a tile finishes; the orchestrator populates it).
 - New contracts models/exports: `JobDetail`, `WorkloadLaunchRequest`, `WorkloadLaunchResponse`,
-  `WorkloadView`, and the constant `LAUNCHABLE_KINDS = ("fractal","optimize","ai.batch_infer","ai.synth","data.transform")`.
+  `WorkloadView`, and the constant `LAUNCHABLE_KINDS = ("fractal","optimize","ai.batch_infer","ai.synth","data.transform","montecarlo","hashcrack","ai.infer","ai.eval","ai.graph")`.
 - `jobs` table gained `workload_id TEXT` (groups jobs launched together); `submit_job(conn, req, workload_id=None)`.

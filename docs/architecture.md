@@ -55,7 +55,7 @@ flowchart TB
 4. **Sandbox runtime**: Windows Sandbox + Job Objects isolating each job on the worker.
 5. **Rewards/metering service**: turns verified work into points.
 
-> **Demo workloads.** The PoC fans **four hardcoded example workloads** across the fleet: two non-AI (`fractal`, `optimize`) and two AI (`ai.batch_infer`, `ai.synth`), with a **hardcoded split (one tile per machine)**; the dynamic governor (§3.2) is deliberately set aside for the demo. Fully documented in [`workloads.md`](./workloads.md) (and §6).
+> **Demo workloads.** The PoC fans an **example workload catalog — originally four, now ~10 launchable kinds** (`fractal`, `optimize`, `ai.batch_infer`, `ai.synth`, `montecarlo`, `hashcrack`, `ai.infer`, `ai.eval`, `ai.graph`, `data.transform`) — across the fleet. The original worked example is two non-AI (`fractal`, `optimize`) and two AI (`ai.batch_infer`, `ai.synth`), with a **hardcoded split (one tile per machine)**; the dynamic governor (§3.2) is deliberately set aside for the demo. Fully documented in [`workloads.md`](./workloads.md) (and §6).
 
 ---
 
@@ -204,7 +204,7 @@ A job is a **signed manifest** + input payload. The manifest is the trust contra
 
 ## 6. Workload adapters
 
-The same fabric carries different job kinds via small adapters. The PoC ships **four example workloads** fanned across the fleet via a **hardcoded split: one tile per machine** (`src/workloads/partition.py`, `even_ranges`/`weighted_ranges`); the dynamic governor is set aside for the demo. Two are non-AI and two are AI, to show range. Full per-workload detail (inputs, outputs, aggregation, preemptibility) lives in [`workloads.md`](./workloads.md), not duplicated here.
+The same fabric carries different job kinds via small adapters. The PoC ships an **example workload catalog — originally four, now ~10 launchable kinds** — fanned across the fleet via a **hardcoded split: one tile per machine** (`src/workloads/partition.py`, `even_ranges`/`weighted_ranges`); the dynamic governor is set aside for the demo. The four below are the original worked examples: two non-AI and two AI, to show range. Full per-workload detail (inputs, outputs, aggregation, preemptibility) lives in [`workloads.md`](./workloads.md), not duplicated here.
 
 | Job kind | AI? | Runtime on worker | PoC demo use |
 |---|---|---|---|
@@ -275,7 +275,7 @@ sequenceDiagram
 
 ## 10. PoC build plan (suggested order)
 
-> **Current status (branch `katkuri`):** steps 2–9 are implemented and green (144 tests pass), plus the additive dashboard-readiness layer (device-code approval gate, four fanned example workloads, `POST /workloads` launch + read API, live per-device usage stream). The dashboard **front-end UI is owned by the dashboard team**; the backend is integration-ready (see [`dashboard-api.md`](./dashboard-api.md)); we don't ship a finished UI.
+> **Current status (branch `main`):** steps 2–9 are implemented and green (159 tests pass), plus the additive dashboard-readiness layer (device-code approval gate, four fanned example workloads, `POST /workloads` launch + read API, live per-device usage stream). The dashboard **front-end UI is owned by the dashboard team**; the backend is integration-ready (see [`dashboard-api.md`](./dashboard-api.md)); we don't ship a finished UI.
 
 1. **Spike the two unknowns first** *(de-risk day 1)*: (a) GPU passthrough into Windows Sandbox on the real demo SKU; (b) plain-HTTPS long-poll reachable across the corporate LAN.
 2. **Orchestrator skeleton**: FastAPI: `register`, `jobs/next` (long-poll), `heartbeat`, `results`; SQLite state; in-process scheduler.
@@ -300,7 +300,7 @@ sequenceDiagram
 | Worker agent | **Python + ctypes + pynvml** | Win32 idle APIs + GPU advert, no heavy deps. |
 | Isolation | **Windows Sandbox (`.wsb`) + Job Objects** | Disposable Hyper-V boundary; instant kill-on-close. |
 | Signing | **Local Ed25519** (`cryptography`) for the PoC | ~30 lines; demo the *refusal* on a flipped byte. cosign/OIDC is roadmap (needs egress + SSO wiring). |
-| AI workload | **llama.cpp `llama-server`** / vLLM (CPU+GPU) | Embarrassingly-parallel batch inference. |
+| AI workload | **Ollama** (local, OpenAI-compatible) + **anthropic / openai SDK** | Embarrassingly-parallel batch inference. |
 | Inference clients | **anthropic / openai SDKs** (borrowed env) | For eval/agent job kinds. |
 | Dashboard | **FastAPI + SSE/WebSocket + lightweight web UI** | Live fleet + points. |
 

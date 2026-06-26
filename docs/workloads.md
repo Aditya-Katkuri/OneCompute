@@ -16,9 +16,10 @@ deliberately set aside for the demo (see [`architecture.md`](./architecture.md) 
 > **Why the AI ones run host-side.** A jobkit executor also runs inside a `python:3.12-slim`
 > Docker container whose payload is stdlib-only and gets **no API key**. So the non-AI executors
 > must be pure stdlib (they do real work in the sandbox), and the AI kinds route **host-side**
-> (`worker/agent.py` sends any `ai.*` kind to the on-host Job-Object path) where the
-> Anthropic/OpenAI SDK and key are available. Without a key the AI executors fall back to a
-> **disclosed deterministic** output, so they always run.
+> (`worker/agent.py` sends any `ai.*` kind to the on-host Job-Object path) where the LLM backend
+> is reachable: a **local Ollama** model first (`ONECOMPUTE_LLM_URL`, the default the demo relies
+> on since the fleet is CPU-only / no cloud), then an OpenAI or Anthropic SDK + key if set. With
+> no backend the AI executors fall back to a **disclosed deterministic** output, so they always run.
 
 The hardcoded split lives in [`src/workloads/partition.py`](../src/workloads/partition.py):
 `even_ranges(total, n)` and `weighted_ranges(total, weights)` carve `[0, total)` into contiguous,
@@ -53,18 +54,20 @@ regardless of how the work was split.
 
 ## 3. Model inference (`ai.batch_infer`): AI
 
-Batch **LLM inference**: each machine scores a slice of a prompt set. Real model calls when a key
-is present, a disclosed token-proportional fallback otherwise.
+Batch **LLM inference**: each machine scores a slice of a prompt set. Real model calls when a
+backend is reachable (local Ollama by default, else an OpenAI/Anthropic key), a disclosed
+token-proportional fallback otherwise.
 
 - **Builder:** `workloads.ai_batch.build_prompt_jobs(prompts=None, slice_size=3, model="", max_tokens=48)` → splits prompts into slices of `slice_size` (note: this kind splits by `slice_size`, not `n_tiles`).
 - **Input (per tile):** `{ prompts: [str, …], model, max_tokens }`.
-- **Backend:** real **Anthropic** (`ANTHROPIC_API_KEY`) or **OpenAI** (`OPENAI_API_KEY`) SDK if a key is set, else a disclosed `"fallback"`.
+- **Backend (in precedence order):** a **local Ollama** model (`ONECOMPUTE_LLM_URL`, default `http://127.0.0.1:11434/v1`) → **OpenAI** (`OPENAI_API_KEY`) → **Anthropic** (`ANTHROPIC_API_KEY`) → a disclosed `"fallback"`. The local model is the default the demo relies on (the fleet is CPU-only, no cloud); set `ONECOMPUTE_NO_LLM` to disable the LLM entirely.
 - **Output (per tile):** `{ results: [{ prompt, completion, tokens }, …], backend, yielded }`.
 
 ## 4. Synthetic data (`ai.synth`): AI
 
 Distributed **synthetic-data generation**: each machine generates a slice of records, merged into
-one dataset. Real LLM-generated rows when keyed, a deterministic disclosed fallback otherwise.
+one dataset. Real LLM-generated rows when a backend is reachable (local Ollama by default, else an
+OpenAI/Anthropic key), a deterministic disclosed fallback otherwise.
 
 - **Builder:** `workloads.synth.build_synth_jobs(n_tiles, total_rows=300, fields=None, model="", spec="a software employee record", weights=None)` → splits `total_rows` into `n_tiles` slices, each with a distinct `start_index` so seeds never collide.
 - **Input (per tile):** `{ n_rows, spec, fields, model, start_index }` (default `fields = [name, role, team, summary]`).
@@ -81,11 +84,15 @@ one dataset. Real LLM-generated rows when keyed, a deterministic disclosed fallb
 - **Real fleet:** start the orchestrator on the dev box and a worker on each laptop (see
   [`demo-runbook.md`](./demo-runbook.md)), then submit per workload:
   `uv run python scripts/submit_jobs.py --url http://<host>:8080 --kind fractal|optimize|ai|synth`.
-- **From a dashboard / API:** `GET /workloads/catalog` lists these four (label, category, default
-  params); `POST /workloads {kind, n_tiles, params}` launches one across the fleet;
+- **From a dashboard / API:** `GET /workloads/catalog` lists the launch catalog (currently 9
+  workloads, with label, category, default params); `POST /workloads {kind, n_tiles, params}`
+  launches one across the fleet;
   `GET /workloads/{id}` returns per-tile status + outputs. See [`dashboard-api.md`](./dashboard-api.md).
 
-## Adding a 5th workload
+## Adding a new workload
+
+The repo already ships 10 launchable kinds (9 in the launch catalog plus `data.transform`); these
+steps add another.
 
 1. Add the new string to the `JobKind` literal in `src/contracts/models.py`.
 2. Add a stdlib executor to `src/jobkit/execute.py` (pure stdlib if it must run in the Docker

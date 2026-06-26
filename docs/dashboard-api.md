@@ -27,7 +27,7 @@ Poll these on a timer (the bundled dashboard uses 500 ms):
   { "events": [{ "id": 12, "ts": "…", "type": "approved", "worker_id": "laptop-ana", "job_id": null, "detail": "…" }],
     "last_id": 12 }
   ```
-  `type` ∈ `registered | approved | submitted | assigned | completed | yielded | failed | blacklisted`.
+  `type` ∈ `registered | approved | submitted | assigned | completed | yielded | failed | blacklisted | removed | auth_failed`.
 
 ## 1. Connect / approve new devices
 
@@ -53,17 +53,27 @@ per-`worker_id` history can draw a live usage sparkline/graph per device.
 
 Get the launchable catalog (so buttons aren't hardcoded: add entries server-side to add more):
 
-- `GET /workloads/catalog` →
+- `GET /workloads/catalog` → returns all **9** launchable example workloads:
   ```jsonc
   { "workloads": [
-    { "kind": "fractal",        "label": "Fractal render",       "category": "non-AI", "ai": false,
+    { "kind": "fractal",        "label": "Fractal render",            "category": "non-AI", "ai": false,
       "blurb": "…", "default_params": { "width": 720, "height": 480, "max_iter": 120 }, "split": "per_machine" },
-    { "kind": "optimize",       "label": "Param-sweep optimize", "category": "non-AI", "ai": false,
+    { "kind": "optimize",       "label": "Param-sweep optimize",      "category": "non-AI", "ai": false,
       "blurb": "…", "default_params": { "n_candidates": 30000, "dims": 8 }, "split": "per_machine" },
-    { "kind": "ai.batch_infer", "label": "AI inference",         "category": "AI",     "ai": true,
+    { "kind": "ai.batch_infer", "label": "AI inference",              "category": "AI",     "ai": true,
       "blurb": "…", "default_params": { "slice_size": 3 }, "split": "slice_size" },
-    { "kind": "ai.synth",       "label": "AI synthetic data",    "category": "AI",     "ai": true,
-      "blurb": "…", "default_params": { "total_rows": 30 }, "split": "per_machine" }
+    { "kind": "ai.synth",       "label": "AI synthetic data",         "category": "AI",     "ai": true,
+      "blurb": "…", "default_params": { "total_rows": 30 }, "split": "per_machine" },
+    { "kind": "montecarlo",     "label": "Monte-Carlo finance risk",  "category": "non-AI", "ai": false,
+      "blurb": "…", "default_params": { "total_paths": 3000000, "horizon_days": 252 }, "split": "per_machine" },
+    { "kind": "hashcrack",      "label": "Hash crack (proof-of-work)","category": "non-AI", "ai": false,
+      "blurb": "…", "default_params": { "keyspace": 300000000, "target_prefix": "000000" }, "split": "per_machine" },
+    { "kind": "ai.infer",       "label": "Local LLM inference",       "category": "AI",     "ai": true,
+      "blurb": "…", "default_params": { "n_prompts": 120 }, "split": "per_machine" },
+    { "kind": "ai.eval",        "label": "Model evaluation (LLM judge)","category": "AI",   "ai": true,
+      "blurb": "…", "default_params": {}, "split": "per_machine" },
+    { "kind": "ai.graph",       "label": "Knowledge graph",           "category": "AI",     "ai": true,
+      "blurb": "…", "default_params": {}, "split": "per_machine" }
   ] }
   ```
   `split: "per_machine"` → pass `n_tiles` = number of approved workers; `"slice_size"` → the builder
@@ -83,10 +93,14 @@ Launch one across the fleet in a single call:
   { "workload_id": "…", "kind": "fractal", "total": 3, "completed": 2,
     "jobs": [{ "job_id": "…", "kind": "fractal", "state": "completed",
                "assigned_worker": "dev-box", "units": 160, "workload_id": "…",
-               "output": { … }, "created_at": "…", "updated_at": "…" }] }
+               "output": { … }, "created_at": "…", "updated_at": "…" }],
+    "summary": { … } }   // server-merged result across completed tiles; null until a tile finishes
   ```
   Poll until `completed === total`. `completed/total` drives a progress bar; per-job `state` +
-  `assigned_worker` show which machine ran which tile.
+  `assigned_worker` show which machine ran which tile. `summary` is the orchestrator's render-ready
+  merge of the completed tiles' outputs (shape depends on `kind`; `null` until a tile finishes, and
+  for `fractal` it stays `null` since the dashboard reassembles that tile-by-tile) — draw it directly
+  instead of re-implementing each workload's aggregation in the browser.
 - `GET /jobs/{job_id}` → the same single-job shape (incl. `output`).
 
 ### Output shape + suggested visualization per kind
@@ -105,6 +119,7 @@ Launch one across the fleet in a single call:
 | GET | `/state` | fleet + jobs snapshot (poll) |
 | GET | `/events?since=N` | activity feed (poll) |
 | POST | `/workers/{id}/approve` | approve a pending device |
+| DELETE | `/workers/{id}` | admin disconnect a device: re-queues its held jobs, deletes the worker (emits `removed`) |
 | GET | `/workloads/catalog` | launchable example workloads |
 | POST | `/workloads` | launch a workload across the fleet |
 | GET | `/workloads/{id}` | workload status + per-tile outputs |

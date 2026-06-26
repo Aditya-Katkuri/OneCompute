@@ -111,7 +111,7 @@ OneCompute/
 │   └── dashboard/      Self-contained live console (polls the orchestrator API)
 ├── scripts/            submit_jobs.py (feed the fleet) · demo_fleet.py (one-box demo)
 ├── tests/              159 tests across orchestrator, worker, jobkit, isolation, trust
-├── docs/               architecture · contracts · workloads · dashboard API · runbook · research
+├── docs/               architecture · contracts · workloads · dashboard API · runbook
 └── pyproject.toml      uv project (Python 3.13); entry points: python -m orchestrator | worker
 ```
 
@@ -119,7 +119,7 @@ OneCompute/
 
 ## Quickstart
 
-**Prerequisites:** [`uv`](https://docs.astral.sh/uv/) + Python 3.13. On each machine: clone, then `uv sync`.
+**Prerequisites:** [`uv`](https://docs.astral.sh/uv/) + Python 3.13. On each machine: clone, then `uv sync --extra dev`.
 
 ```bash
 # 1. Start the orchestrator on any one host (prints the dashboard URL + worker command)
@@ -162,7 +162,7 @@ against them (a job needing 8 GB only lands where 8 GB is free *right now*).
 - **RTX / NVIDIA DGX Spark** desks: a ~1 petaFLOP worker drops into the pool with no protocol change.
 - **Cross-machine model sharding** for models too big for one box; **TEE confidential compute** as desk GPU enclaves arrive.
 
-Market case and roadmap: [`docs/idea.md`](docs/idea.md) · hardware research: [`docs/research/`](docs/research/).
+Market case and roadmap: [`docs/idea.md`](docs/idea.md).
 
 ---
 

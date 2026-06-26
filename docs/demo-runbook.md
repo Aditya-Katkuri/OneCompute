@@ -51,10 +51,13 @@ This binds `0.0.0.0:8080` and prints, for each LAN IP, the **dashboard URL** and
 Note your dev-box LAN IP (call it `<dev-box-ip>`). Optional flags: `--port <n>`,
 `--db <path>` (state persists across restarts; default `./reeve-orchestrator.db`).
 
-> **AI keys (beats 3 & 4):** for *real* inference/synthesis, set `OPENAI_API_KEY` or
-> `ANTHROPIC_API_KEY` **in the worker environment** before launching the worker (AI jobs run
-> host-side on the worker, so that is where the key must live). With no key the AI beats use a
-> disclosed deterministic fallback. The demo still completes.
+> **AI backend (beats 3 & 4):** the worker resolves an LLM backend in precedence order — a
+> **local Ollama** model first (`ONECOMPUTE_LLM_URL`, default `http://127.0.0.1:11434/v1`), then
+> `OPENAI_API_KEY`, then `ANTHROPIC_API_KEY`. The local model is the default the demo relies on
+> (the fleet is CPU-only, no cloud); for cloud inference instead, set a key **in the worker
+> environment** before launching the worker (AI jobs run host-side on the worker, so that is
+> where the backend/key must live). With none reachable the AI beats use a disclosed deterministic
+> fallback, and the demo still completes. Set `ONECOMPUTE_NO_LLM` to disable the LLM entirely.
 
 ### A2. Open the dashboard
 
