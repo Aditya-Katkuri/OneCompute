@@ -37,6 +37,8 @@ The financial case is based on the idea that Microsoft already owns, powers, sec
 | Accelerated depreciation | ($17.0M) | Possible estimated cost of faster hardware wear, replacement timing, and support burden |
 | **Net Year 1 savings** | **$100.6M** | Target-case savings after operating and depreciation adjustments |
 
+*note that the Accelerated Depreciation cost may be significantly less than estimated, since Microsoft often replaces employee hardware before they reach end of useful life anyways
+
 ## Five-year projection
 
 The projection assumes that net recoverable compute value grows by approximately 15 percent per year. This growth rate reflects a combination of newer AI-capable PCs, more powerful endpoint hardware, higher employee opt-in, more idle dev box capacity, and broader workload support.
