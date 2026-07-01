@@ -10,7 +10,7 @@ import time
 from isolation import active_boundary
 from worker.agent import WorkerAgent
 from worker.capability import detect_capability
-from worker.governor import AdaptiveGovernor, system_gpu_load_pct
+from worker.governor import AdaptiveGovernor, system_gpu_load_pct, system_ram_load_pct
 from worker.idle import IdleGate
 from worker.telemetry import PilotTelemetry
 
@@ -58,6 +58,64 @@ def _start_usage_heartbeat(agent: WorkerAgent, period_s: float = 1.0) -> threadi
     return stop
 
 
+def _live_cpu_pct(governor: AdaptiveGovernor) -> float:
+    """System CPU% sampled over a short REAL window. In measure-only mode no job runs, so system
+    CPU is the employee's demand -- exactly what ``AdaptiveGovernor.observe()`` folds in between
+    jobs. We take a brief *blocking* sample rather than psutil's non-blocking delta so that even a
+    single ``--once`` reading reflects actual load instead of ~0% measured over a zero-length
+    interval (the non-blocking delta only becomes meaningful once time has elapsed since the prior
+    call). Falls back to the governor's ctypes ``GetSystemTimes`` sampler when psutil is absent.
+    """
+    if psutil is not None:
+        try:
+            return float(psutil.cpu_percent(interval=0.1))
+        except Exception:
+            pass
+    return governor.user_cpu()
+
+
+def run_measure_loop(
+    agent: WorkerAgent,
+    governor: AdaptiveGovernor,
+    telem: PilotTelemetry,
+    interval: float,
+    once: bool = False,
+) -> int:
+    """Measurement-only loop for the low-risk pilot: fold this machine's live CPU/GPU/RAM into the
+    on-device usage profile and (if telemetry is on) append a local ``measure`` event each tick.
+
+    It **never** pulls or runs a job -- ``poll_once`` / ``run_once`` / ``run_guarded`` / ``run_job``
+    are never called -- so an org can run a "measure first, run workloads later" pilot with zero
+    chance of a workload ever landing on an employee's machine. Because pure measurement imposes no
+    compute load, it needs no AC power and admits no work: the governor's admission/yield decision
+    (``should_run`` / ``active_now``) is deliberately never consulted here; the governor is used
+    only as the owner of the on-device ``UsageProfiler`` so the fold-in matches what
+    ``AdaptiveGovernor.observe()`` records between jobs.
+
+    Returns the number of samples taken. With ``once=True`` it takes exactly one sample then
+    returns (keeps ``--once`` testable and non-hanging); otherwise it loops on ``interval`` until
+    interrupted, terminating cleanly on Ctrl-C. The caller persists the learned profile on exit.
+    """
+    interval = max(0.0, interval)
+    samples = 0
+    try:
+        while True:
+            # No job runs in measure-only mode, so the employee's demand == the whole machine.
+            cpu = _live_cpu_pct(governor)
+            gpu = system_gpu_load_pct() if agent.capability.has_gpu else 0.0
+            ram = system_ram_load_pct()
+            governor.profiler.record(cpu, gpu, ram)  # learn the hour-of-week usage envelope
+            telem.log("measure", cpu=round(cpu, 1), gpu=round(gpu, 1), ram=round(ram, 1))
+            samples += 1
+            print(f"measure: cpu={cpu:.1f}% gpu={gpu:.1f}% ram={ram:.1f}% (no jobs will run)")
+            if once:
+                break
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        print("stopped")
+    return samples
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a OneCompute worker agent")
     parser.add_argument("--url", required=True, help="Orchestrator base URL")
@@ -95,6 +153,21 @@ def main() -> None:
         help="Run jobs sandboxed (Docker/Job-Object). Also lets the governor attribute the job's "
              "own CPU (a child process) so it never yields on its own load. Default on.",
     )
+    parser.add_argument(
+        "--measure-only",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Measurement-only pilot: register + stream live CPU/GPU/RAM for the dashboard and "
+             "learn the on-device usage profile, but NEVER pull or run a job. For a low-risk "
+             "'measure first, run workloads later' voluntary pilot.",
+    )
+    parser.add_argument(
+        "--measure-interval",
+        type=float,
+        default=30.0,
+        help="Seconds between usage samples folded into the on-device profile in --measure-only "
+             "mode (default 30.0; the live usage heartbeat still streams at --usage-interval)",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
@@ -102,6 +175,31 @@ def main() -> None:
     gate: IdleGate | AdaptiveGovernor | None = None
     usage_stop: threading.Event | None = None
     try:
+        if args.measure_only:
+            # Low-risk pilot: ONLY track CPU/GPU/RAM, never pull or run a job. Join the fleet so
+            # the device appears in the dashboard, stream live usage for the fleet view, then loop
+            # taking measurements. No admission/yield decision is ever made here: measurement
+            # imposes no compute load, so it needs no AC power and never admits work.
+            if not agent.registered:
+                agent.register()
+            if agent.registered and not agent.approved:
+                # Block (heartbeating) until approved so the device shows up in the dashboard, but
+                # with --once send a single heartbeat and exit rather than hang.
+                if not agent.wait_for_approval(once=args.once):
+                    return
+            # Stream live usage so the dashboard shows this device + its graph, exactly as the
+            # work loop does. Pure telemetry -- it never leases or runs anything.
+            usage_stop = _start_usage_heartbeat(agent, args.usage_interval)
+            # The governor is used ONLY to own + persist the on-device UsageProfiler; its
+            # should_run()/active_now() admission+yield paths are intentionally never called.
+            gate = AdaptiveGovernor(idle_gate=IdleGate(input_idle_threshold_s=args.idle_threshold))
+            telem = PilotTelemetry(agent.capability.worker_id, enabled=args.telemetry)
+            if args.telemetry:
+                print(f"pilot telemetry -> {telem.path}")
+            print("measure-only: tracking CPU/GPU/RAM, no jobs will run")
+            run_measure_loop(agent, gate, telem, args.measure_interval, once=args.once)
+            return
+
         if args.once:
             rr = agent.run_once()
             print(rr.model_dump() if rr else "no work")

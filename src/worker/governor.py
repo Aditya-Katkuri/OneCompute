@@ -91,7 +91,18 @@ def system_gpu_load_pct() -> float:
 
 
 class AdaptiveGovernor:
-    """Headroom-aware admission + demand-aware yield. Drop-in for ``IdleGate``."""
+    """Headroom-aware admission + demand-aware yield. Drop-in for ``IdleGate``.
+
+    Conservative-harvest posture (design intent, documented so the code is self-explaining):
+    the governor harvests only a machine's **spare headroom** -- by design roughly 20-40% of its
+    compute -- and always reserves a comfort ``margin_pct`` above the employee's *learned* demand
+    before admitting anything. The ceilings below are **safety maxima, never targets**:
+    ``hard_ceiling_pct`` (80, admission) and ``yield_ceiling_pct`` (95, the yield cap) exist so the
+    derived thresholds can't wander into territory a user would feel; in practice the governor
+    should rarely approach them, because people only begin to perceive slowdown around ~50%+
+    sustained CPU. The goal is to stay invisible: run in the slack, yield early, and always leave
+    the employee more compute than they are currently using.
+    """
 
     def __init__(
         self,

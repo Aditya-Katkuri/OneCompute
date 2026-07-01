@@ -4,6 +4,18 @@
 
 OneCompute extends Azure AI Foundry with a distributed compute layer built from idle enterprise hardware. Foundry remains the control plane for model management, governance, evaluations, and orchestration. OneCompute provides additional execution capacity for eligible workloads on trusted corporate devices.
 
+## Phase 0: Measurement pilot and co-development (recommended start)
+
+Before any Azure workload is routed onto employee devices, the safest and fastest way to build the case and earn approval is to measure first and co-develop the routing with the teams that own the risk.
+
+**Co-development partners.** The routing path from Azure into the device pool should be built jointly with:
+- **Azure Compute** for the functionality: how Foundry and Azure batch/eval requests are safely diverted to the OneCompute Router, capacity accounting, and fallback to Azure.
+- **The CISO office** (enterprise security and Azure Security) for the safety: the trust boundary, data-sensitivity gating, isolation guarantees, and audit for work that leaves Azure and runs on managed endpoints.
+
+**Two-week voluntary measurement pilot (no job execution).** In parallel, run a short, opt-in measurement-only pilot inside one organization that **only tracks CPU, GPU, and RAM usage** across employee laptops, dev boxes, and Xboxes. It pulls and runs **no jobs**; it simply learns each machine's real idle-headroom envelope on-device and streams live utilization to the dashboard. This is the lowest-risk possible first step: pure read-only telemetry, instantly reversible, easy for security and privacy to approve.
+
+**Why this order.** The measurement pilot replaces the estimates in `Financial_Impact.md` with **measured** recoverable headroom across real device classes, proves the harvest can stay conservative (see the harvest-intensity section there), and gives Azure Compute and the CISO office concrete data to design safe routing against, all before a single Azure request is diverted onto a device. The worker ships a first-class measurement mode for exactly this pilot (`python -m worker --url <host> --measure-only`).
+
 ## Phase 1: Foundry Job Integration
 
 **Goal:** Allow Azure AI Foundry workloads to run on OneCompute.
