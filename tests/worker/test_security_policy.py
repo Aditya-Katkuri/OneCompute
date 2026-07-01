@@ -86,12 +86,25 @@ def test_require_isolation_refuses_host_side(monkeypatch):
 
 def test_require_isolation_refuses_when_no_docker(monkeypatch):
     monkeypatch.setattr(iso_runner, "docker_available", lambda: False)
+    monkeypatch.setattr(iso_runner, "mxc_available", lambda: False)
     with pytest.raises(IsolationUnavailableError):
         iso_runner.run_in_isolation("data.transform", {"items": [1]}, allow_unsandboxed=False)
 
 
+def test_require_isolation_satisfied_by_mxc(monkeypatch):
+    # MXC is a real OS-enforced boundary, so with it available a require-isolation run proceeds
+    # (not refused) even when Docker is absent.
+    monkeypatch.setattr(iso_runner, "mxc_available", lambda: True)
+    monkeypatch.setattr(iso_runner, "docker_available", lambda: False)
+    sentinel = {"results": ["via-mxc"]}
+    monkeypatch.setattr(iso_runner, "_run_mxc", lambda *_a, **_k: sentinel)
+    out = iso_runner.run_in_isolation("data.transform", {"items": [1]}, allow_unsandboxed=False)
+    assert out is sentinel
+
+
 def test_unsandboxed_fallback_used_by_default_when_no_docker(monkeypatch):
     monkeypatch.setattr(iso_runner, "docker_available", lambda: False)
+    monkeypatch.setattr(iso_runner, "mxc_available", lambda: False)
     called = {}
 
     def fake_sub(_in_path, _out_path, _work_dir, _limits, _should_yield):
@@ -109,6 +122,7 @@ def test_unsandboxed_fallback_used_by_default_when_no_docker(monkeypatch):
 
 def test_worker_require_isolation_reports_failed_without_running(monkeypatch):
     monkeypatch.setattr(iso_runner, "docker_available", lambda: False)
+    monkeypatch.setattr(iso_runner, "mxc_available", lambda: False)
     agent = _agent(isolated=True, require_isolation=True)
     result = agent.run_job(_assignment(JobManifest(job_id="j", kind="data.transform")))
     assert result.status == "failed"
