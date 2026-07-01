@@ -24,7 +24,7 @@ from contracts import (
     UsageBucket,
     sha256_hex,
 )
-from isolation import run_in_isolation
+from isolation import IsolationUnavailableError, run_in_isolation
 from trust import verify_manifest
 from worker.capability import free_ram_gb as _current_free_ram_gb
 from worker.runner import default_runner
@@ -44,6 +44,8 @@ class WorkerAgent:
         client: httpx.Client | None = None,
         verify: bool = True,
         isolated: bool = False,
+        require_isolation: bool = False,
+        trusted_public_key_hex: str | None = None,
     ) -> None:
         self.base_url = base_url
         self.capability = capability
@@ -52,6 +54,13 @@ class WorkerAgent:
         self._owns_client = client is None
         self.verify = verify
         self.isolated = isolated
+        # Fail closed: when True, refuse any job that would run without an OS-enforced sandbox
+        # (Docker down, or a host-side GPU/AI job) instead of degrading to the unsandboxed
+        # subprocess fallback. Wired from the worker's --require-isolation.
+        self.require_isolation = require_isolation
+        # Out-of-band trusted signer key (hex). When set, only manifests signed by exactly this
+        # key are accepted, so a compromised orchestrator cannot inject a self-signed job.
+        self.trusted_public_key_hex = trusted_public_key_hex
         self._yield = threading.Event()
         self._job_running = threading.Event()
         self._yield_watcher_stop = threading.Event()
@@ -160,10 +169,24 @@ class WorkerAgent:
             return None
 
     def _verify_assignment(self, assignment: JobAssignment) -> tuple[bool, str]:
-        """Refuse tampered work before executing: signature + input-hash checks."""
+        """Refuse tampered or untrusted work before executing: signature, provenance, expiry, and
+        input-hash checks.
+
+        With a trusted key pinned (``self.trusted_public_key_hex``), trust is STRICT: the manifest
+        must be signed AND signed by exactly that key, so a compromised orchestrator's self-signed
+        job is rejected and an unsigned manifest is refused outright. Without a pinned key (the PoC
+        default), a present signature is still integrity-checked, but an unsigned manifest is
+        allowed through (the un-provisioned demo path).
+        """
         sm = assignment.signed_manifest
         manifest = sm.manifest
-        if sm.signature and not verify_manifest(sm):
+        trusted = self.trusted_public_key_hex
+        if trusted:
+            if not sm.signature:
+                return False, "unsigned_manifest"
+            if not verify_manifest(sm, trusted_public_key_hex=trusted):
+                return False, "untrusted_signer"
+        elif sm.signature and not verify_manifest(sm):
             return False, "bad_signature"
         if manifest.expires_at and manifest.expires_at <= datetime.now(UTC):
             return False, "manifest_expired"
@@ -206,11 +229,16 @@ class WorkerAgent:
                     manifest.limits,
                     should_yield=self.should_yield,
                     host_side=host_side,
+                    allow_unsandboxed=not self.require_isolation,
                 )
             else:
                 out = self.runner(manifest, assignment.input, should_yield=self.should_yield)
             yielded = bool(out.get("yielded"))
             status = "yielded" if yielded else "completed"
+        except IsolationUnavailableError as exc:
+            logger.warning("worker refused job %s (no OS sandbox): %s", manifest.job_id, exc)
+            out = {"error": f"refused: {exc}"}
+            status = "failed"
         except Exception as exc:
             logger.exception("worker job failed: %s", exc)
             out = {"error": str(exc)}

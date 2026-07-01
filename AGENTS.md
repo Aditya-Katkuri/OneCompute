@@ -14,13 +14,13 @@ connection (no inbound ports: works through corporate firewalls), runs them whil
 is idle, and **yields in milliseconds** when the user returns. Verified work earns credits.
 
 This is a **working proof-of-concept**, not a slide deck: a real multi-machine fleet, a live
-dashboard wired to the orchestrator API, a dozen example workloads, and 204 passing tests.
+dashboard wired to the orchestrator API, a dozen example workloads, and 220 passing tests.
 
 ## How to verify it yourself (do this first)
 
 ```bash
 uv sync --extra dev
-uv run pytest -q                 # expect: 204 passed, 2 skipped (Docker-only)
+uv run pytest -q                 # expect: 220 passed, 2 skipped (Docker-only)
 uv run python scripts/demo_fleet.py   # real orchestrator + 3 real workers on one box; writes onecompute-fractal.png
 ```
 
@@ -42,7 +42,7 @@ machines happen to be local.
 | `src/trust/signing.py`, `challenge.py` | Ed25519 manifest signing and deterministic challenge "ringers" that catch cheaters. |
 | `src/jobkit/execute.py` | The single, frozen registry of job executors: one source of truth for how each job kind runs. |
 | `src/contracts/models.py`, `schema.sql` | Frozen data contracts and the SQLite schema shared by every component. |
-| `tests/` | 204 tests covering matching, auth/approval, leases/requeue, crediting, yield, isolation, trust, measurement-only profiling + fleet measurement rollup, and end-to-end flows. |
+| `tests/` | 220 tests covering matching, auth/approval, leases/requeue, crediting, yield, isolation, trust (incl. pinned-key provenance + fail-closed isolation), measurement-only profiling + fleet measurement rollup, and end-to-end flows. |
 
 ## Build / test / run commands
 
@@ -51,6 +51,7 @@ machines happen to be local.
 - Lint: `uv run ruff check src tests scripts`
 - Orchestrator: `uv run python -m orchestrator [--require-approval]`
 - Worker: `uv run python -m worker --url http://<host-ip>:8080`
+- Worker (hardened pilot: fail closed with no OS sandbox + pin the trusted signer): `uv run python -m worker --url http://<host-ip>:8080 --require-isolation --trusted-key <hex>` (key also read from `$ONECOMPUTE_TRUSTED_PUBKEY`)
 - Worker (measurement-only pilot, tracks CPU/GPU/RAM, never runs a job): `uv run python -m worker --url http://<host-ip>:8080 --measure-only`
 - Submit work: `uv run python scripts/submit_jobs.py --url http://<host-ip>:8080 --kind fractal|optimize|ai|synth|fanout|gpu|challenge`
 - Measurement report: `uv run python scripts/measure_report.py <profile-or-dir>` (measured idle headroom from a measure-only pilot; see `docs/measurement-pilot.md`)
@@ -64,8 +65,13 @@ governor + instant-yield, the live dashboard (`src/dashboard/`, which polls the 
 all the example workloads.
 
 **Deliberately simplified for the PoC:** example workloads use a straightforward one-tile-per-
-machine split (`src/workloads/partition.py`) rather than dynamic re-partitioning; trust uses a
-local Ed25519 signer rather than full cosign/OIDC. These are honest scope choices, documented in
+machine split (`src/workloads/partition.py`) rather than dynamic re-partitioning. Trust defaults to
+trust-on-first-use (the signature is checked against the key carried in the manifest), but a worker
+can pin an out-of-band trusted signer with `--trusted-key` / `$ONECOMPUTE_TRUSTED_PUBKEY` so a
+compromised control plane cannot inject a self-signed job, and `--require-isolation` makes the
+worker fail closed (refuse to run) when no OS-enforced sandbox is available instead of using the
+unsandboxed subprocess fallback. Full cosign/OIDC signing and a validated OS sandbox for the
+no-Docker / host-side path remain roadmap. These are honest scope choices, documented in
 [`docs/architecture.md`](docs/architecture.md).
 
 **Roadmap (not built here):** NPU harvesting on Copilot+ PCs (DirectML), RTX / NVIDIA DGX

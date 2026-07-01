@@ -17,8 +17,11 @@ def _assignment(kind, needs_gpu):
 def _capture_host_side(monkeypatch):
     captured = {}
 
-    def fake_run_in_isolation(kind, inp, limits, should_yield=None, host_side=False):
+    def fake_run_in_isolation(
+        kind, inp, limits, should_yield=None, host_side=False, allow_unsandboxed=True
+    ):
         captured["host_side"] = host_side
+        captured["allow_unsandboxed"] = allow_unsandboxed
         return {"results": {}, "yielded": False}
 
     monkeypatch.setattr(agent_mod, "run_in_isolation", fake_run_in_isolation)
@@ -31,6 +34,8 @@ def test_gpu_job_routes_host_side(monkeypatch):
     worker.run_job(_assignment("render", needs_gpu=True))
     worker.close()
     assert captured["host_side"] is True
+    # a default worker does not require isolation, so the unsandboxed fallback stays allowed
+    assert captured["allow_unsandboxed"] is True
 
 
 def test_cpu_job_does_not_force_host_side(monkeypatch):

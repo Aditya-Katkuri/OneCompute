@@ -40,11 +40,30 @@ class Signer:
         )
 
 
-def verify_manifest(sm: SignedManifest) -> bool:
+def verify_manifest(sm: SignedManifest, trusted_public_key_hex: str | None = None) -> bool:
+    """Verify a signed manifest's Ed25519 signature.
+
+    By default (PoC) the signature is checked against the public key carried IN the manifest. That
+    proves *integrity* -- the manifest was not altered after signing -- but NOT *provenance*: any
+    party that can hand a worker a ``SignedManifest`` could sign it with its own key and set
+    ``public_key`` to match, so a compromised or spoofed control plane could inject a self-signed
+    job. Pass ``trusted_public_key_hex`` (a key pinned on the worker out-of-band) to also enforce
+    provenance: the manifest is accepted only when it is signed by exactly that key. This is the
+    "pass, not bypass" answer -- the worker trusts an operator-provisioned key, not whatever the
+    orchestrator sends.
+    """
     try:
         if sm.signature == "":
             return False
-        public_key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(sm.public_key))
+        key_hex = sm.public_key
+        if trusted_public_key_hex is not None:
+            # Out-of-band trust: only the operator's pinned key is acceptable. A manifest that
+            # carries any other key (a compromised orchestrator self-signing) is rejected even
+            # though its own signature is internally consistent.
+            if not sm.public_key or sm.public_key.strip().lower() != trusted_public_key_hex.strip().lower():
+                return False
+            key_hex = trusted_public_key_hex
+        public_key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(key_hex))
         public_key.verify(bytes.fromhex(sm.signature), _manifest_bytes(sm.manifest))
     except Exception:
         return False
