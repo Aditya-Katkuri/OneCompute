@@ -56,3 +56,13 @@ CREATE TABLE IF NOT EXISTS events (
     job_id    TEXT,
     detail    TEXT
 );
+
+-- Opt-in measurement pilot: the latest on-device usage envelope per worker (derived hour-of-week
+-- stats only, never raw activity). One row per worker, replaced on each POST /profile. Read by
+-- GET /measurement to roll up fleet-wide measured idle headroom.
+CREATE TABLE IF NOT EXISTS worker_profiles (
+    worker_id    TEXT PRIMARY KEY,
+    buckets_json TEXT NOT NULL,               -- JSON list of populated buckets (see UsageBucket)
+    coverage     INTEGER NOT NULL DEFAULT 0,  -- populated hour-of-week buckets in this profile
+    updated_at   TEXT NOT NULL
+);

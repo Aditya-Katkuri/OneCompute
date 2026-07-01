@@ -17,9 +17,11 @@ from contracts import (
     HeartbeatRequest,
     HeartbeatResponse,
     JobAssignment,
+    ProfileReport,
     RegisterResponse,
     ResultRequest,
     ResultResponse,
+    UsageBucket,
     sha256_hex,
 )
 from isolation import run_in_isolation
@@ -259,6 +261,36 @@ class WorkerAgent:
         except Exception as exc:
             logger.warning("worker heartbeat failed: %s", exc)
             return HeartbeatResponse(ack=False)
+
+    def report_profile(self, profiler: Any) -> bool:
+        """Upload this machine's on-device usage envelope to the orchestrator for the measurement
+        pilot (opt-in). Sends only populated (n>0) hour-of-week buckets carrying derived stats --
+        no raw activity, files, or wall-clock timestamps. Best-effort and offline-safe: returns
+        ``False`` (never raises) when the worker isn't registered or the POST fails, so the pilot
+        keeps learning locally even with no reachable orchestrator."""
+        if not self.registered or not self.worker_token:
+            return False
+        buckets = [
+            UsageBucket(
+                index=i,
+                n=b.n,
+                cpu_mean=b.cpu_mean,
+                cpu_max=b.cpu_max,
+                gpu_mean=b.gpu_mean,
+                gpu_max=b.gpu_max,
+                ram_mean=b.ram_mean,
+                ram_max=b.ram_max,
+            )
+            for i, b in enumerate(getattr(profiler, "buckets", []))
+            if getattr(b, "n", 0) > 0
+        ]
+        report = ProfileReport(worker_id=self.capability.worker_id, buckets=buckets)
+        try:
+            self._request("POST", "/profile", json=report.model_dump())
+            return True
+        except Exception as exc:  # offline / rejected / transport error -> stay local-only
+            logger.debug("worker profile report failed (staying local-only): %s", exc)
+            return False
 
     def report_result(self, rr: ResultRequest) -> ResultResponse:
         try:

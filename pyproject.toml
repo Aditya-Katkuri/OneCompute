@@ -53,6 +53,7 @@ packages = [
     "src/dashboard",
     "src/isolation",
     "src/jobkit",
+    "src/measurement",
     "src/orchestrator",
     "src/trust",
     "src/worker",

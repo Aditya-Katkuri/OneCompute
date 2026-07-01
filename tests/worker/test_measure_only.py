@@ -52,6 +52,13 @@ class _SpyAgent:
     def __init__(self, has_gpu: bool = False) -> None:
         self.capability = Capability(worker_id="measure-1", has_gpu=has_gpu)
         self.job_calls: list[str] = []
+        self.profile_reports = 0
+
+    def report_profile(self, profiler) -> bool:
+        # Uploading the on-device envelope is an ALLOWED measure-only action (no job runs), so
+        # this records the call rather than failing like the job paths below.
+        self.profile_reports += 1
+        return True
 
     def poll_once(self, *args, **kwargs):
         self.job_calls.append("poll_once")
@@ -140,6 +147,8 @@ def test_measure_loop_records_logs_and_never_runs_a_job(tmp_path, monkeypatch) -
 
     # the whole point of measure-only: no job was ever pulled or executed
     assert agent.job_calls == []
+    # the learned envelope was uploaded to the orchestrator (opt-in, best-effort)
+    assert agent.profile_reports >= 1
 
 
 def test_measure_loop_survives_keyboardinterrupt_and_profile_saves(tmp_path, monkeypatch) -> None:

@@ -19,12 +19,17 @@ from contracts import (
     JobDetail,
     JobManifest,
     JobView,
+    MeasurementSummary,
+    MetricSummary,
+    ProfileIngestResponse,
+    ProfileReport,
     RegisterResponse,
     ResultRequest,
     ResultResponse,
     SignedManifest,
     SubmitRequest,
     SubmitResponse,
+    UsageBucket,
     WorkerView,
     WorkloadLaunchRequest,
     WorkloadLaunchResponse,
@@ -32,6 +37,15 @@ from contracts import (
     sha256_hex,
 )
 from dashboard.paths import INDEX_HTML
+from measurement.headroom import (
+    BUCKETS_PER_WEEK,
+    DEFAULT_HARVEST_HIGH,
+    DEFAULT_HARVEST_LOW,
+    DEFAULT_MARGIN_PCT,
+    aggregate,
+    normalize_buckets,
+    summarize_profile,
+)
 from orchestrator.db import open_serialized_db, write_lock
 from orchestrator.scheduler import class_weight_for, pick_job_for
 from orchestrator.submit import submit_job
@@ -331,6 +345,49 @@ def _emit(
             (_now(), event_type, worker_id, job_id, detail),
         )
         conn.commit()
+
+
+def _clamp_pct(value: object) -> float:
+    """Clamp an incoming percentage to a finite 0..100. The wire is never trusted."""
+    try:
+        v = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.0
+    if v != v:  # NaN
+        return 0.0
+    return max(0.0, min(100.0, v))
+
+
+def _sanitize_profile_buckets(buckets: list[UsageBucket]) -> list[dict]:
+    """Keep only populated (n>0), in-range, de-duplicated hour-of-week buckets, each clamped to a
+    finite 0..100 percentage. Defends the store and the rollup against a malformed or hostile
+    profile report: the scan is bounded, out-of-range/duplicate indices are dropped, at most 168
+    buckets are kept, and every value is coerced. Returns plain dicts ready for JSON storage and for
+    ``measurement.headroom.normalize_buckets``."""
+    clean: list[dict] = []
+    seen: set[int] = set()
+    for b in buckets[: 3 * BUCKETS_PER_WEEK]:  # bounded even if the client over-sends
+        if b.n <= 0:
+            continue
+        idx = int(b.index)
+        if idx < 0 or idx >= BUCKETS_PER_WEEK or idx in seen:
+            continue
+        seen.add(idx)
+        clean.append(
+            {
+                "index": idx,
+                "n": int(b.n),
+                "cpu_mean": _clamp_pct(b.cpu_mean),
+                "cpu_max": _clamp_pct(b.cpu_max),
+                "gpu_mean": _clamp_pct(b.gpu_mean),
+                "gpu_max": _clamp_pct(b.gpu_max),
+                "ram_mean": _clamp_pct(b.ram_mean),
+                "ram_max": _clamp_pct(b.ram_max),
+            }
+        )
+        if len(clean) >= BUCKETS_PER_WEEK:
+            break
+    return clean
 
 
 def create_app(db_path: str = ":memory:", signer=None, require_approval: bool = False) -> FastAPI:
@@ -687,6 +744,75 @@ def create_app(db_path: str = ":memory:", signer=None, require_approval: bool = 
             "SELECT COALESCE(SUM(credits), 0) AS credits FROM ledger"
         ).fetchone()["credits"]
         return FleetState(workers=workers, jobs=jobs, total_credits=float(total_credits))
+
+    @app.post("/profile", response_model=ProfileIngestResponse)
+    def ingest_profile(
+        req: ProfileReport,
+        authorization: str | None = Header(default=None),
+    ) -> ProfileIngestResponse:
+        """Opt-in measurement pilot: a worker uploads its on-device usage envelope (derived
+        hour-of-week stats only, never raw activity) so the control plane can roll up fleet-wide
+        MEASURED idle headroom without job execution. Same bearer-token auth as /heartbeat; the
+        report is sanitized and clamped before storage (the wire is never trusted). One row per
+        worker, replaced on each report."""
+        _require_worker_token(conn, req.worker_id, authorization)
+        clean = _sanitize_profile_buckets(req.buckets)
+        now = _now()
+        with write_lock:
+            conn.execute(
+                """
+                INSERT INTO worker_profiles (worker_id, buckets_json, coverage, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(worker_id) DO UPDATE SET
+                    buckets_json = excluded.buckets_json,
+                    coverage = excluded.coverage,
+                    updated_at = excluded.updated_at
+                """,
+                (req.worker_id, json.dumps(clean, separators=(",", ":")), len(clean), now),
+            )
+            conn.commit()
+        return ProfileIngestResponse(accepted=True, buckets_stored=len(clean))
+
+    @app.get("/measurement", response_model=MeasurementSummary)
+    def measurement() -> MeasurementSummary:
+        """Fleet-wide MEASURED idle headroom, rolled up from every worker's uploaded profile with
+        the same governor-consistent math (``measurement.headroom``) the offline CLI report uses.
+        Read by the dashboard's measured-headroom beat and the pilot hand-off to Azure Compute +
+        CISO. Empty fleet -> zeros. Everything is an ESTIMATE and the assumptions travel with it."""
+        rows = conn.execute("SELECT worker_id, buckets_json FROM worker_profiles").fetchall()
+        summaries: list[dict] = []
+        for row in rows:
+            try:
+                raw = json.loads(row["buckets_json"])
+            except (ValueError, TypeError):
+                continue  # a corrupt row never breaks the fleet rollup
+            summaries.append(
+                summarize_profile(
+                    {"device": row["worker_id"], "populated": normalize_buckets(raw)}
+                )
+            )
+        agg = aggregate(summaries)
+        return MeasurementSummary(
+            device_count=agg["device_count"],
+            total_coverage_buckets=agg["total_coverage_buckets"],
+            margin_pct=DEFAULT_MARGIN_PCT,
+            harvest_low=DEFAULT_HARVEST_LOW,
+            harvest_high=DEFAULT_HARVEST_HIGH,
+            cpu=MetricSummary(
+                avg=agg["cpu"]["avg"],
+                peak=agg["cpu"]["peak"],
+                recoverable_low=agg["cpu"]["recoverable_low"],
+                recoverable_high=agg["cpu"]["recoverable_high"],
+            ),
+            gpu=MetricSummary(
+                avg=agg["gpu"]["avg"],
+                peak=agg["gpu"]["peak"],
+                recoverable_low=agg["gpu"]["recoverable_low"],
+                recoverable_high=agg["gpu"]["recoverable_high"],
+            ),
+            ram_avg=agg["ram"]["avg"],
+            ram_headroom=agg["ram"]["headroom"],
+        )
 
     @app.get("/jobs/{job_id}", response_model=JobDetail)
     def job_detail(job_id: str) -> JobDetail:
