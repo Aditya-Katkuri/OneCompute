@@ -3,6 +3,7 @@
 from isolation.docker import docker_available, reset_docker_probe_cache
 from isolation.proof import isolation_proof
 from isolation.runner import (
+    IsolationUnavailableError,
     JobHandle,
     active_boundary,
     run_in_isolation,
@@ -10,6 +11,7 @@ from isolation.runner import (
 )
 
 __all__ = [
+    "IsolationUnavailableError",
     "JobHandle",
     "active_boundary",
     "docker_available",

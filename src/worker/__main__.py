@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import threading
 import time
 
@@ -180,10 +181,31 @@ def main() -> None:
         help="Seconds between usage samples folded into the on-device profile in --measure-only "
              "mode (default 30.0; the live usage heartbeat still streams at --usage-interval)",
     )
+    parser.add_argument(
+        "--require-isolation",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Fail CLOSED: refuse to run any job unless a real OS-enforced sandbox (Docker; MXC "
+             "when available) is active. Blocks the unsandboxed subprocess fallback and host-side "
+             "GPU/AI execution. Recommended for real pilots; off by default so the local demo runs.",
+    )
+    parser.add_argument(
+        "--trusted-key",
+        default=os.environ.get("ONECOMPUTE_TRUSTED_PUBKEY"),
+        help="Hex Ed25519 public key the worker pins as the ONLY trusted job signer (defaults to "
+             "$ONECOMPUTE_TRUSTED_PUBKEY). When set, unsigned or differently-signed manifests are "
+             "refused, so a compromised orchestrator cannot inject a self-signed job.",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
-    agent = WorkerAgent(args.url, detect_capability(), isolated=args.isolated)
+    agent = WorkerAgent(
+        args.url,
+        detect_capability(),
+        isolated=args.isolated,
+        require_isolation=args.require_isolation,
+        trusted_public_key_hex=args.trusted_key,
+    )
     gate: IdleGate | AdaptiveGovernor | None = None
     usage_stop: threading.Event | None = None
     try:

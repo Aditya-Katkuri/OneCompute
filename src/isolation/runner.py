@@ -54,6 +54,16 @@ class _DockerInfraError(RuntimeError):
     """
 
 
+class IsolationUnavailableError(RuntimeError):
+    """No real OS isolation boundary was available and the caller required one.
+
+    Raised by ``run_in_isolation(..., allow_unsandboxed=False)`` instead of silently degrading to
+    the subprocess+Job-Object fallback (which gives resource governance + kill-on-close but NO
+    filesystem or network boundary). This lets a security-conscious deployment fail CLOSED --
+    refuse to run untrusted job code -- rather than run it unsandboxed.
+    """
+
+
 # stderr fingerprints that mean "the docker CLI/daemon failed", not "the job failed".
 _DOCKER_INFRA_MARKERS = (
     "cannot connect to the docker daemon",
@@ -428,6 +438,7 @@ def run_in_isolation(
     limits: Limits = Limits(),
     should_yield: YieldFn = lambda: False,
     host_side: bool = False,
+    allow_unsandboxed: bool = True,
 ) -> dict:
     """Execute a job via jobkit inside the best available local boundary.
 
@@ -442,6 +453,13 @@ def run_in_isolation(
     device (GPU-in-container/Sandbox is broken -- see architecture.md §3.3), so GPU work runs
     host-side where CUDA sees the real device, and the Job Object's kill-on-close still
     delivers the sub-second instant-yield.
+
+    ``allow_unsandboxed`` (default ``True``, preserving current behavior) governs the fallback.
+    When ``False`` (a security-conscious deployment sets the worker's ``--require-isolation``),
+    the subprocess+Job-Object path -- which has resource governance + kill-on-close but NO
+    filesystem/network boundary -- is NOT used: if Docker cannot run the job, or the job is forced
+    host-side (GPU/AI) with no OS-enforced sandbox present, ``IsolationUnavailableError`` is raised
+    and the job is refused rather than run unsandboxed (fail closed).
     """
     with tempfile.TemporaryDirectory(prefix="onecompute-isolation-") as temp_name:
         work_dir = Path(temp_name)
@@ -455,12 +473,28 @@ def run_in_isolation(
                 _stage_payload(work_dir)
                 return _run_docker(in_path, out_path, work_dir, limits, should_yield)
             except _DockerInfraError as exc:
+                if not allow_unsandboxed:
+                    raise IsolationUnavailableError(
+                        f"Docker could not run the job ({exc}) and unsandboxed fallback is "
+                        "disabled (require-isolation); refusing to run without an OS boundary."
+                    ) from exc
                 logger.warning(
                     "Docker could not run the job (%s); falling back to subprocess+jobobject "
                     "(resource governance + kill-on-close only, no filesystem boundary).",
                     exc,
                 )
             # TimeoutError / RuntimeError (job-level) intentionally propagate.
+        elif not allow_unsandboxed:
+            # host_side (GPU/AI), or no Docker at all: the only remaining path is the unsandboxed
+            # subprocess, which is not a real OS boundary. Fail closed instead of running it.
+            reason = (
+                "host-side execution required (GPU/AI job) but no OS-enforced sandbox is available"
+                if host_side
+                else "Docker is unavailable and no other OS-enforced sandbox is present"
+            )
+            raise IsolationUnavailableError(
+                f"{reason}; refusing to run untrusted job code unsandboxed (require-isolation)."
+            )
         return _run_subprocess_with_existing_files(
             in_path,
             out_path,
