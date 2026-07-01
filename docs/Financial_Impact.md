@@ -28,6 +28,14 @@ OneCompute estimates savings by comparing recoverable endpoint compute capacity 
 
 The financial case is based on the idea that Microsoft already owns, powers, secures, and manages a large amount of device compute. If a portion of that capacity can be safely reclaimed without impacting employees, it can offset some internal cloud or batch workload demand.
 
+## Harvest intensity and user-experience safety
+
+These savings are modeled on a deliberately conservative harvest, not on pushing machines hard. The design intent is to reclaim only about **20 to 40 percent** of a device's idle compute, which is why the recoverable-hours assumptions above are modest (for example, only 3.0 recoverable hours per day for assigned laptops).
+
+This conservatism is what protects the employee experience. Users generally begin to perceive slowness only once sustained CPU sits around **50 percent or higher**. OneCompute stays well below that line by design: the on-device governor admits background work only into learned spare headroom, reserves a comfort margin above each employee's typical demand, requires a minimum amount of free headroom, runs only on AC power, and **yields the machine back in under a second** when the employee's own demand rises.
+
+The governor does carry high utilization ceilings (an 80 percent admission ceiling and a 95 percent yield cap), but those are **safety maxima the system should rarely approach, never targets**. Normal operation sits far below them. The practical consequence for this model: the projected savings are reachable **without throttling machines to high utilization and without degrading productivity**. We do not need to run devices near their ceiling to hit these numbers; a light, conservative harvest is sufficient.
+
 ## Year 1 target case
 
 | Metric | Estimate | Commentary |
