@@ -281,6 +281,43 @@
     .ceiling .divider { height: 1px; background: var(--border); }
     .ceiling .note { color: var(--text-soft); font-size: 12px; }
 
+    /* ---------- Measured idle headroom (opt-in measurement-only pilot) ---------- */
+    .measurement { margin-bottom: 20px; }
+    .measurement-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    .measurement-head .m-left { display: grid; gap: 3px; max-width: 68ch; }
+    .measurement .section-title { margin-bottom: 2px; }
+    .measurement-sub { color: var(--text-muted); font-size: 13px; line-height: 1.45; }
+    .measurement-cue {
+      font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--accent-2);
+      border: 1px solid color-mix(in srgb, var(--accent-2) 38%, var(--border));
+      background: color-mix(in srgb, var(--accent-2) 8%, var(--surface));
+      padding: 4px 11px; border-radius: 999px; white-space: nowrap;
+    }
+    .measurement-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.35fr);
+      gap: 18px 30px; align-items: center; margin-top: 18px;
+    }
+    .measurement-headline { display: grid; gap: 5px; }
+    .measurement-headline .m-big {
+      font-size: clamp(34px, 5vw, 52px);
+      font-weight: 850;
+      letter-spacing: -0.03em;
+      line-height: 1;
+      color: var(--accent-2);
+      font-variant-numeric: tabular-nums;
+    }
+    .measurement-headline .note { color: var(--text-soft); font-size: 12px; max-width: 44ch; }
+    .measurement-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px 20px; }
+    .measurement-stats .m-stat { display: grid; gap: 3px; }
+    .measurement-stats .m-stat strong {
+      font-size: clamp(17px, 1.9vw, 21px); font-weight: 800;
+      font-variant-numeric: tabular-nums; color: var(--text);
+    }
+    .measurement-stats .m-stat.gpu strong { color: var(--accent-2); }
+    .measurement-empty { margin-top: 14px; color: var(--text-soft); font-size: 13px; line-height: 1.45; }
+
     /* ---------- Fleet-at-a-glance stat bar (one panel, 3 symmetric columns) ---------- */
     .statbar {
       display: grid;
@@ -775,6 +812,7 @@
     @media (max-width: 720px) {
       .statbar { grid-template-columns: 1fr; }
       .statbar-item + .statbar-item { border-left: none; border-top: 1px solid var(--border); }
+      .measurement-body { grid-template-columns: 1fr; }
     }
     @media (max-width: 560px) {
       .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -855,6 +893,43 @@
           <span class="note">Peak NPU aggregate at full Copilot+ fleet adoption. A ceiling, not a delivery.</span>
         </div>
       </div>
+    </section>
+
+    <!-- ===== Measured idle headroom (opt-in measurement-only pilot) ===== -->
+    <section id="measurement" class="measurement card card-pad" aria-label="Measured idle headroom from the opt-in measurement pilot" hidden>
+      <div class="measurement-head">
+        <div class="m-left">
+          <h2 class="section-title">Measured idle headroom</h2>
+          <p id="measurementSub" class="measurement-sub">From the opt-in measurement pilot: MEASURED spare capacity across the fleet.</p>
+        </div>
+        <span class="measurement-cue">Measured &middot; estimate</span>
+      </div>
+      <div id="measurementBody" class="measurement-body" hidden>
+        <div class="measurement-headline">
+          <span class="label">Recoverable CPU headroom</span>
+          <span id="measurementCpuRange" class="m-big">0-0%</span>
+          <span class="note">Conservatively-recoverable CPU headroom estimated from measured idle profiles. An estimate, not a promise.</span>
+        </div>
+        <div class="measurement-stats">
+          <div class="m-stat">
+            <span class="label">Contributing devices</span>
+            <strong id="measurementDevices">0</strong>
+          </div>
+          <div class="m-stat">
+            <span class="label">Avg CPU load</span>
+            <strong id="measurementCpuAvg">0%</strong>
+          </div>
+          <div class="m-stat gpu">
+            <span class="label">GPU headroom</span>
+            <strong id="measurementGpuRange">0-0%</strong>
+          </div>
+          <div class="m-stat">
+            <span class="label">RAM headroom</span>
+            <strong id="measurementRam">0%</strong>
+          </div>
+        </div>
+      </div>
+      <p id="measurementEmpty" class="measurement-empty" hidden>Awaiting measurement profiles - deploy workers with --measure-only.</p>
     </section>
 
     <!-- ===== Fleet at a glance (consolidated: each metric appears once) ===== -->
@@ -997,6 +1072,15 @@
       statusPill: el("statusPill"), statusText: el("statusText"),
       creditsHero: el("creditsHero"),
       measuredFigure: el("measuredFigure"),
+      measurement: el("measurement"),
+      measurementSub: el("measurementSub"),
+      measurementBody: el("measurementBody"),
+      measurementCpuRange: el("measurementCpuRange"),
+      measurementCpuAvg: el("measurementCpuAvg"),
+      measurementGpuRange: el("measurementGpuRange"),
+      measurementRam: el("measurementRam"),
+      measurementDevices: el("measurementDevices"),
+      measurementEmpty: el("measurementEmpty"),
       statJobs: el("statJobs"), statRate: el("statRate"),
       statFleet: el("statFleet"), statFleetSub: el("statFleetSub"),
       tiles: el("tiles"),
@@ -1502,6 +1586,51 @@
       }
     }
 
+    // ---- Measured idle headroom (opt-in measurement-only pilot) ----
+    // Renders GET /measurement (MeasurementSummary). Every figure is a percentage estimate
+    // derived from MEASURED idle profiles, using the governor's comfort margin and a
+    // conservative harvest fraction. It is an estimate, never a promise.
+    function renderMeasurement(m) {
+      const devices = Number(m && m.device_count) || 0;
+      const margin = fmt1(m && m.margin_pct);
+      const harvestLow = fmt1(((m && m.harvest_low) || 0) * 100);
+      const harvestHigh = fmt1(((m && m.harvest_high) || 0) * 100);
+      const basis = `estimate; governor comfort margin ${margin}%, conservative ${harvestLow}-${harvestHigh}% harvest`;
+      if (devices > 0) {
+        const cpu = m.cpu || {}, gpu = m.gpu || {};
+        const unit = devices === 1 ? "device" : "devices";
+        E.measurementSub.textContent =
+          `From the opt-in measurement pilot: MEASURED spare capacity across ${fmtInt(devices)} contributing ${unit} (${basis}).`;
+        E.measurementCpuRange.textContent = `${fmt1(cpu.recoverable_low)}-${fmt1(cpu.recoverable_high)}%`;
+        E.measurementCpuAvg.textContent = `${fmt1(cpu.avg)}%`;
+        E.measurementGpuRange.textContent = `${fmt1(gpu.recoverable_low)}-${fmt1(gpu.recoverable_high)}%`;
+        E.measurementRam.textContent = `${fmt1(m.ram_headroom)}%`;
+        E.measurementDevices.textContent = fmtInt(devices);
+        E.measurementBody.hidden = false;
+        E.measurementEmpty.hidden = true;
+      } else {
+        // Empty fleet: stay calm, never render a hollow "0-0%".
+        E.measurementSub.textContent =
+          `From the opt-in measurement pilot: MEASURED spare capacity across the fleet (${basis}).`;
+        E.measurementBody.hidden = true;
+        E.measurementEmpty.hidden = false;
+      }
+      E.measurement.hidden = false;
+    }
+
+    // Optional endpoint: an older orchestrator may not serve /measurement. On any non-OK
+    // response or fetch failure, hide the beat rather than throwing or logging, so the
+    // dashboard degrades cleanly.
+    async function pollMeasurement() {
+      try {
+        const res = await fetch("/measurement", { cache: "no-store" });
+        if (!res.ok) { E.measurement.hidden = true; return; }
+        renderMeasurement(await res.json());
+      } catch {
+        E.measurement.hidden = true;
+      }
+    }
+
     async function poll() {
       try {
         const res = await fetch("/state", { cache: "no-store" });
@@ -1510,6 +1639,7 @@
         setStatus("live", "Live");
         renderState(state);
         await pollEvents();
+        await pollMeasurement();
       } catch (err) {
         setStatus("offline", `Reconnecting… (${err.message})`);
       }

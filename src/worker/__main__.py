@@ -83,6 +83,10 @@ def run_measure_loop(
 ) -> int:
     """Measurement-only loop for the low-risk pilot: fold this machine's live CPU/GPU/RAM into the
     on-device usage profile and (if telemetry is on) append a local ``measure`` event each tick.
+    It also uploads the learned envelope to the orchestrator on the first sample and about every
+    five minutes after (opt-in, best-effort via ``agent.report_profile``) so the central fleet
+    measurement view can roll it up; a failed upload is swallowed so the pilot keeps working with
+    no reachable orchestrator.
 
     It **never** pulls or runs a job -- ``poll_once`` / ``run_once`` / ``run_guarded`` / ``run_job``
     are never called -- so an org can run a "measure first, run workloads later" pilot with zero
@@ -97,6 +101,9 @@ def run_measure_loop(
     interrupted, terminating cleanly on Ctrl-C. The caller persists the learned profile on exit.
     """
     interval = max(0.0, interval)
+    # Upload the learned envelope to the orchestrator on the first sample (so the device shows up
+    # in the central measurement view fast) and roughly every five minutes after.
+    post_every = max(1, round(300.0 / interval)) if interval > 0 else 1
     samples = 0
     try:
         while True:
@@ -107,12 +114,17 @@ def run_measure_loop(
             governor.profiler.record(cpu, gpu, ram)  # learn the hour-of-week usage envelope
             telem.log("measure", cpu=round(cpu, 1), gpu=round(gpu, 1), ram=round(ram, 1))
             samples += 1
+            if samples == 1 or samples % post_every == 0:
+                agent.report_profile(governor.profiler)  # opt-in, best-effort, offline-safe
             print(f"measure: cpu={cpu:.1f}% gpu={gpu:.1f}% ram={ram:.1f}% (no jobs will run)")
             if once:
                 break
             time.sleep(interval)
     except KeyboardInterrupt:
         print("stopped")
+    finally:
+        # Land the final envelope so the central rollup reflects the full pilot window.
+        agent.report_profile(governor.profiler)
     return samples
 
 

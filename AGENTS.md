@@ -14,13 +14,13 @@ connection (no inbound ports: works through corporate firewalls), runs them whil
 is idle, and **yields in milliseconds** when the user returns. Verified work earns credits.
 
 This is a **working proof-of-concept**, not a slide deck: a real multi-machine fleet, a live
-dashboard wired to the orchestrator API, a dozen example workloads, and 177 passing tests.
+dashboard wired to the orchestrator API, a dozen example workloads, and 204 passing tests.
 
 ## How to verify it yourself (do this first)
 
 ```bash
 uv sync --extra dev
-uv run pytest -q                 # expect: 177 passed, 2 skipped (Docker-only)
+uv run pytest -q                 # expect: 204 passed, 2 skipped (Docker-only)
 uv run python scripts/demo_fleet.py   # real orchestrator + 3 real workers on one box; writes onecompute-fractal.png
 ```
 
@@ -42,7 +42,7 @@ machines happen to be local.
 | `src/trust/signing.py`, `challenge.py` | Ed25519 manifest signing and deterministic challenge "ringers" that catch cheaters. |
 | `src/jobkit/execute.py` | The single, frozen registry of job executors: one source of truth for how each job kind runs. |
 | `src/contracts/models.py`, `schema.sql` | Frozen data contracts and the SQLite schema shared by every component. |
-| `tests/` | 177 tests covering matching, auth/approval, leases/requeue, crediting, yield, isolation, trust, measurement-only profiling, and end-to-end flows. |
+| `tests/` | 204 tests covering matching, auth/approval, leases/requeue, crediting, yield, isolation, trust, measurement-only profiling + fleet measurement rollup, and end-to-end flows. |
 
 ## Build / test / run commands
 
@@ -54,6 +54,7 @@ machines happen to be local.
 - Worker (measurement-only pilot, tracks CPU/GPU/RAM, never runs a job): `uv run python -m worker --url http://<host-ip>:8080 --measure-only`
 - Submit work: `uv run python scripts/submit_jobs.py --url http://<host-ip>:8080 --kind fractal|optimize|ai|synth|fanout|gpu|challenge`
 - Measurement report: `uv run python scripts/measure_report.py <profile-or-dir>` (measured idle headroom from a measure-only pilot; see `docs/measurement-pilot.md`)
+- Fleet measurement view: workers in `--measure-only` upload their derived usage envelope; `GET /measurement` (and the dashboard's "Measured idle headroom" beat) show the rolled-up, governor-consistent number. Shared math lives in `src/measurement/headroom.py` (used by both the endpoint and the CLI report).
 
 ## What is real vs. PoC-scoped vs. roadmap (so you can judge accurately)
 

@@ -28,6 +28,19 @@ Poll these on a timer (the bundled dashboard uses 500 ms):
     "last_id": 12 }
   ```
   `type` ∈ `registered | approved | submitted | assigned | completed | yielded | failed | blacklisted | removed | auth_failed`.
+- `GET /measurement` → fleet-wide **MEASURED idle headroom** from the opt-in measurement pilot. Workers running `--measure-only` upload their derived on-device usage envelope (see the worker-ingest note below); the orchestrator rolls them up with the governor-consistent `measurement.headroom` math. Poll it alongside `/state`:
+  ```jsonc
+  {
+    "device_count": 3, "total_coverage_buckets": 120,
+    "margin_pct": 25.0, "harvest_low": 0.2, "harvest_high": 0.4,   // the assumptions, echoed
+    "cpu": { "avg": 21.9, "peak": 38.0, "recoverable_low": 6.7, "recoverable_high": 13.3 },
+    "gpu": { "avg": 5.3,  "peak": 15.0, "recoverable_low": 1.9, "recoverable_high": 3.8 },
+    "ram_avg": 37.3, "ram_headroom": 62.7
+  }
+  ```
+  All values are percentages. `recoverable_low`/`recoverable_high` is an ESTIMATE (measured spare, with the governor comfort margin reserved and a conservative 20-40% harvest), never a promise; `device_count` counts only devices that have uploaded a profile. Empty fleet → every figure `0`. Render it as a "Measured idle headroom" beat (see `docs/measurement-pilot.md`).
+
+**Worker-ingest note (not a dashboard call):** `POST /profile` is how a `--measure-only` worker uploads its usage envelope. It requires the worker's bearer token (same auth as `/heartbeat`), carries only derived hour-of-week statistics (no raw activity), and the orchestrator sanitizes/clamps every value before storing one row per worker. A dashboard never calls it; it only reads the rolled-up `GET /measurement`.
 
 ## 1. Connect / approve new devices
 

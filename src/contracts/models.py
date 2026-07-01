@@ -235,3 +235,61 @@ class WorkloadView(BaseModel):
     # tile finishes). Shape depends on kind -- see docs/dashboard-api.md. The dashboard draws
     # this directly instead of re-implementing each workload's aggregation in the browser.
     summary: dict[str, Any] | None = None
+
+
+# --- measurement pilot (opt-in idle-headroom telemetry: POST /profile, GET /measurement) ------
+
+class UsageBucket(BaseModel):
+    """One hour-of-week usage bucket a worker reports for the measurement pilot: derived rolling
+    stats only (means/peaks, 0-100), never raw activity, files, or wall-clock timestamps (privacy
+    per docs/idea.md §8). ``index`` is the hour-of-week slot (0 = Mon 00:00 .. 167 = Sun 23:00)."""
+
+    index: int = 0
+    n: int = 0
+    cpu_mean: float = 0.0
+    cpu_max: float = 0.0
+    gpu_mean: float = 0.0
+    gpu_max: float = 0.0
+    ram_mean: float = 0.0
+    ram_max: float = 0.0
+
+
+class ProfileReport(BaseModel):
+    """POST /profile body: a worker's on-device usage envelope for the measurement pilot. Only
+    populated buckets (n > 0) are sent, and they carry no raw activity -- so the control plane
+    learns aggregate idle headroom without ever seeing what the machine was actually doing."""
+
+    worker_id: str
+    buckets: list[UsageBucket] = Field(default_factory=list)
+
+
+class ProfileIngestResponse(BaseModel):
+    accepted: bool = True
+    buckets_stored: int = 0     # populated buckets the orchestrator kept after sanitizing
+
+
+class MetricSummary(BaseModel):
+    """Fleet estimate for one resource: measured average/peak utilization and the ESTIMATED
+    conservatively-recoverable headroom range (percent)."""
+
+    avg: float = 0.0
+    peak: float = 0.0
+    recoverable_low: float = 0.0
+    recoverable_high: float = 0.0
+
+
+class MeasurementSummary(BaseModel):
+    """GET /measurement read model: fleet-wide measured idle headroom for the dashboard and the
+    pilot hand-off to Azure Compute + CISO. Every figure is an ESTIMATE from measured idle
+    profiles, computed by ``measurement.headroom`` with the governor's comfort margin and a
+    conservative harvest; the assumptions that produced it travel alongside it."""
+
+    device_count: int = 0
+    total_coverage_buckets: int = 0
+    margin_pct: float = 25.0
+    harvest_low: float = 0.20
+    harvest_high: float = 0.40
+    cpu: MetricSummary = Field(default_factory=MetricSummary)
+    gpu: MetricSummary = Field(default_factory=MetricSummary)
+    ram_avg: float = 0.0
+    ram_headroom: float = 0.0
