@@ -1,11 +1,9 @@
 """Runtime entrypoints for executing jobkit behind the T3 isolation seam.
 
-Two boundaries, one contract. ``run_in_isolation`` always preempts sub-second on a
-``should_yield()`` signal -- on BOTH the Docker-per-job path (poll ~20ms, then
-``docker kill <name>``) and the always-available subprocess+JobObject fallback
-(close the Job Object handle -> process tree dies). Active boundary is reported
-honestly via ``active_boundary()`` and a WARNING is logged whenever Docker is
-unreachable and we degrade to the subprocess path.
+One contract across optional MXC, Docker, and subprocess boundaries:
+``run_in_isolation`` always preempts sub-second on a ``should_yield()`` signal.
+Active boundary is reported honestly via ``active_boundary()`` and a WARNING is
+logged whenever a preferred boundary degrades to the next fallback.
 """
 
 from __future__ import annotations
@@ -30,6 +28,13 @@ from isolation.docker import (
     image_present,
 )
 from isolation.jobobject import assign_process, close, create_job_object
+from isolation.mxc import (
+    _MxcInfraError,
+    _run_mxc,
+    _stop_mxc,
+    mxc_available,
+    start_mxc,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +65,8 @@ class IsolationUnavailableError(RuntimeError):
     Raised by ``run_in_isolation(..., allow_unsandboxed=False)`` instead of silently degrading to
     the subprocess+Job-Object fallback (which gives resource governance + kill-on-close but NO
     filesystem or network boundary). This lets a security-conscious deployment fail CLOSED --
-    refuse to run untrusted job code -- rather than run it unsandboxed.
+    refuse to run untrusted job code -- rather than run it unsandboxed. MXC and Docker are real
+    boundaries and satisfy the requirement; the on-host subprocess path does not.
     """
 
 
@@ -87,9 +93,12 @@ def _looks_like_docker_infra_error(stderr: str) -> bool:
 def active_boundary() -> str:
     """Return the boundary ``run_in_isolation`` will actually use right now.
 
-    ``"docker"`` when the daemon responds, else ``"subprocess+jobobject"``. Lets the demo
-    / dashboard state the real boundary instead of guessing from ``shutil.which``.
+    ``"mxc"`` when the preview runtime probe passes, then ``"docker"`` when the
+    daemon responds, else ``"subprocess+jobobject"``. Lets the demo / dashboard
+    state the real boundary instead of guessing from ``shutil.which``.
     """
+    if mxc_available():
+        return "mxc"
     return "docker" if docker_available() else "subprocess+jobobject"
 
 
@@ -118,6 +127,21 @@ def _stage_payload(work_dir: Path) -> None:
     )
     for name in ("__init__.py", "__main__.py", "execute.py"):
         shutil.copy2(SRC_DIR / "jobkit" / name, jobkit_dir / name)
+
+
+def _stage_mxc_layout(root_dir: Path, in_path: Path, out_name: str) -> tuple[Path, Path, Path, Path, Path]:
+    """Stage MXC input, payload, and writable work as separate policy roots."""
+    input_dir = root_dir / "input"
+    payload_root = root_dir / "payload"
+    payload_dir = payload_root / "src"
+    writable_dir = root_dir / "work"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    writable_dir.mkdir(parents=True, exist_ok=True)
+    mxc_in_path = input_dir / in_path.name
+    mxc_out_path = writable_dir / out_name
+    shutil.copy2(in_path, mxc_in_path)
+    _stage_payload(payload_root)
+    return mxc_in_path, mxc_out_path, input_dir, payload_dir, writable_dir
 
 
 def _docker_force_remove(name: str) -> None:
@@ -195,22 +219,29 @@ class JobHandle:
         job_handle=None,
         cleanup=None,
         container_name: str | None = None,
+        mxc_name: str | None = None,
     ) -> None:
         self.proc = proc
         self.out_path = out_path
         self._job_handle = job_handle
         self._cleanup = cleanup
         self._container_name = container_name
+        self._mxc_name = mxc_name
         self._killed = False
 
     def kill(self) -> None:
         """Kill the running job process tree as best as the active backend allows.
 
-        Docker backend: stop the **container** by name (``docker kill``/``rm -f``) -- not
-        just the docker CLI client, which would leave the container running. Subprocess
-        backend: close the Job Object handle (kill-on-close kills the whole tree).
+        MXC backend: close the Job Object handle around ``wxc-exec`` and terminate the
+        runtime client. Docker backend: stop the **container** by name
+        (``docker kill``/``rm -f``), not just the docker CLI client, which would leave
+        the container running. Subprocess backend: close the Job Object handle
+        (kill-on-close kills the whole tree).
         """
         self._killed = True
+        if self._mxc_name is not None:
+            _stop_mxc(self._mxc_name, self.proc, self._job_handle)
+            return
         if self._container_name is not None:
             _stop_container(self._container_name, self.proc)
             try:
@@ -305,6 +336,41 @@ def start_in_isolation(
 
     def cleanup() -> None:
         temp_dir.cleanup()
+
+    if mxc_available():
+        try:
+            mxc_root = work_dir / "mxc"
+            mxc_in_path, mxc_out_path, input_dir, payload_dir, writable_dir = _stage_mxc_layout(
+                mxc_root,
+                in_path,
+                out_path.name,
+            )
+            proc, job_handle, mxc_name = start_mxc(
+                mxc_root,
+                mxc_in_path.name,
+                mxc_out_path.name,
+                limits,
+                input_dir=input_dir,
+                payload_dir=payload_dir,
+                writable_dir=writable_dir,
+            )
+
+            def cleanup_mxc() -> None:
+                close(job_handle)
+                cleanup()
+
+            return JobHandle(
+                proc,
+                mxc_out_path,
+                job_handle=job_handle,
+                cleanup=cleanup_mxc,
+                mxc_name=mxc_name,
+            )
+        except _MxcInfraError as exc:
+            logger.warning(
+                "MXC isolation start failed (%s); falling back to Docker/subprocess.",
+                exc,
+            )
 
     if docker_available():
         try:
@@ -442,11 +508,11 @@ def run_in_isolation(
 ) -> dict:
     """Execute a job via jobkit inside the best available local boundary.
 
-    Docker-per-job is used when the daemon actually responds; if Docker can't run the job
-    (daemon down/image missing/start failure) we fall back to a restricted subprocess
-    governed by a Windows Job Object. Both paths preempt sub-second on ``should_yield()``.
-    A real job timeout or job failure on the Docker path propagates (no silent re-run on a
-    weaker boundary). Falling back is logged at WARNING -- no silent degradation.
+    MXC is preferred when the preview runtime probe passes. Docker-per-job is used
+    when MXC is absent and the daemon actually responds. If MXC or Docker cannot run
+    the job due to an infrastructure failure, we fall back to the next boundary and
+    log a WARNING. Real job timeouts or job failures on MXC or Docker propagate, so
+    no job is silently re-run on a weaker boundary.
 
     ``host_side=True`` forces the on-host subprocess+Job-Object path even when the Docker
     daemon is up. GPU jobs use this: a Linux container has no access to the host's CUDA
@@ -454,12 +520,13 @@ def run_in_isolation(
     host-side where CUDA sees the real device, and the Job Object's kill-on-close still
     delivers the sub-second instant-yield.
 
-    ``allow_unsandboxed`` (default ``True``, preserving current behavior) governs the fallback.
-    When ``False`` (a security-conscious deployment sets the worker's ``--require-isolation``),
-    the subprocess+Job-Object path -- which has resource governance + kill-on-close but NO
-    filesystem/network boundary -- is NOT used: if Docker cannot run the job, or the job is forced
+    ``allow_unsandboxed`` (default ``True``, preserving current behavior) governs the on-host
+    subprocess fallback. When ``False`` (a deployment sets the worker's ``--require-isolation``),
+    that fallback -- which has resource governance + kill-on-close but NO filesystem/network
+    boundary -- is NOT used: if neither MXC nor Docker can run the job, or the job is forced
     host-side (GPU/AI) with no OS-enforced sandbox present, ``IsolationUnavailableError`` is raised
-    and the job is refused rather than run unsandboxed (fail closed).
+    and the job is refused rather than run unsandboxed (fail closed). MXC and Docker both count as
+    real boundaries and satisfy the requirement.
     """
     with tempfile.TemporaryDirectory(prefix="onecompute-isolation-") as temp_name:
         work_dir = Path(temp_name)
@@ -468,29 +535,52 @@ def run_in_isolation(
         with in_path.open("w", encoding="utf-8") as fh:
             json.dump({"kind": kind, "input": input}, fh)
 
-        if docker_available() and not host_side:
+        if not host_side and mxc_available():
+            try:
+                mxc_root = work_dir / "mxc"
+                mxc_in_path, mxc_out_path, input_dir, payload_dir, writable_dir = _stage_mxc_layout(
+                    mxc_root,
+                    in_path,
+                    out_path.name,
+                )
+                return _run_mxc(
+                    mxc_in_path,
+                    mxc_out_path,
+                    mxc_root,
+                    limits,
+                    should_yield,
+                    input_dir=input_dir,
+                    payload_dir=payload_dir,
+                    writable_dir=writable_dir,
+                )
+            except _MxcInfraError as exc:
+                logger.warning(
+                    "MXC could not run the job (%s); falling back to Docker/subprocess.",
+                    exc,
+                )
+            # TimeoutError / RuntimeError (job-level) intentionally propagate.
+
+        if not host_side and docker_available():
             try:
                 _stage_payload(work_dir)
                 return _run_docker(in_path, out_path, work_dir, limits, should_yield)
             except _DockerInfraError as exc:
-                if not allow_unsandboxed:
-                    raise IsolationUnavailableError(
-                        f"Docker could not run the job ({exc}) and unsandboxed fallback is "
-                        "disabled (require-isolation); refusing to run without an OS boundary."
-                    ) from exc
                 logger.warning(
                     "Docker could not run the job (%s); falling back to subprocess+jobobject "
                     "(resource governance + kill-on-close only, no filesystem boundary).",
                     exc,
                 )
             # TimeoutError / RuntimeError (job-level) intentionally propagate.
-        elif not allow_unsandboxed:
-            # host_side (GPU/AI), or no Docker at all: the only remaining path is the unsandboxed
-            # subprocess, which is not a real OS boundary. Fail closed instead of running it.
+
+        # Reached only when no OS-enforced boundary (MXC or Docker) ran the job: a host-side
+        # (GPU/AI) job, or neither boundary available/able. The only remaining path is the
+        # unsandboxed subprocess. Fail closed instead of running it when the caller requires
+        # real isolation.
+        if not allow_unsandboxed:
             reason = (
                 "host-side execution required (GPU/AI job) but no OS-enforced sandbox is available"
                 if host_side
-                else "Docker is unavailable and no other OS-enforced sandbox is present"
+                else "no OS-enforced sandbox (MXC or Docker) is available"
             )
             raise IsolationUnavailableError(
                 f"{reason}; refusing to run untrusted job code unsandboxed (require-isolation)."

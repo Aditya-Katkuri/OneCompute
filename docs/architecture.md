@@ -265,7 +265,7 @@ sequenceDiagram
 
 | Layer | PoC (build) | Roadmap (document) |
 |---|---|---|
-| **Isolation** | **Docker container per job** (`--network none`, ro mounts, `--rm`) + subprocess/Job Object fallback | Windows Sandbox (Hyper-V) where available; AppContainer / Win32 App Isolation; [`microsoft/mxc`](https://github.com/microsoft/mxc) policy layer |
+| **Isolation** | **MXC preview backend** ([`microsoft/mxc`](https://github.com/microsoft/mxc)) when `wxc-exec --probe` passes, using a deny-by-default policy, read-only payload, writable job work dir, no elevation, and graceful fallback to Docker (`--network none`, ro mounts, `--rm`) then subprocess/Job Object. MXC preview is not claimed as a hard security boundary yet, and Windows denied-path enforcement still needs validation. | Windows Sandbox (Hyper-V) where available; AppContainer / Win32 App Isolation; production MXC once preview caveats are retired and policy enforcement is validated |
 | **Code/data integrity** | cosign-signed manifests, hash-verify before run | full SLSA-style provenance |
 | **Result trust** | challenge tasks + adaptive replication + fuzzy comparators | formal verifiable compute |
 | **Confidentiality** | data minimization, no-persistence | **TEE / confidential compute** (needs datacenter GPUs: consumer RTX/NPU have no GPU TEE) |
