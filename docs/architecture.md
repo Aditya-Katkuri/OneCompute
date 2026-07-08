@@ -29,7 +29,7 @@ flowchart TB
         SCH[Scheduler<br/>capability match + lease]
         VER[Verifier<br/>challenge tasks + adaptive replication]
         LEDG[(Rewards ledger<br/>+ job/worker state<br/>SQLite)]
-        SIGN[Manifest signer<br/>cosign]
+        SIGN[Manifest signer<br/>Ed25519]
         DASH[Dashboard<br/>live fleet · jobs · points]
     end
     subgraph Fleet["Opt-in employee PCs"]
@@ -52,7 +52,7 @@ flowchart TB
 1. **Worker agent**: Python process on each opt-in PC. Detects idleness, advertises capability, pulls signed jobs, runs them in a sandbox, returns results, yields instantly when the human returns. When the fleet runs gated, it first **joins via a device-code approval** (shows a short code, waits until an admin approves it in the dashboard) and then streams live per-device usage (~1s).
 2. **Orchestrator**: FastAPI app on the dev box. Control plane + scheduler + verifier + ledger + dashboard. One process for the PoC. It also exposes a **dashboard-facing API** (approve a worker, launch a whole workload across the fleet in one call, read a workload/job's output, list the launch catalog); see §4.1 and [`dashboard-api.md`](./dashboard-api.md).
 3. **Job/manifest model**: the signed contract between submitter and worker.
-4. **Sandbox runtime**: a **Docker container per job** (`--network none`, read-only mounts, `--rm`) isolating each job on the worker, with an always-available **subprocess + Job Object** fallback when Docker is unreachable (Windows Sandbox is the documented ideal; see §3.3).
+4. **Sandbox runtime**: an **MXC OS-enforced container** when a real `wxc-exec` runtime is present, else a **Docker container per job** (`--network none`, read-only mounts, `--rm`), else an always-available **subprocess + Job Object** fallback. A worker can run `--require-isolation` to **fail closed** (refuse the job) rather than use the unsandboxed fallback (Windows Sandbox is the documented ideal; see §3.3).
 5. **Rewards/metering service**: turns verified work into points.
 
 > **Demo workloads.** The PoC fans an **example workload catalog, originally four, now ~10 launchable kinds** (`fractal`, `optimize`, `ai.batch_infer`, `ai.synth`, `montecarlo`, `hashcrack`, `ai.infer`, `ai.eval`, `ai.graph`, `data.transform`), across the fleet. The original worked example is two non-AI (`fractal`, `optimize`) and two AI (`ai.batch_infer`, `ai.synth`), with a **hardcoded split (one tile per machine)**; the dynamic governor (§3.2) is deliberately set aside for the demo. Fully documented in [`workloads.md`](./workloads.md) (and §6).
@@ -118,22 +118,27 @@ OneCompute doesn't just wait for a fully-idle machine: it harvests the **learned
 sequenceDiagram
     participant A as Worker agent
     participant V as Manifest verify (sig + hashes)
+    participant MX as MXC container (preferred, OS-enforced)
     participant DK as Docker container (per job)
     participant JO as subprocess + Job Object (fallback)
-    A->>V: verify signature + code/data hashes
+    A->>V: verify signature + input hash + expiry<br/>(pinned signer if --trusted-key)
     V-->>A: ok (else refuse)
-    alt Docker daemon available (primary)
+    alt MXC runtime present (preferred)
+        A->>MX: wxc-exec, deny-by-default policy<br/>read-only payload, writable work dir, no elevation
+        MX-->>A: result out, sandbox torn down
+    else Docker daemon available
         A->>DK: docker run --rm --network none<br/>read-only mount, --memory cap, python:3.12-slim
         DK-->>A: copy result out, container removed (--rm)
-    else Docker unreachable (always-available fallback)
-        A->>JO: run under Job Object (CPU/mem cap, kill-on-close)
+    else no OS sandbox (MXC + Docker absent)
+        A->>JO: run under Job Object (CPU/mem cap, kill-on-close)<br/>or refuse if --require-isolation
         JO-->>A: result artifact
     end
     A->>A: hash result, attach proof
 ```
 
+- **Preferred boundary (when present) = an MXC (Microsoft Execution Containers) OS-enforced container** (`src/isolation/mxc.py`): `active_boundary()` selects it when `wxc-exec --probe` passes, using a deny-by-default policy, read-only payload, writable per-job work dir, and no elevation. It is **fail-closed and inert until a real runtime exists** (the probe reports unavailable on absent binaries, errors, timeouts, or host-prep warnings), so current machines keep their Docker/Job-Object behavior. Merged but not yet validated against a real runtime; see [`mxc-sandbox.md`](./mxc-sandbox.md).
 - **Implemented boundary = a Docker Linux container per job** (`src/isolation/runner.py` → `isolation/docker.py`): `docker run --rm --network none`, read-only input mount, `--memory` cap, base image `python:3.12-slim`. **Disposable** (`--rm` → no-persistence for free), no inbound network, killable by name (`docker kill`) for sub-second yield, and it needs **no admin / Hyper-V / nested-virt**, so it runs on any demo PC.
-- **Always-available fallback = a subprocess under a [Windows Job Object](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)** (`src/isolation/jobobject.py`): CPU/memory caps + `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` (closing the handle tears down the whole process tree). `runner.py`'s `active_boundary()` reports which path is live and logs a WARNING when Docker is unreachable and it degrades to this path.
+- **Always-available fallback = a subprocess under a [Windows Job Object](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)** (`src/isolation/jobobject.py`): CPU/memory caps + `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` (closing the handle tears down the whole process tree). `runner.py`'s `active_boundary()` reports which path is live and logs a WARNING when it degrades to this path. A worker started with **`--require-isolation` fails closed here** (raises `IsolationUnavailableError` and refuses the job) rather than run unsandboxed, and likewise refuses host-side GPU/AI when no OS sandbox is present.
 - **Documented ideal (not built in the PoC) = [Windows Sandbox](https://learn.microsoft.com/en-us/windows/security/application-security/application-isolation/windows-sandbox/windows-sandbox-configure-using-wsb-file)** via a generated `.wsb`: Hyper-V kernel isolation, disposable, read-only `MappedFolders`, `Networking=Disable`. It needs Win Pro/Enterprise + Hyper-V + elevation (and won't nest in a VM), so the PoC ships the Docker path by default and keeps Hyper-V isolation as the security-boundary upgrade. See §13.
 
 > **GPU-in-Sandbox is documented NOT to work** (the critique pass confirmed this): `VGpu=Enable` exposes only the Microsoft Virtual Render Driver, so **CUDA DLLs are absent and CUDA jobs fail** ([Windows-Sandbox issue #42](https://github.com/microsoft/Windows-Sandbox/issues/42), closed "not planned"). **PoC decision (see §13):** CPU jobs run in the Docker container sandbox for a real isolation beat (Windows Sandbox where one is available); **GPU jobs run host-side under a Job Object** where CUDA sees the real device, with the verbal caveat that GPU memory-isolation is the TEE roadmap. Timebox any GPU-in-Sandbox spike to ~3h, then take the fallback.
@@ -199,7 +204,7 @@ A job is a **signed manifest** + input payload. The manifest is the trust contra
 }
 ```
 
-- **Signed with [Sigstore cosign](https://github.com/sigstore/cosign)** (signs arbitrary artifacts; keyless OIDC maps to corporate SSO). The worker verifies signature + `code_sha256` + `input_sha256` **before** executing: a compromised orchestrator or MITM cannot inject runnable code ([BOINC code-signing pattern](https://github.com/BOINC/boinc/wiki/SecurityIssues)).
+- **Signed with Ed25519** (`src/trust/signing.py`; cosign/OIDC is the roadmap, see §11). The worker verifies signature + `input_sha256` + expiry **before** executing and refuses on mismatch. By default the public key travels with the manifest (integrity); a worker can **pin an out-of-band signer** with `--trusted-key` / `$ONECOMPUTE_TRUSTED_PUBKEY` so a compromised orchestrator or MITM cannot inject a self-signed job ([BOINC code-signing pattern](https://github.com/BOINC/boinc/wiki/SecurityIssues)).
 - **Workload grouping.** Jobs launched together via `POST /workloads` (the fleet tiles of one workload) share a `workload_id` column so the dashboard can read them back as a unit (`GET /workloads/{id}`).
 - **Tamper-evident audit log** (Rekor-style append-only) of who-submitted-what-ran-where: the non-repudiation property an enterprise security review demands.
 
@@ -265,8 +270,8 @@ sequenceDiagram
 
 | Layer | PoC (build) | Roadmap (document) |
 |---|---|---|
-| **Isolation** | **MXC preview backend** ([`microsoft/mxc`](https://github.com/microsoft/mxc)) when `wxc-exec --probe` passes, using a deny-by-default policy, read-only payload, writable job work dir, no elevation, and graceful fallback to Docker (`--network none`, ro mounts, `--rm`) then subprocess/Job Object. MXC preview is not claimed as a hard security boundary yet, and Windows denied-path enforcement still needs validation. | Windows Sandbox (Hyper-V) where available; AppContainer / Win32 App Isolation; production MXC once preview caveats are retired and policy enforcement is validated |
-| **Code/data integrity** | cosign-signed manifests, hash-verify before run | full SLSA-style provenance |
+| **Isolation** | **MXC preview backend** ([`microsoft/mxc`](https://github.com/microsoft/mxc)) when `wxc-exec --probe` passes, using a deny-by-default policy, read-only payload, writable job work dir, no elevation, and graceful fallback to Docker (`--network none`, ro mounts, `--rm`) then subprocess/Job Object. A worker can run **`--require-isolation` to fail closed** (refuse the job) when no OS-enforced sandbox is available. MXC preview is not claimed as a hard security boundary yet, and Windows denied-path enforcement still needs validation. | Windows Sandbox (Hyper-V) where available; AppContainer / Win32 App Isolation; production MXC once preview caveats are retired and policy enforcement is validated |
+| **Code/data integrity** | **Ed25519-signed** manifests, hash + expiry verify before run; optional **out-of-band pinned signer** (`--trusted-key`) blocks a self-signed job from a compromised control plane | cosign/OIDC/Rekor + full SLSA-style provenance |
 | **Result trust** | challenge tasks + adaptive replication + fuzzy comparators | formal verifiable compute |
 | **Confidentiality** | data minimization, no-persistence | **TEE / confidential compute** (needs datacenter GPUs: consumer RTX/NPU have no GPU TEE) |
 | **Onboarding / admission** | **device-code dashboard-approval gate** (`--require-approval`): a joining worker is PENDING with a short code until an admin approves it; gets no work until then | Intune/SSO-driven enrollment + per-worker certs |
@@ -278,7 +283,7 @@ sequenceDiagram
 
 ## 10. PoC build plan (suggested order)
 
-> **Current status (branch `main`):** steps 2–9 are implemented and green (159 tests pass), plus the additive dashboard-readiness layer (device-code approval gate, four fanned example workloads, `POST /workloads` launch + read API, live per-device usage stream). The dashboard **front-end UI is owned by the dashboard team**; the backend is integration-ready (see [`dashboard-api.md`](./dashboard-api.md)); we don't ship a finished UI.
+> **Current status (branch `main`):** steps 2–9 are implemented and green (239 tests pass, 2 skipped), plus the additive dashboard-readiness layer (device-code approval gate, four fanned example workloads, `POST /workloads` launch + read API, live per-device usage stream). The dashboard **front-end UI is owned by the dashboard team**; the backend is integration-ready (see [`dashboard-api.md`](./dashboard-api.md)); we don't ship a finished UI.
 
 1. **Spike the two unknowns first** *(de-risk day 1)*: (a) GPU passthrough into Windows Sandbox on the real demo SKU; (b) plain-HTTPS long-poll reachable across the corporate LAN.
 2. **Orchestrator skeleton**: FastAPI: `register`, `jobs/next` (long-poll), `heartbeat`, `results`; SQLite state; in-process scheduler.
@@ -301,8 +306,8 @@ sequenceDiagram
 | Control plane | **FastAPI + uvicorn** (borrowed `uv` env) | Outbound long-poll, no inbound ports. |
 | State / queue / ledger | **SQLite** | Zero infra; one orchestrator. → NATS JetStream later. |
 | Worker agent | **Python + ctypes + pynvml** | Win32 idle APIs + GPU advert, no heavy deps. |
-| Isolation | **Docker per job** (`--network none`, ro mounts, `--rm`) + subprocess/Job Object fallback | Per-job disposable boundary, no admin/Hyper-V needed; instant kill-on-close. Windows Sandbox is the documented ideal. |
-| Signing | **Local Ed25519** (`cryptography`) for the PoC | ~30 lines; demo the *refusal* on a flipped byte. cosign/OIDC is roadmap (needs egress + SSO wiring). |
+| Isolation | **MXC OS-enforced container** when a `wxc-exec` runtime is present, else **Docker per job** (`--network none`, ro mounts, `--rm`), else subprocess/Job Object fallback; `--require-isolation` fails closed | Preferred OS boundary is MXC; Docker is the zero-admin default; instant kill-on-close. Windows Sandbox is the documented ideal. |
+| Signing | **Local Ed25519** (`cryptography`, pinned direct dep) for the PoC; optional **out-of-band pinned signer** (`--trusted-key` / `$ONECOMPUTE_TRUSTED_PUBKEY`) | ~30 lines; demo the *refusal* on a flipped byte. cosign/OIDC is roadmap (needs egress + SSO wiring). |
 | AI workload | **Ollama** (local, OpenAI-compatible) + **anthropic / openai SDK** | Embarrassingly-parallel batch inference. |
 | Inference clients | **anthropic / openai SDKs** (borrowed env) | For eval/agent job kinds. |
 | Dashboard | **FastAPI + SSE/WebSocket + lightweight web UI** | Live fleet + points. |
