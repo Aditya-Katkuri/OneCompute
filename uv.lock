@@ -1281,6 +1281,7 @@ source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
     { name = "azure-identity" },
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "matplotlib" },
     { name = "openai" },
@@ -1315,6 +1316,7 @@ dev = [
 requires-dist = [
     { name = "anthropic", specifier = ">=0.30.0" },
     { name = "azure-identity", specifier = ">=1.25.3" },
+    { name = "cryptography", specifier = ">=44.0.1" },
     { name = "fastapi", specifier = ">=0.136.3" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27.0" },
     { name = "matplotlib", specifier = ">=3.8.0" },
