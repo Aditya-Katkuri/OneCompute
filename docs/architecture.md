@@ -272,6 +272,7 @@ sequenceDiagram
 |---|---|---|
 | **Isolation** | **MXC preview backend** ([`microsoft/mxc`](https://github.com/microsoft/mxc)) when `wxc-exec --probe` passes, using a deny-by-default policy, read-only payload, writable job work dir, no elevation, and graceful fallback to Docker (`--network none`, ro mounts, `--rm`) then subprocess/Job Object. A worker can run **`--require-isolation` to fail closed** (refuse the job) when no OS-enforced sandbox is available. MXC preview is not claimed as a hard security boundary yet, and Windows denied-path enforcement still needs validation. | Windows Sandbox (Hyper-V) where available; AppContainer / Win32 App Isolation; production MXC once preview caveats are retired and policy enforcement is validated |
 | **Code/data integrity** | **Ed25519-signed** manifests, hash + expiry verify before run; optional **out-of-band pinned signer** (`--trusted-key`) blocks a self-signed job from a compromised control plane | cosign/OIDC/Rekor + full SLSA-style provenance |
+| **Transport** | optional **TLS** (`--tls-cert/--tls-key`) and **mutual TLS** (`--tls-client-ca` server; `--client-cert/--client-key` worker, pinning the CA via `--tls-ca`); per-client **rate limiting** (`--rate-limit`, default 600/min, 429 + Retry-After) | TLS on by default; automated cert issuance/rotation; WAF; network segmentation |
 | **Result trust** | challenge tasks + adaptive replication + fuzzy comparators | formal verifiable compute |
 | **Confidentiality** | data minimization, no-persistence | **TEE / confidential compute** (needs datacenter GPUs: consumer RTX/NPU have no GPU TEE) |
 | **Onboarding / admission** | **device-code dashboard-approval gate** (`--require-approval`): a joining worker is PENDING with a short code until an admin approves it; gets no work until then | Intune/SSO-driven enrollment + per-worker certs |
@@ -304,6 +305,7 @@ sequenceDiagram
 | Concern | PoC choice | Why / source |
 |---|---|---|
 | Control plane | **FastAPI + uvicorn** (borrowed `uv` env) | Outbound long-poll, no inbound ports. |
+| Transport | HTTP by default; **optional TLS + mutual TLS** (uvicorn `ssl_*` server, pinned-CA + client-cert httpx worker) and **per-client rate limiting** | Plain HTTP for the local demo; TLS/mTLS + rate limit for a pilot. TLS-everywhere + auto cert rotation is roadmap. |
 | State / queue / ledger | **SQLite** | Zero infra; one orchestrator. → NATS JetStream later. |
 | Worker agent | **Python + ctypes + pynvml** | Win32 idle APIs + GPU advert, no heavy deps. |
 | Isolation | **MXC OS-enforced container** when a `wxc-exec` runtime is present, else **Docker per job** (`--network none`, ro mounts, `--rm`), else subprocess/Job Object fallback; `--require-isolation` fails closed | Preferred OS boundary is MXC; Docker is the zero-admin default; instant kill-on-close. Windows Sandbox is the documented ideal. |

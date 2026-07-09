@@ -7,7 +7,7 @@ from hmac import compare_digest
 from uuid import uuid4
 
 from fastapi import FastAPI, Header, HTTPException, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from contracts import (
     LAUNCHABLE_KINDS,
@@ -47,6 +47,7 @@ from measurement.headroom import (
     summarize_profile,
 )
 from orchestrator.db import open_serialized_db, write_lock
+from orchestrator.ratelimit import RateLimiter, client_key
 from orchestrator.scheduler import class_weight_for, pick_job_for
 from orchestrator.submit import submit_job
 from trust import Signer, check_challenge
@@ -390,12 +391,34 @@ def _sanitize_profile_buckets(buckets: list[UsageBucket]) -> list[dict]:
     return clean
 
 
-def create_app(db_path: str = ":memory:", signer=None, require_approval: bool = False) -> FastAPI:
+def create_app(
+    db_path: str = ":memory:",
+    signer=None,
+    require_approval: bool = False,
+    rate_limit_per_min: int | None = None,
+) -> FastAPI:
     conn = open_serialized_db(db_path)
     if signer is None:
         signer = Signer()  # signing is ON by default; the worker verifies before running
     app = FastAPI(title="OneCompute Orchestrator")
     app.state.conn = conn
+
+    # Per-client request rate limiting (DoS backstop). Added before the security-headers
+    # middleware below so that headers middleware stays outermost and still decorates a 429.
+    if rate_limit_per_min and rate_limit_per_min > 0:
+        limiter = RateLimiter(rate_limit_per_min, window_s=60.0)
+        app.state.rate_limiter = limiter
+
+        @app.middleware("http")
+        async def enforce_rate_limit(request, call_next):
+            allowed, retry_after = limiter.check(client_key(request))
+            if not allowed:
+                return JSONResponse(
+                    {"detail": "rate limit exceeded"},
+                    status_code=429,
+                    headers={"Retry-After": str(retry_after)},
+                )
+            return await call_next(request)
 
     @app.middleware("http")
     async def add_security_headers(request, call_next):

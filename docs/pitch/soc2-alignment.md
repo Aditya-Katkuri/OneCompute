@@ -28,7 +28,7 @@ All citations are `path:line` into this repository, verified against the current
 | CC6.1 Admission gate for new principals | Device-code admission: a gated worker registers as `approved=0` with a short device code and cannot lease work until an operator approves it | **Implemented** | `app.py:393, 411-413, 447-453, 471, 562-571`; `src/contracts/schema.sql:15-16` | Enabled per-run with `--require-approval`; default is auto-approve for the local demo |
 | CC6.2 Deprovisioning | Operator can disconnect a worker; any leased job is immediately requeued and the worker fails auth on its next call | **Implemented** | `app.py:577-593` | |
 | CC6.6 Untrusted-source protection | Outbound-only short-poll: workers open no inbound ports, so there is no listening service on the employee machine to attack | **Implemented** | `src/worker/agent.py` (httpx client polling `jobs/next`); no server bound on the worker | |
-| CC6.7 Transmission protection | Data-minimized payloads; security response headers on the API | **Partial** | headers `app.py:67-71` (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Content-Security-Policy`) | TLS/mTLS in transit is **Roadmap** (pilot runs on a controlled network) |
+| CC6.7 Transmission protection | Optional **TLS** (`--tls-cert/--tls-key`) and **mutual TLS** (`--tls-client-ca` server; `--client-cert/--client-key` worker with a pinned CA via `--tls-ca`); data-minimized payloads; security response headers on the API | **Implemented** (optional) | client `src/trust/tls.py` (`client_ssl_params`/`build_client`); server `orchestrator/__main__.py` via `server_ssl_kwargs`; headers `app.py:67-71` | TLS on by default + automated cert issuance/rotation is **Roadmap** (pilot enables TLS on a controlled network) |
 | CC6.8 Unauthorized/malicious code | Ed25519-signed, hash-bound, expiring manifests verified before execution; refuse on mismatch. Optional out-of-band pinned signer rejects any key but the operator's | **Implemented** | verify `src/trust/signing.py:43-70`; enforcement `src/worker/agent.py:171-195`; pin `src/worker/__main__.py:192-198`, `agent.py:183-190`, `signing.py:59-65` | Full cosign/OIDC/Rekor provenance is **Roadmap** |
 
 ### CC6.x - Isolation of the execution boundary (job containment)
@@ -62,7 +62,7 @@ All citations are `path:line` into this repository, verified against the current
 |---|---|---|---|---|
 | A1.1 Capacity / the employee's own work is protected | Headroom-aware admission plus demand-aware yield against a learned profile; never admit above the hard ceiling; never run on battery | **Implemented** | `src/worker/governor.py:112-129, 205-239` (on-battery reason `:211-212`); binary `src/worker/idle.py` | Governor mis-sizing is a measured pilot risk (R8) |
 | A1.2 Recovery from churn | Laptops sleep and return: leases expire and jobs auto-requeue; file-backed SQLite (WAL) persists across restart | **Implemented** | lease reaping `app.py:238, 247-248`; requeue paths `app.py:544-557, 586-587, 616-624` | No lost or double-counted work by lease ownership |
-| A1.2 Resource abuse containment | Per-job memory + timeout caps; 8 MB result cap; kill-on-yield | **Implemented** | result cap `app.py:58, 627-628`; limits enforced in `runner.py` | Orchestrator rate limiting is **Roadmap** |
+| A1.2 Resource abuse containment | Per-job memory + timeout caps; 8 MB result cap; kill-on-yield; **per-client request rate limiting** (`--rate-limit`, default 600/min, keyed by worker token or IP; 429 + Retry-After) | **Implemented** | result cap `app.py:58, 627-628`; limits enforced in `runner.py`; rate limiter `src/orchestrator/ratelimit.py`, wired in `create_app` (`rate_limit_per_min`) | Distributed/shared-store limiting is the multi-orchestrator upgrade |
 
 ---
 
@@ -101,9 +101,9 @@ Privacy is analyzed in depth in the threat model's LINDDUN section (section 7). 
 
 ## 6. Summary: implemented vs. roadmap
 
-**Implemented in code (the technical heart of the design):** authenticated (constant-time worker token), admission-gated (device-code approval), signed + hash-bound + expiring manifests, optional out-of-band pinned signer, OS-enforced isolation with a fail-closed switch, MXC as the preferred boundary (fail-closed/inert until a runtime exists), no-network CPU containment, lease/requeue for churn, server-assigned append-only crediting, challenge/ringer anti-cheat with blacklisting, append-only audit including `auth_failed`, 8 MB result cap, security response headers, never-on-battery demand-aware yield, and on-device-only data minimization.
+**Implemented in code (the technical heart of the design):** authenticated (constant-time worker token), admission-gated (device-code approval), signed + hash-bound + expiring manifests, optional out-of-band pinned signer, OS-enforced isolation with a fail-closed switch, MXC as the preferred boundary (fail-closed/inert until a runtime exists), no-network CPU containment, lease/requeue for churn, server-assigned append-only crediting, challenge/ringer anti-cheat with blacklisting, append-only audit including `auth_failed`, 8 MB result cap, security response headers, optional TLS + mutual TLS transport, per-client rate limiting, `cryptography` pinned as a direct dependency, never-on-battery demand-aware yield, and on-device-only data minimization.
 
-**Roadmap (named, not built here):** TLS/mTLS transport, submitter SSO/OIDC, device-bound certificates, HSM-custodied signing key, cosign/OIDC/Rekor + SLSA provenance, SBOM, promoting `cryptography` to a pinned direct dependency, orchestrator rate limiting/quotas, SIEM export, MXC validation against a real `wxc-exec` runtime, and a formal DPIA.
+**Roadmap (named, not built here):** submitter SSO/OIDC, device-bound certificates, HSM-custodied signing key, cosign/OIDC/Rekor + SLSA provenance, SBOM, TLS-on-by-default with automated cert issuance/rotation, SIEM export, MXC validation against a real `wxc-exec` runtime, and a formal DPIA.
 
 ## 7. Traceability to the threat-model risk register
 
@@ -116,7 +116,7 @@ Privacy is analyzed in depth in the threat model's LINDDUN section (section 7). 
 | R6 Orchestrator compromise | CC6.8 out-of-band pinned signer |
 | R7 Reward fraud / Sybil | CC7.3 + PI1.4/PI1.5 server-assigned credit, challenge, blacklist |
 | R8 Governor mis-sizing | A1.1 headroom governor (measured in pilot) |
-| R9 Transport insecure | CC6.7 (TLS roadmap) |
+| R9 Transport insecure | CC6.7 optional TLS/mTLS + A1.2 rate limiting |
 | R11 Churn | A1.2 lease/requeue |
 | R13 Supply chain | CC8.1 (SBOM/cosign roadmap; pin `cryptography`) |
 | R15 MXC preview immaturity | CC6.x MXC fail-closed/inert; validate before reliance |

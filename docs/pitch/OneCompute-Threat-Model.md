@@ -2,7 +2,7 @@
 
 **Engine codename:** NightShift  ·  **Document class:** Microsoft Confidential (draft for security/privacy review)
 **Audience:** CISO and Azure Security, Microsoft Digital (MSD), CELA, Privacy/Purview, HR
-**Scope of this revision:** the proof-of-concept (PoC) as built, and the proposed contained pilot. It is explicit about what is enforced in code today versus what is honest roadmap. v1.1 syncs the document to three security controls that have since merged (MXC OS-enforced backend, `--require-isolation` fail-closed switch, `--trusted-key` out-of-band pinned signer) and expands the side-channel, dependency supply-chain, and data-erasure coverage.
+**Scope of this revision:** the proof-of-concept (PoC) as built, and the proposed contained pilot. It is explicit about what is enforced in code today versus what is honest roadmap. v1.1 synced the document to three merged controls (MXC OS-enforced backend, `--require-isolation` fail-closed switch, `--trusted-key` out-of-band pinned signer) and expanded the side-channel, dependency supply-chain, and data-erasure coverage. v1.2 adds the shipped transport hardening: optional TLS + mutual TLS and per-client rate limiting.
 
 > **One-paragraph summary.** OneCompute runs an opt-in agent on employee machines that harvests spare CPU/GPU headroom for cloud-substitutable batch work and yields the machine back to the employee in under a second. It is internal-only, opt-in, sandboxed, signed, verified, and audited. This document models the threats across every trust boundary, scores the residual risk honestly, maps each control to the teams that must accept it, and proposes a small, reversible, time-boxed pilot as the next safe step. It does not request enterprise rollout.
 
@@ -12,7 +12,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.1 (draft) |
+| Version | 1.2 (draft) |
 | Status | For review; not yet socialized with CELA/MSD/CISO |
 | Owner | Colin Finney (intern) + sponsor TBD |
 | Methodologies | Microsoft SDL threat modeling, STRIDE (per boundary), LINDDUN (privacy), MITRE ATT&CK mapping, qualitative likelihood x impact risk scoring |
@@ -25,7 +25,8 @@
 |---|---|---|
 | 0.1 | initial | Trust boundaries + STRIDE summary |
 | 1.0 | prior rev | Full enterprise-grade rewrite: data inventory, LINDDUN, ATT&CK, abuse cases, scored risk register, endpoint integration, supply chain, safety, legal/HR, IR, per-team Q&A |
-| 1.1 | this rev | Truth-sync to shipped controls: MXC OS-enforced backend as preferred boundary (fail-closed, inert until a real runtime exists), `--require-isolation` fail-closed switch, `--trusted-key` out-of-band pinned signer. Reconciled risk register (R2/R3/R6 residuals lowered; new R15 for MXC preview immaturity), expanded side-channel (11.1), dependency supply-chain, and ledger-erasure coverage, and authored the three companion docs (`soc2-alignment.md`, `pilot-security-approval.md`, `pilot-plan.md`) |
+| 1.1 | prior rev | Truth-sync to shipped controls: MXC OS-enforced backend as preferred boundary (fail-closed, inert until a real runtime exists), `--require-isolation` fail-closed switch, `--trusted-key` out-of-band pinned signer. Reconciled risk register (R2/R3/R6 residuals lowered; new R15 for MXC preview immaturity), expanded side-channel (11.1), dependency supply-chain, and ledger-erasure coverage, and authored the three companion docs (`soc2-alignment.md`, `pilot-security-approval.md`, `pilot-plan.md`) |
+| 1.2 | this rev | Transport hardening shipped: optional TLS + mutual TLS (orchestrator `--tls-cert/--tls-key/--tls-client-ca`; worker `--tls-ca/--client-cert/--client-key`) and per-client rate limiting (`--rate-limit`). Updated B3 Tampering/Info-disclosure/DoS rows, the crypto + network sections, R9 (residual lowered), and the CISO Q&A |
 
 **Sign-off (to be completed during review)**
 
@@ -163,10 +164,10 @@ Legend for status: [PoC] enforced in code today · [Roadmap] documented, deferre
 | STRIDE | Threat | Mitigation | Status | Residual |
 |---|---|---|---|---|
 | Spoofing | fake worker | per-worker bearer token (issued at register, constant-time check) | [PoC] | med (token vs device-bound SSO) |
-| Tampering | alter control messages | Ed25519-signed manifests; typed/validated inputs. By default the public key travels with the manifest (proves integrity, not provenance); **an out-of-band pinned signer is now shipped (`--trusted-key`), so a worker can reject any key but the operator-provisioned one.** TLS/mTLS on the transport remains roadmap | [PoC sign + pinned key]+[Roadmap TLS/mTLS] | med (no TLS yet; provenance solved when key is pinned) |
+| Tampering | alter control messages | Ed25519-signed manifests; typed/validated inputs. By default the public key travels with the manifest (proves integrity, not provenance); **an out-of-band pinned signer is now shipped (`--trusted-key`), so a worker can reject any key but the operator-provisioned one.** **Optional TLS and mutual TLS on the transport are now shipped** (`--tls-cert/--tls-key`, `--tls-client-ca`; worker `--client-cert/--client-key`) | [PoC sign + pinned key + optional TLS/mTLS] | low-med (mTLS closes on-path tampering when enabled) |
 | Repudiation | deny actions | append-only audit (register/assign/complete/yield/fail/auth_failed) | [PoC] | low |
-| Info-disclosure | sniff control plane | TLS roadmap; internal LAN today; data-minimized payloads | [Roadmap TLS] | med |
-| DoS | flood orchestrator | lease timeouts + requeue; payload cap; per-job limits; rate limit roadmap | [PoC]+[Roadmap] | med |
+| Info-disclosure | sniff control plane | **optional TLS in transit now shipped** (`--tls-cert/--tls-key`); data-minimized payloads; internal LAN as a floor | [PoC optional TLS] | low-med (encrypted when TLS enabled) |
+| DoS | flood orchestrator | lease timeouts + requeue; payload cap; per-job limits; **per-client rate limiting now shipped** (`--rate-limit`, default 600/min, keyed by worker token or IP, returns 429 + Retry-After) | [PoC] | low-med |
 | Replay | reuse old manifest/lease | manifest expiry; lease ownership; nonce/short TTL roadmap | [PoC expiry]+[Roadmap nonce] | low-med |
 
 ### B4 - Submitter <-> Orchestrator
@@ -216,7 +217,7 @@ Covered in depth by the LINDDUN analysis (section 7).
 | Manifest signing | Ed25519 (`cryptography`), on by default; worker verifies signature + input hash + expiry, refuses on mismatch (no code-hash check; code is a built-in adapter). **Out-of-band pinned signer shipped (`--trusted-key` / `$ONECOMPUTE_TRUSTED_PUBKEY`): strict mode rejects unsigned or differently-signed manifests.** Default (no pin) is trust-on-first-use against the key carried in the manifest | cosign/Sigstore + OIDC + Rekor transparency; SLSA provenance; HSM-custodied signing key |
 | Signing-key custody | private key on the orchestrator/signing host; this is the highest-value secret | HSM / corp signing service; key rotation policy; separation from orchestrator |
 | Worker auth | per-worker bearer token, constant-time comparison | device-bound certificates + SSO/OIDC |
-| Transport | internal LAN; TLS in transit is roadmap | TLS everywhere + mTLS worker<->orchestrator |
+| Transport | **optional TLS + mutual TLS shipped** (uvicorn `ssl_*` server side, pinned-CA + client-cert httpx client side); internal LAN as a floor when TLS is off | TLS on by default; automated cert issuance/rotation; WAF |
 | Token/secret handling | tokens not logged; auth failures audited | secret store integration, short-lived tokens, rotation |
 
 **Key risk:** compromise of the manifest signing key allows arbitrary code on the fleet. Treatment: restrict custody, move to a corporate signing service/HSM, rotate, and separate the signer from the orchestrator before any expansion.
@@ -227,7 +228,8 @@ Covered in depth by the LINDDUN analysis (section 7).
 - **Outbound-only short-poll**: workers open no inbound ports (NAT/firewall-proof, no listening service to attack on the employee machine).
 - Orchestrator exposes a minimal HTTP API behind security response headers (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, strict `Content-Security-Policy`).
 - Pilot: confirm proxy/VPN allows worker outbound HTTPS to the orchestrator FQDN; Purview DLP permits the data class.
-- Roadmap: TLS/mTLS, network segmentation for the orchestrator, rate limiting, WAF.
+- **Optional TLS + mutual TLS shipped:** the orchestrator serves HTTPS (`--tls-cert/--tls-key`) and can require client certificates (`--tls-client-ca`); the worker pins a private CA (`--tls-ca`) and presents a client cert (`--client-cert/--client-key`). Roadmap: TLS on by default, automated cert issuance/rotation, network segmentation for the orchestrator, WAF.
+- **Per-client rate limiting shipped:** `--rate-limit` (default 600/min, keyed by worker token or source IP) returns 429 + Retry-After when exceeded.
 
 ---
 
@@ -323,7 +325,7 @@ Likelihood/Impact: L/M/H. Severity = combined. Owner/treatment shown; residual a
 | R6 | Orchestrator compromise -> fleet command | L | H | **High** | hardened host; **out-of-band pinned signer (`--trusted-key`) so a compromised orchestrator cannot inject a self-signed job**; signature gate at worker; audit; least privilege | Low-Med (pinned) / Med (trust-on-first-use default) |
 | R7 | Reward fraud / Sybil / benchmark inflation | M | M | **Med** | SSO one-identity-per-node; server metering; challenge; caps | Low-Med |
 | R8 | Governor mis-sizing -> perceptible slowdown (adoption killer) | M | M-H | **High** | conservative default; learned profile; sub-second yield; pilot measures it | Med |
-| R9 | Transport blocked/insecure (no TLS yet; proxy issues) | M | M | **Med** | validate hour-1 reachability; TLS/mTLS roadmap | Med (TLS roadmap) |
+| R9 | Transport blocked/insecure (proxy issues) | M | M | **Med** | validate hour-1 reachability; **optional TLS/mTLS shipped**; rate limiting shipped | Low-Med (encrypted + mutually authenticated when TLS/mTLS enabled) |
 | R10 | Data leakage via intermediate state (activations) | L-M | M-H | **Med-High** | restrict sensitive job classes; disclosed; class policy roadmap | Med |
 | R11 | Churn -> lost/double work | M | L-M | **Low-Med** | lease timeout + requeue; idempotent crediting | Low |
 | R12 | Legal/works-council/tax non-compliance | L-M | M-H | **Med-High** | CELA/HR review; voluntary capped rewards; regional handling | Med (pending legal) |
@@ -358,6 +360,8 @@ The PoC enforces the technical heart of a secure design (authenticated, signed, 
 | MXC (preferred OS-enforced boundary; fail-closed/inert without a real runtime) | B2 host read/escape, R2, R15 |
 | `--require-isolation` fail-closed switch (refuse when no OS sandbox; blocks unsandboxed fallback + host-side GPU/AI) | B2 escape, R2/R3 |
 | `--trusted-key` out-of-band pinned signer (strict provenance) | B3 tamper, abuse-case 5, R6 |
+| Optional TLS + mutual TLS (server `--tls-*`, worker `--tls-ca`/`--client-cert`) | B3 tamper/info-disclosure, R9 |
+| Per-client rate limiting (`--rate-limit`, 429 + Retry-After) | B3 DoS, B4 fleet-abuse, R9 |
 | Instant-yield governor vs learned profile; never on battery | A1, R8, R14 |
 | Challenge/ringer + server-assigned credit + append-only ledger | A4/A5, R7 |
 | On-device-only profiling; data minimization; no-persistence | A2, B5/LINDDUN, R4/R10 |
@@ -372,7 +376,7 @@ The PoC enforces the technical heart of a secure design (authenticated, signed, 
 **CISO / Azure Security**
 - *Isolation strength?* MXC (merged, preferred, kernel-enforced) when a real runtime is present, else container + Job Object; `--require-isolation` lets a pilot fail closed rather than run unsandboxed; TEE roadmap; GPU gap disclosed; MXC unvalidated against a real runtime (R15). We restrict sensitive/GPU classes and want your required bar for the pilot.
 - *What if the orchestrator is compromised?* A worker run with `--trusted-key` / `$ONECOMPUTE_TRUSTED_PUBKEY` accepts only manifests signed by the operator's out-of-band key, so a compromised orchestrator cannot inject a self-signed job. Without a pinned key (trust-on-first-use default) it could. Remaining roadmap: TLS/mTLS on the channel and moving the signing key to an HSM/corp service separate from the orchestrator.
-- *Auth/transport?* Per-worker tokens + lease ownership now; TLS/mTLS and SSO/OIDC are the roadmap; pilot runs on a controlled network.
+- *Auth/transport?* Per-worker tokens + lease ownership now; **optional TLS and mutual TLS are now shipped** (`--tls-cert/--tls-key`, `--tls-client-ca`; worker `--client-cert/--client-key`), plus per-client **rate limiting** (`--rate-limit`); SSO/OIDC remains roadmap. A pilot can run TLS-everywhere on a controlled network.
 
 **Microsoft Digital (MSD)**
 - *Will it trip Defender/WDAC/Purview/Intune?* Yes if unsanctioned; we ask to be **allow-listed** (signed publisher + SHA-256), not exempted; we share IOCs and monitor live.

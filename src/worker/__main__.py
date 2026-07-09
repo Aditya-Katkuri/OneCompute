@@ -9,6 +9,7 @@ import threading
 import time
 
 from isolation import active_boundary
+from trust import build_client
 from worker.agent import WorkerAgent
 from worker.capability import detect_capability
 from worker.governor import AdaptiveGovernor, system_gpu_load_pct, system_ram_load_pct
@@ -196,12 +197,42 @@ def main() -> None:
              "$ONECOMPUTE_TRUSTED_PUBKEY). When set, unsigned or differently-signed manifests are "
              "refused, so a compromised orchestrator cannot inject a self-signed job.",
     )
+    parser.add_argument(
+        "--tls-ca",
+        default=None,
+        help="CA cert used to verify the orchestrator's TLS certificate (pin a private CA). "
+             "Default: the system trust store. Applies only to an https:// --url.",
+    )
+    parser.add_argument(
+        "--client-cert",
+        default=None,
+        help="Client certificate presented for mutual TLS (pair with --client-key).",
+    )
+    parser.add_argument(
+        "--client-key",
+        default=None,
+        help="Client private key for mutual TLS (pair with --client-cert).",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
+    try:
+        client = build_client(
+            args.url,
+            ca_cert=args.tls_ca,
+            client_cert=args.client_cert,
+            client_key=args.client_key,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
+    if args.url.startswith("http://") and (args.tls_ca or args.client_cert or args.client_key):
+        logging.warning(
+            "TLS material was provided but --url is http://; TLS options apply only to an https:// URL"
+        )
     agent = WorkerAgent(
         args.url,
         detect_capability(),
+        client=client,
         isolated=args.isolated,
         require_isolation=args.require_isolation,
         trusted_public_key_hex=args.trusted_key,

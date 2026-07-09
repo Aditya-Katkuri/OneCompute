@@ -26,6 +26,7 @@ import uvicorn
 
 from orchestrator.app import create_app
 from orchestrator.netinfo import lan_ipv4_addresses, primary_lan_ipv4
+from trust import server_ssl_kwargs
 
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8080
@@ -117,15 +118,24 @@ def _banner_lines(host: str, port: int, db_path: str, scheme: str = "http") -> l
 
 def _serve(host: str, port: int, db_path: str, log_level: str,
            tls_cert: str | None = None, tls_key: str | None = None,
-           require_approval: bool = False) -> None:
+           tls_client_ca: str | None = None,
+           require_approval: bool = False,
+           rate_limit_per_min: int | None = None) -> None:
     """Start uvicorn against a persistent file-backed app. Serves HTTPS when a TLS cert+key are
-    given (the doctrine's 'plain HTTPS' transport for a cloud/multi-site pilot). When
-    require_approval is set, joining workers are gated behind a dashboard device-code approval.
-    Blocks until shutdown."""
-    app = create_app(db_path, require_approval=require_approval)
+    given (the doctrine's 'plain HTTPS' transport for a cloud/multi-site pilot), and requires
+    **mutual TLS** (each worker presents a client cert) when ``tls_client_ca`` is also given.
+    ``rate_limit_per_min`` caps control-plane requests per client. When ``require_approval`` is
+    set, joining workers are gated behind a dashboard device-code approval. Blocks until shutdown."""
+    app = create_app(
+        db_path,
+        require_approval=require_approval,
+        rate_limit_per_min=rate_limit_per_min,
+    )
+    ssl_kwargs: dict = {}
+    if tls_cert and tls_key:
+        ssl_kwargs = server_ssl_kwargs(tls_cert, tls_key, tls_client_ca)
     config = uvicorn.Config(
-        app, host=host, port=port, log_level=log_level,
-        ssl_certfile=tls_cert, ssl_keyfile=tls_key,
+        app, host=host, port=port, log_level=log_level, **ssl_kwargs,
     )
     server = uvicorn.Server(config)
     server.run()  # installs its own SIGINT handler for clean Ctrl-C shutdown
@@ -144,6 +154,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--log-level", default="info", help="uvicorn log level (default info)")
     parser.add_argument("--tls-cert", default=None, help="TLS cert file (serve HTTPS; pair with --tls-key)")
     parser.add_argument("--tls-key", default=None, help="TLS key file (serve HTTPS; pair with --tls-cert)")
+    parser.add_argument(
+        "--tls-client-ca",
+        default=None,
+        help="CA that signs worker client certs. When set, REQUIRE mutual TLS: each worker must "
+             "present a client cert this CA signed. Needs --tls-cert/--tls-key.",
+    )
+    parser.add_argument(
+        "--rate-limit",
+        type=int,
+        default=600,
+        help="Max control-plane requests per minute per client (keyed by worker token, else IP); "
+             "0 disables. Default 600 (comfortably above a worker's poll+heartbeat cadence).",
+    )
     parser.add_argument(
         "--require-approval",
         action="store_true",
@@ -167,10 +190,19 @@ def main(argv: list[str] | None = None) -> int:
     tls = bool(args.tls_cert and args.tls_key)
     if bool(args.tls_cert) != bool(args.tls_key):
         print("warning: --tls-cert and --tls-key must be given together; serving HTTP", file=sys.stderr)
+    tls_client_ca = args.tls_client_ca if tls else None
+    if args.tls_client_ca and not tls:
+        print("warning: --tls-client-ca needs --tls-cert/--tls-key (HTTPS); mutual TLS disabled",
+              file=sys.stderr)
+    rate_limit_per_min = args.rate_limit if args.rate_limit and args.rate_limit > 0 else None
     scheme = "https" if tls else "http"
 
     for banner_line in _banner_lines(host, port, db_path, scheme):
         print(banner_line)
+    if tls_client_ca:
+        print("  Transport: mutual TLS ON. Workers must present a client cert signed by the given CA.")
+    if rate_limit_per_min:
+        print(f"  Rate limit: {rate_limit_per_min} requests/min per client (token or IP).")
     if args.require_approval:
         print("  Credential gate: ON. Workers join PENDING and need dashboard approval (device code).")
     sys.stdout.flush()
@@ -179,7 +211,9 @@ def main(argv: list[str] | None = None) -> int:
         _serve(
             host, port, db_path, args.log_level,
             args.tls_cert if tls else None, args.tls_key if tls else None,
+            tls_client_ca=tls_client_ca,
             require_approval=args.require_approval,
+            rate_limit_per_min=rate_limit_per_min,
         )
     except KeyboardInterrupt:
         print("\nshutting down (Ctrl-C)")
