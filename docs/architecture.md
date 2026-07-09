@@ -276,6 +276,7 @@ sequenceDiagram
 | **Result trust** | challenge tasks + adaptive replication + fuzzy comparators | formal verifiable compute |
 | **Confidentiality** | data minimization, no-persistence | **TEE / confidential compute** (needs datacenter GPUs: consumer RTX/NPU have no GPU TEE) |
 | **Onboarding / admission** | **device-code dashboard-approval gate** (`--require-approval`): a joining worker is PENDING with a short code until an admin approves it; gets no work until then | Intune/SSO-driven enrollment + per-worker certs |
+| **Submission auth** | optional operator **`--submit-token`** gates job/workload submission (`Authorization: Bearer`, constant-time, audited); the PoC form of submitter SSO | submitter SSO/OIDC + per-team scopes/quotas |
 | **Auditability** | append-only audit log (incl. an `approved` event) | Rekor transparency log |
 
 > **The enterprise-acceptance gate (highest risk).** Sustained CPU/GPU bursts are the literal signature of [cryptojacking](https://www.cisa.gov/news-events/news/defending-against-illicit-cryptocurrency-mining-activity); Purview DLP can silently block a job's data egress. The agent must be **code-signed, Intune-deployed, Defender/AV allow-listed, and route I/O through sanctioned channels**, designed to **pass, not bypass**. Internal scope shrinks attack surface and makes actions attributable; it does **not** let us skip controls. ([Purview endpoint DLP](https://learn.microsoft.com/en-us/purview/endpoint-dlp-learn-about))
