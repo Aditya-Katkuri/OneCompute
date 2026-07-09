@@ -27,19 +27,25 @@ If any gate is NO, the pilot does not start.
 
 The pilot must run the workers and orchestrator in their hardened modes. These map directly to controls in `soc2-alignment.md`.
 
-**Orchestrator (admission-gated):**
+**Orchestrator (admission-gated, TLS + mutual TLS + rate limited):**
 ```
-uv run python -m orchestrator --require-approval
+uv run python -m orchestrator --require-approval \
+  --tls-cert server.crt --tls-key server.key --tls-client-ca worker-ca.crt \
+  --rate-limit 600
 ```
 - `--require-approval` holds every new worker as `approved=0` behind a device code until an operator approves it (`src/orchestrator/app.py:562-571`; `src/contracts/schema.sql:15-16`). This is control CC6.1.
+- `--tls-cert/--tls-key` serve HTTPS; `--tls-client-ca` **requires mutual TLS** so only workers presenting a cert signed by that CA can reach the control plane (`src/orchestrator/__main__.py` via `src/trust/tls.py:server_ssl_kwargs`). This is control CC6.7 and threat-model R9.
+- `--rate-limit` caps requests per minute per client (worker token or IP), returning 429 + Retry-After (`src/orchestrator/ratelimit.py`). This is control A1.2 and threat-model B3 DoS.
 
-**Worker (fail-closed isolation + pinned signer):**
+**Worker (fail-closed isolation + pinned signer + TLS client):**
 ```
 setx ONECOMPUTE_TRUSTED_PUBKEY <hex-of-operator-signing-pubkey>
-uv run python -m worker --url http://<orchestrator-host>:8080 --require-isolation --trusted-key <hex>
+uv run python -m worker --url https://<orchestrator-host>:8080 --require-isolation --trusted-key <hex> \
+  --tls-ca server-ca.crt --client-cert worker.crt --client-key worker.key
 ```
 - `--require-isolation` makes the worker refuse any job when no OS-enforced sandbox (MXC or Docker) is available, instead of falling back to the unsandboxed subprocess or running host-side GPU/AI unsandboxed (`src/worker/__main__.py:184-190`; `src/isolation/runner.py:579-587`). This is the fail-closed control for threat-model R2/R3.
 - `--trusted-key` / `$ONECOMPUTE_TRUSTED_PUBKEY` pins the operator's out-of-band signer so a compromised control plane cannot inject a self-signed job (`src/worker/__main__.py:192-198`; `src/trust/signing.py:59-65`). This is the control for threat-model R6.
+- `--tls-ca` pins the orchestrator's CA and `--client-cert/--client-key` present the worker's mutual-TLS certificate (`src/trust/tls.py:client_ssl_params`). This is control CC6.7.
 
 **Measurement-only variant (phase 1 of the pilot, see `pilot-plan.md`):**
 ```
