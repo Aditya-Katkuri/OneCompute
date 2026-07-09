@@ -120,16 +120,19 @@ def _serve(host: str, port: int, db_path: str, log_level: str,
            tls_cert: str | None = None, tls_key: str | None = None,
            tls_client_ca: str | None = None,
            require_approval: bool = False,
-           rate_limit_per_min: int | None = None) -> None:
+           rate_limit_per_min: int | None = None,
+           submit_token: str | None = None) -> None:
     """Start uvicorn against a persistent file-backed app. Serves HTTPS when a TLS cert+key are
     given (the doctrine's 'plain HTTPS' transport for a cloud/multi-site pilot), and requires
     **mutual TLS** (each worker presents a client cert) when ``tls_client_ca`` is also given.
-    ``rate_limit_per_min`` caps control-plane requests per client. When ``require_approval`` is
-    set, joining workers are gated behind a dashboard device-code approval. Blocks until shutdown."""
+    ``rate_limit_per_min`` caps control-plane requests per client; ``submit_token`` gates job
+    submission. When ``require_approval`` is set, joining workers are gated behind a dashboard
+    device-code approval. Blocks until shutdown."""
     app = create_app(
         db_path,
         require_approval=require_approval,
         rate_limit_per_min=rate_limit_per_min,
+        submit_token=submit_token,
     )
     ssl_kwargs: dict = {}
     if tls_cert and tls_key:
@@ -168,6 +171,14 @@ def main(argv: list[str] | None = None) -> int:
              "0 disables. Default 600 (comfortably above a worker's poll+heartbeat cadence).",
     )
     parser.add_argument(
+        "--submit-token",
+        default=os.environ.get("ONECOMPUTE_SUBMIT_TOKEN"),
+        help="Operator token required to submit jobs/workloads (Authorization: Bearer <token>); "
+             "defaults to $ONECOMPUTE_SUBMIT_TOKEN. Unset leaves submission open (local demo). "
+             "The PoC form of submitter SSO: stops an unauthorized party who can reach the control "
+             "plane from queuing work onto the fleet.",
+    )
+    parser.add_argument(
         "--require-approval",
         action="store_true",
         help="Gate joining workers behind a dashboard device-code approval (a worker shows a code "
@@ -203,6 +214,8 @@ def main(argv: list[str] | None = None) -> int:
         print("  Transport: mutual TLS ON. Workers must present a client cert signed by the given CA.")
     if rate_limit_per_min:
         print(f"  Rate limit: {rate_limit_per_min} requests/min per client (token or IP).")
+    if args.submit_token:
+        print("  Submit gate: ON. Job/workload submission requires the operator token.")
     if args.require_approval:
         print("  Credential gate: ON. Workers join PENDING and need dashboard approval (device code).")
     sys.stdout.flush()
@@ -214,6 +227,7 @@ def main(argv: list[str] | None = None) -> int:
             tls_client_ca=tls_client_ca,
             require_approval=args.require_approval,
             rate_limit_per_min=rate_limit_per_min,
+            submit_token=args.submit_token,
         )
     except KeyboardInterrupt:
         print("\nshutting down (Ctrl-C)")

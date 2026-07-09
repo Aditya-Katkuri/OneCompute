@@ -396,12 +396,35 @@ def create_app(
     signer=None,
     require_approval: bool = False,
     rate_limit_per_min: int | None = None,
+    submit_token: str | None = None,
 ) -> FastAPI:
     conn = open_serialized_db(db_path)
     if signer is None:
         signer = Signer()  # signing is ON by default; the worker verifies before running
     app = FastAPI(title="OneCompute Orchestrator")
     app.state.conn = conn
+
+    def _require_submit_token(authorization: str | None) -> None:
+        """Gate job/workload submission behind an operator token when one is configured.
+
+        When ``submit_token`` is unset (the PoC/demo default) submission stays open. When set,
+        callers must send ``Authorization: Bearer <submit_token>``; the check is constant-time and
+        a failure is audited (``auth_failed``) and returns 401. This is the PoC form of submitter
+        SSO/OIDC: it stops an unauthorized party who can merely reach the control plane from
+        queuing work onto the fleet (threat-model B4 / fleet-as-botnet).
+        """
+        if not submit_token:
+            return
+        detail = "missing bearer token"
+        if authorization and authorization.startswith("Bearer "):
+            provided = authorization.removeprefix("Bearer ").strip()
+            if provided and compare_digest(provided, submit_token):
+                return
+            detail = "invalid submit token"
+        elif authorization:
+            detail = "invalid authorization scheme"
+        _emit(conn, "auth_failed", detail=f"submit: {detail}")
+        raise HTTPException(status_code=401, detail=detail)
 
     # Per-client request rate limiting (DoS backstop). Added before the security-headers
     # middleware below so that headers middleware stays outermost and still decorates a 429.
@@ -477,8 +500,10 @@ def create_app(
         )
 
     @app.post("/jobs", response_model=SubmitResponse)
-    def submit(req: SubmitRequest) -> SubmitResponse:
-        # Production gates submit/read endpoints behind SSO; the PoC leaves them open.
+    def submit(req: SubmitRequest, authorization: str | None = Header(default=None)) -> SubmitResponse:
+        # Submission is open in the PoC unless an operator token is configured (--submit-token);
+        # a pilot sets it so only authorized submitters can queue work.
+        _require_submit_token(authorization)
         try:
             job_id = submit_job(conn, req)
         except ValueError as exc:
@@ -847,9 +872,10 @@ def create_app(
         return _job_detail(row)
 
     @app.post("/workloads", response_model=WorkloadLaunchResponse)
-    def launch_workload(req: WorkloadLaunchRequest) -> WorkloadLaunchResponse:
+    def launch_workload(req: WorkloadLaunchRequest, authorization: str | None = Header(default=None)) -> WorkloadLaunchResponse:
         """Launch a whole workload across the fleet in one call: build the hardcoded split
         (one tile per machine) and enqueue every tile tagged with a shared workload_id."""
+        _require_submit_token(authorization)
         if req.kind not in LAUNCHABLE_KINDS:
             raise HTTPException(
                 status_code=400, detail=f"kind must be one of {list(LAUNCHABLE_KINDS)}"
