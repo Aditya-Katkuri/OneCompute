@@ -27,15 +27,16 @@ If any gate is NO, the pilot does not start.
 
 The pilot must run the workers and orchestrator in their hardened modes. These map directly to controls in `soc2-alignment.md`.
 
-**Orchestrator (admission-gated, TLS + mutual TLS + rate limited):**
+**Orchestrator (admission-gated, TLS + mutual TLS + rate limited + submit-gated):**
 ```
 uv run python -m orchestrator --require-approval \
   --tls-cert server.crt --tls-key server.key --tls-client-ca worker-ca.crt \
-  --rate-limit 600
+  --rate-limit 600 --submit-token <operator-submit-token>
 ```
 - `--require-approval` holds every new worker as `approved=0` behind a device code until an operator approves it (`src/orchestrator/app.py:562-571`; `src/contracts/schema.sql:15-16`). This is control CC6.1.
 - `--tls-cert/--tls-key` serve HTTPS; `--tls-client-ca` **requires mutual TLS** so only workers presenting a cert signed by that CA can reach the control plane (`src/orchestrator/__main__.py` via `src/trust/tls.py:server_ssl_kwargs`). This is control CC6.7 and threat-model R9.
 - `--rate-limit` caps requests per minute per client (worker token or IP), returning 429 + Retry-After (`src/orchestrator/ratelimit.py`). This is control A1.2 and threat-model B3 DoS.
+- `--submit-token` (or `$ONECOMPUTE_SUBMIT_TOKEN`) requires an operator bearer token to submit jobs/workloads, so only authorized submitters can queue work (`src/orchestrator/app.py:_require_submit_token`). This is control CC6.1 and threat-model B4.
 
 **Worker (fail-closed isolation + pinned signer + TLS client):**
 ```
@@ -63,7 +64,7 @@ uv run python -c "from isolation.runner import active_boundary; print(active_bou
 
 - Start with **CPU, non-sensitive** job classes only (for example `fractal`, `optimize`, `challenge`).
 - **No sensitive-data classes** and **no GPU/AI classes** in phase 1, given the disclosed GPU-in-Sandbox gap (R3) and host-side execution of AI/GPU kinds.
-- Submitters are **controlled/internal** only; submitter SSO/OIDC is roadmap, so submission is restricted to the pilot team in the interim.
+- Submitters are **controlled/internal** only; an optional operator **`--submit-token`** now gates submission (full submitter SSO/OIDC is the upgrade), so submission is restricted to the pilot team in the interim.
 
 ## 3. Live monitoring during the pilot
 

@@ -25,6 +25,7 @@ Kinds:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -68,6 +69,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Submit jobs to a running OneCompute orchestrator.")
     parser.add_argument("--url", required=True, help="Orchestrator base URL (e.g. http://<dev-box-ip>:8080)")
     parser.add_argument(
+        "--token",
+        default=os.environ.get("ONECOMPUTE_SUBMIT_TOKEN"),
+        help="Operator submit token (defaults to $ONECOMPUTE_SUBMIT_TOKEN). Required when the "
+             "orchestrator was started with --submit-token; sent as an Authorization bearer header.",
+    )
+    parser.add_argument(
         "--kind",
         choices=("fractal", "optimize", "ai", "synth", "fanout", "gpu", "challenge"),
         default="fanout",
@@ -90,7 +97,7 @@ def main() -> int:
 
     jobs = build_jobs(args)
     try:
-        ids = submit_all(args.url, jobs)
+        ids = submit_all(args.url, jobs, token=args.token)
     except Exception as exc:
         print(f"submit failed: {exc}", file=sys.stderr)
         return 1

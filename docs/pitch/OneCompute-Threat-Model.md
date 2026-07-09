@@ -2,7 +2,7 @@
 
 **Engine codename:** NightShift  ·  **Document class:** Microsoft Confidential (draft for security/privacy review)
 **Audience:** CISO and Azure Security, Microsoft Digital (MSD), CELA, Privacy/Purview, HR
-**Scope of this revision:** the proof-of-concept (PoC) as built, and the proposed contained pilot. It is explicit about what is enforced in code today versus what is honest roadmap. v1.1 synced the document to three merged controls (MXC OS-enforced backend, `--require-isolation` fail-closed switch, `--trusted-key` out-of-band pinned signer) and expanded the side-channel, dependency supply-chain, and data-erasure coverage. v1.2 adds the shipped transport hardening: optional TLS + mutual TLS and per-client rate limiting.
+**Scope of this revision:** the proof-of-concept (PoC) as built, and the proposed contained pilot. It is explicit about what is enforced in code today versus what is honest roadmap. v1.1 synced the document to three merged controls (MXC OS-enforced backend, `--require-isolation` fail-closed switch, `--trusted-key` out-of-band pinned signer) and expanded the side-channel, dependency supply-chain, and data-erasure coverage. v1.2 adds the shipped transport hardening: optional TLS + mutual TLS and per-client rate limiting. v1.3 adds submitter authentication: an optional operator token that gates job/workload submission.
 
 > **One-paragraph summary.** OneCompute runs an opt-in agent on employee machines that harvests spare CPU/GPU headroom for cloud-substitutable batch work and yields the machine back to the employee in under a second. It is internal-only, opt-in, sandboxed, signed, verified, and audited. This document models the threats across every trust boundary, scores the residual risk honestly, maps each control to the teams that must accept it, and proposes a small, reversible, time-boxed pilot as the next safe step. It does not request enterprise rollout.
 
@@ -12,7 +12,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.2 (draft) |
+| Version | 1.3 (draft) |
 | Status | For review; not yet socialized with CELA/MSD/CISO |
 | Owner | Colin Finney (intern) + sponsor TBD |
 | Methodologies | Microsoft SDL threat modeling, STRIDE (per boundary), LINDDUN (privacy), MITRE ATT&CK mapping, qualitative likelihood x impact risk scoring |
@@ -26,7 +26,8 @@
 | 0.1 | initial | Trust boundaries + STRIDE summary |
 | 1.0 | prior rev | Full enterprise-grade rewrite: data inventory, LINDDUN, ATT&CK, abuse cases, scored risk register, endpoint integration, supply chain, safety, legal/HR, IR, per-team Q&A |
 | 1.1 | prior rev | Truth-sync to shipped controls: MXC OS-enforced backend as preferred boundary (fail-closed, inert until a real runtime exists), `--require-isolation` fail-closed switch, `--trusted-key` out-of-band pinned signer. Reconciled risk register (R2/R3/R6 residuals lowered; new R15 for MXC preview immaturity), expanded side-channel (11.1), dependency supply-chain, and ledger-erasure coverage, and authored the three companion docs (`soc2-alignment.md`, `pilot-security-approval.md`, `pilot-plan.md`) |
-| 1.2 | this rev | Transport hardening shipped: optional TLS + mutual TLS (orchestrator `--tls-cert/--tls-key/--tls-client-ca`; worker `--tls-ca/--client-cert/--client-key`) and per-client rate limiting (`--rate-limit`). Updated B3 Tampering/Info-disclosure/DoS rows, the crypto + network sections, R9 (residual lowered), and the CISO Q&A |
+| 1.2 | prior rev | Transport hardening shipped: optional TLS + mutual TLS (orchestrator `--tls-cert/--tls-key/--tls-client-ca`; worker `--tls-ca/--client-cert/--client-key`) and per-client rate limiting (`--rate-limit`). Updated B3 Tampering/Info-disclosure/DoS rows, the crypto + network sections, R9 (residual lowered), and the CISO Q&A |
+| 1.3 | this rev | Submitter authentication shipped: optional operator `--submit-token` gates job/workload submission (`Authorization: Bearer`, constant-time, audited). Updated B4 Spoofing/Tampering/EoP rows, abuse-case 1 (fleet-as-botnet), and the traceability matrix |
 
 **Sign-off (to be completed during review)**
 
@@ -173,10 +174,10 @@ Legend for status: [PoC] enforced in code today · [Roadmap] documented, deferre
 ### B4 - Submitter <-> Orchestrator
 | STRIDE | Threat | Mitigation | Status | Residual |
 |---|---|---|---|---|
-| Spoofing | unauthorized submitter | submitter authN/Z (SSO/OIDC) | [Roadmap] | med (pilot uses controlled submitters) |
-| Tampering | inject malicious job | signed manifest; review of job classes; allow-listed adapters | [PoC sign]+[Roadmap submitter SSO] | med |
+| Spoofing | unauthorized submitter | **optional operator submit token now shipped** (`--submit-token`; `Authorization: Bearer`, constant-time, audited on failure) gates job/workload submission; full SSO/OIDC is the upgrade | [PoC token]+[Roadmap SSO/OIDC] | low-med (unauthorized submission blocked when token set) |
+| Tampering | inject malicious job | signed manifest; review of job classes; allow-listed adapters; **submit-token gate** on the submission endpoints | [PoC sign + submit token]+[Roadmap submitter SSO] | low-med |
 | Info-disclosure | over-collect employee/job data | data minimization; class policy; CELA review of data scope | [PoC]+[Roadmap DPIA] | med |
-| EoP / abuse | use fleet as botnet | internal-only; audited; class allow-list; rate/scope limits | [PoC audit]+[Roadmap quotas] | med |
+| EoP / abuse | use fleet as botnet | internal-only; audited; class allow-list; **submit-token gate on submission**; rate/scope limits (rate limiting shipped) | [PoC audit + submit token + rate limit]+[Roadmap quotas] | low-med |
 
 ### B5 - Employee <-> System (privacy)
 Covered in depth by the LINDDUN analysis (section 7).
@@ -201,7 +202,7 @@ Covered in depth by the LINDDUN analysis (section 7).
 
 ## 8. Abuse cases and attack trees
 
-1. **Fleet-as-botnet.** Goal: run attacker code at scale. Branches: compromise submitter (mitigate: submitter SSO + signed manifests + class allow-list + audit); compromise orchestrator (mitigate: hardened host, append-only audit, least-privilege, roadmap signing transparency).
+1. **Fleet-as-botnet.** Goal: run attacker code at scale. Branches: compromise submitter (mitigate: the shipped `--submit-token` operator gate on job/workload submission, plus signed manifests + class allow-list + audit; SSO/OIDC is the upgrade); compromise orchestrator (mitigate: hardened host, out-of-band pinned worker signer, append-only audit, least-privilege, roadmap signing transparency).
 2. **Data exfiltration via job.** Goal: read host/other-job data. Branches: sandbox escape (mitigate: MXC/container isolation + class policy + no-network; `--require-isolation` fails closed when no OS-enforced sandbox is present); intermediate-state leakage like activations (mitigate: restrict sensitive classes; disclosed residual).
 3. **Reward fraud at scale (Sybil / benchmark inflation).** Reference incident: io.net saw ~1.8M fake GPUs. Mitigate: corp-SSO one-identity-per-node, validated-output-only metering, server-assigned credit, challenge/ringer, capped multipliers.
 4. **Cryptojacking of our own fleet.** An attacker abuses the agent to mine. Mitigate: only signed, hash-bound manifests run; server-authoritative job source; audit; allow-listed adapters.
@@ -362,6 +363,7 @@ The PoC enforces the technical heart of a secure design (authenticated, signed, 
 | `--trusted-key` out-of-band pinned signer (strict provenance) | B3 tamper, abuse-case 5, R6 |
 | Optional TLS + mutual TLS (server `--tls-*`, worker `--tls-ca`/`--client-cert`) | B3 tamper/info-disclosure, R9 |
 | Per-client rate limiting (`--rate-limit`, 429 + Retry-After) | B3 DoS, B4 fleet-abuse, R9 |
+| Operator submit token (`--submit-token`, constant-time, audited) | B4 spoofing/tampering/EoP, abuse-case 1 |
 | Instant-yield governor vs learned profile; never on battery | A1, R8, R14 |
 | Challenge/ringer + server-assigned credit + append-only ledger | A4/A5, R7 |
 | On-device-only profiling; data minimization; no-persistence | A2, B5/LINDDUN, R4/R10 |
