@@ -216,10 +216,17 @@ class JobDetail(BaseModel):
 
 
 class WorkloadLaunchRequest(BaseModel):
-    """Launch a whole workload across the fleet in one call (hardcoded split into n_tiles)."""
+    """Launch a whole workload across the fleet in one call (split into tiles the pull queue hands out).
+
+    ``oversubscribe`` opts into over-decomposition (docs/work-stealing.md): with the default of 1 the
+    launcher keeps today's exact one-tile-per-worker behavior, while a value > 1 carves the workload
+    into ~``oversubscribe`` x (approved worker count) smaller tiles so idle/fast machines keep pulling
+    the next tile and a dropped tile requeues to whoever is free. An explicit ``n_tiles`` is respected
+    verbatim as the tile count (it wins over the worker-count computation)."""
 
     kind: str
     n_tiles: int = 3
+    oversubscribe: int = Field(default=1, ge=1, le=64)
     params: dict[str, Any] = Field(default_factory=dict)
 
 

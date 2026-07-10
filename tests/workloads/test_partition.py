@@ -5,6 +5,7 @@ import pytest
 
 from workloads.partition import (
     even_ranges,
+    oversubscribed_tiles,
     weighted_partition,
     weighted_ranges,
     worker_weight,
@@ -211,3 +212,26 @@ def test_worker_weight_idle_capable_beats_busy_weak():
     idle_gpu = worker_weight(5.0, free_ram_gb=16.0, load_pct=2.0)
     busy_cpu = worker_weight(1.0, free_ram_gb=1.0, load_pct=90.0)
     assert idle_gpu > busy_cpu
+
+
+# --- oversubscribed_tiles (over-decomposition tile count for work-stealing) -----------------
+
+
+def test_oversubscribed_tiles_scales_with_worker_count_and_factor():
+    # ~factor tiles per worker: 3 workers x 4 => 12 small tiles for the pull queue to steal.
+    assert oversubscribed_tiles(3, 4, cap=512) == 12
+    assert oversubscribed_tiles(5, 1, cap=512) == 5
+
+
+def test_oversubscribed_tiles_empty_fleet_still_produces_factor_tiles():
+    # No workers yet: treat as one worker so a launch still enqueues `factor` tiles.
+    assert oversubscribed_tiles(0, 6, cap=512) == 6
+
+
+def test_oversubscribed_tiles_clamped_by_cap():
+    assert oversubscribed_tiles(100, 64, cap=512) == 512
+
+
+def test_oversubscribed_tiles_floors_factor_and_result_at_one():
+    assert oversubscribed_tiles(4, 0, cap=512) == 4   # factor floored to 1
+    assert oversubscribed_tiles(0, 0, cap=512) == 1   # never fewer than one tile

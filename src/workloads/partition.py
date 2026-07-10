@@ -121,6 +121,21 @@ def weighted_partition(total_units: int, weights: list[float]) -> list[int]:
     return counts
 
 
+def oversubscribed_tiles(worker_count: int, factor: int, cap: int) -> int:
+    """Tile count for over-decomposition: ``~factor`` tiles per worker, clamped to ``[1, cap]``.
+
+    This is the count-only knob behind work-stealing (docs/work-stealing.md): splitting a workload
+    into MORE, SMALLER tiles than there are workers lets idle/fast machines keep pulling the next
+    tile off the queue while a slow machine only ever holds one small tile. Pure and deterministic;
+    an empty fleet is treated as one worker so a launch still produces ``factor`` tiles, and the cap
+    bounds the queue so a huge fleet or factor cannot explode the tile count.
+    """
+    f = max(int(factor), 1)
+    workers = max(int(worker_count), 1)
+    bound = max(int(cap), 1)
+    return max(1, min(workers * f, bound))
+
+
 # Weighting model knobs (documented in docs/partitioning.md). Each factor is bounded so that no
 # single dimension can zero out a worker's share: an approved worker always earns some work.
 _IDLE_FLOOR = 0.1   # a fully-loaded worker still earns 10% of an idle worker's utilization share
