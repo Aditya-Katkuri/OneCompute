@@ -36,7 +36,7 @@ All citations are `path:line` into this repository, verified against the current
 
 | TSC point | OneCompute control | Status | Citation | Gap / note |
 |---|---|---|---|---|
-| Segregation of untrusted workloads | Preferred OS-enforced boundary is MXC when a real `wxc-exec` runtime is present; else a Docker container (`--network none`, ephemeral `--rm`, minimal stdlib payload); else a Windows Job Object (caps + kill-on-close only) | **Implemented** (MXC fail-closed/inert until a runtime exists) | boundary selection `src/isolation/runner.py:93-102`; MXC probe `src/isolation/mxc.py:70-90`; Job Object `src/isolation/jobobject.py` | MXC not yet validated against a real runtime (threat-model R15); Docker fallback has no FS boundary |
+| Segregation of untrusted workloads | Preferred OS-enforced boundary is MXC when a real `wxc-exec` runtime is present; else a Docker container (`--network none`, ephemeral `--rm`, minimal stdlib payload); else a Windows Job Object (caps + kill-on-close only) | **Implemented** (MXC fail-closed/inert until a runtime exists) | boundary selection `src/isolation/runner.py:93-102`; MXC probe `src/isolation/mxc.py:70-90`; Job Object `src/isolation/jobobject.py`; launch-path validated end-to-end against a stub runtime `tests/isolation/test_mxc_validation.py` + `docs/mxc-validation.md` | MXC not yet validated against a real runtime (threat-model R15; wiring proven via the stub harness); Docker fallback has no FS boundary |
 | Fail-closed on missing isolation | `--require-isolation` refuses to run (raises `IsolationUnavailableError`) rather than use the unsandboxed subprocess or run host-side GPU/AI without an OS sandbox | **Implemented** | `src/worker/__main__.py:184-190`; `agent.py:232, 238`; `runner.py:62, 579-587` | Off by default so the demo runs; **recommended on for pilots** |
 | No persistence | Inputs/outputs wiped at job end; instant-yield is a real process-tree/container kill | **Implemented** | `runner.py` (per-job temp dir teardown; `should_yield` kill path) | Side-channel residual disclosed (threat-model 11.1) |
 
@@ -53,7 +53,7 @@ All citations are `path:line` into this repository, verified against the current
 | TSC point | OneCompute control | Status | Citation | Gap / note |
 |---|---|---|---|---|
 | CC8.1 Authorized changes only | Frozen data contracts and SQLite schema treated as deliberate seams; tests mirror source layout | **Implemented** | `src/contracts/models.py`, `src/contracts/schema.sql`; `tests/` | 239 tests, 2 skipped (Docker-only) |
-| CC8.1 Supply chain / build provenance | Ed25519 manifest signing; pinned dependency lockfile | **Partial** | signing `src/trust/signing.py` | `cryptography` (trust root) is currently transitive via `azure-identity`/`msal`, not a pinned direct dep; SBOM + cosign/SLSA are **Roadmap** (threat-model section 14) |
+| CC8.1 Supply chain / build provenance | Ed25519 manifest signing; pinned dependency lockfile; pinned `cryptography` trust root; **generated CycloneDX SBOM** | **Implemented** (SBOM + pinning + signing) | signing `src/trust/signing.py`; SBOM `scripts/generate_sbom.py` + `tests/test_sbom.py` + `docs/supply-chain.md`; pin in `pyproject.toml` | Signed **build attestation** (cosign/OIDC/Rekor + SLSA) remains **Roadmap** (threat-model section 14) |
 
 ---
 
@@ -102,9 +102,9 @@ Privacy is analyzed in depth in the threat model's LINDDUN section (section 7). 
 
 ## 6. Summary: implemented vs. roadmap
 
-**Implemented in code (the technical heart of the design):** authenticated (constant-time worker token), admission-gated (device-code approval), optional submission authorization (operator submit token), signed + hash-bound + expiring manifests, optional out-of-band pinned signer, OS-enforced isolation with a fail-closed switch, MXC as the preferred boundary (fail-closed/inert until a runtime exists), no-network CPU containment, lease/requeue for churn, server-assigned append-only crediting, challenge/ringer anti-cheat with blacklisting, append-only audit including `auth_failed`, 8 MB result cap, security response headers, optional TLS + mutual TLS transport, per-client rate limiting, `cryptography` pinned as a direct dependency, never-on-battery demand-aware yield, and on-device-only data minimization.
+**Implemented in code (the technical heart of the design):** authenticated (constant-time worker token), admission-gated (device-code approval), optional submission authorization (operator submit token), signed + hash-bound + expiring manifests, optional out-of-band pinned signer, OS-enforced isolation with a fail-closed switch, MXC as the preferred boundary (fail-closed/inert until a runtime exists), no-network CPU containment, lease/requeue for churn, server-assigned append-only crediting, challenge/ringer anti-cheat with blacklisting, append-only audit including `auth_failed`, 8 MB result cap, security response headers, optional TLS + mutual TLS transport, per-client rate limiting, `cryptography` pinned as a direct dependency, a generated CycloneDX SBOM, an MXC launch-path validation harness, never-on-battery demand-aware yield, and on-device-only data minimization.
 
-**Roadmap (named, not built here):** full submitter SSO/OIDC (an optional operator submit token is shipped as the PoC step), device-bound certificates, HSM-custodied signing key, cosign/OIDC/Rekor + SLSA provenance, SBOM, TLS-on-by-default with automated cert issuance/rotation, SIEM export, MXC validation against a real `wxc-exec` runtime, and a formal DPIA.
+**Roadmap (named, not built here):** full submitter SSO/OIDC (an optional operator submit token is shipped as the PoC step), device-bound certificates, HSM-custodied signing key, cosign/OIDC/Rekor + SLSA build attestation, TLS-on-by-default with automated cert issuance/rotation, SIEM export, MXC validation against a real `wxc-exec` runtime (its launch-path wiring is proven via a stub harness), and a formal DPIA.
 
 ## 7. Traceability to the threat-model risk register
 
@@ -119,5 +119,5 @@ Privacy is analyzed in depth in the threat model's LINDDUN section (section 7). 
 | R8 Governor mis-sizing | A1.1 headroom governor (measured in pilot) |
 | R9 Transport insecure | CC6.7 optional TLS/mTLS + A1.2 rate limiting |
 | R11 Churn | A1.2 lease/requeue |
-| R13 Supply chain | CC8.1 (SBOM/cosign roadmap; pin `cryptography`) |
-| R15 MXC preview immaturity | CC6.x MXC fail-closed/inert; validate before reliance |
+| R13 Supply chain | CC8.1 SBOM + pinning + Ed25519 signing (build attestation roadmap) |
+| R15 MXC preview immaturity | CC6.x MXC fail-closed/inert; launch-path validated via stub harness; real-runtime validation before reliance |
