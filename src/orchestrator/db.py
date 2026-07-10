@@ -84,6 +84,14 @@ def init_db(db_path: str = ":memory:") -> sqlite3.Connection:
         conn.execute("PRAGMA journal_mode=WAL")
     schema_path = Path(__file__).resolve().parents[1] / "contracts" / "schema.sql"
     conn.executescript(schema_path.read_text(encoding="utf-8"))
+    # Backward-compat: a persistent DB created before the tamper-evident chain lacks these
+    # columns. CREATE TABLE IF NOT EXISTS won't add them, so ALTER them in idempotently
+    # (a re-run raises "duplicate column name", which we swallow).
+    for column in ("prev_hash", "hash"):
+        try:
+            conn.execute(f"ALTER TABLE events ADD COLUMN {column} TEXT")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     return conn
 

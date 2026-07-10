@@ -34,6 +34,7 @@ from contracts import (
     WorkloadLaunchRequest,
     WorkloadLaunchResponse,
     WorkloadView,
+    canonical_bytes,
     sha256_hex,
 )
 from dashboard.paths import INDEX_HTML
@@ -332,6 +333,63 @@ def _require_worker_token(
     raise HTTPException(status_code=401, detail=detail)
 
 
+# Fixed genesis anchor for the audit hash chain: the notional prev_hash of the very first event.
+AUDIT_GENESIS_HASH = "0" * 64
+
+
+def _audit_event_hash(
+    prev_hash: str,
+    ts: str,
+    event_type: str,
+    worker_id: str | None,
+    job_id: str | None,
+    detail: str | None,
+) -> str:
+    """The canonical tamper-evident hash for one audit event.
+
+    Hashes the canonical tuple (prev_hash, ts, type, worker_id, job_id, detail), coalescing the
+    nullable fields to "" so a stored NULL and an empty string hash identically. Both _emit (when
+    writing) and verify_audit_chain (when re-deriving) call this, so the chain check is exact.
+    """
+    return sha256_hex(
+        canonical_bytes(
+            [
+                prev_hash or "",
+                ts or "",
+                event_type or "",
+                worker_id or "",
+                job_id or "",
+                detail or "",
+            ]
+        )
+    )
+
+
+def verify_audit_chain(conn: sqlite3.Connection) -> dict:
+    """Re-derive the audit hash chain from stored fields and report the first broken link.
+
+    Walks every event by ascending id, recomputing each hash from its stored fields plus the
+    running prev_hash (seeded with the genesis anchor). Returns
+    {"ok": bool, "count": int, "broken_at": id|None}: ok is False and broken_at is the id of the
+    first event whose stored prev_hash or hash does not match the re-derivation.
+    """
+    rows = conn.execute(
+        "SELECT id, ts, type, worker_id, job_id, detail, prev_hash, hash "
+        "FROM events ORDER BY id ASC"
+    ).fetchall()
+    prev_hash = AUDIT_GENESIS_HASH
+    count = 0
+    for row in rows:
+        count += 1
+        expected = _audit_event_hash(
+            prev_hash, row["ts"], row["type"], row["worker_id"], row["job_id"], row["detail"]
+        )
+        if row["prev_hash"] != prev_hash or row["hash"] != expected:
+            return {"ok": False, "count": count, "broken_at": row["id"]}
+        prev_hash = row["hash"]
+    return {"ok": True, "count": count, "broken_at": None}
+
+
 def _emit(
     conn: sqlite3.Connection,
     event_type: str,
@@ -339,11 +397,24 @@ def _emit(
     job_id: str | None = None,
     detail: str | None = None,
 ) -> None:
-    """Append a row to the activity feed the dashboard streams from GET /events."""
+    """Append a row to the activity feed the dashboard streams from GET /events.
+
+    Every row is linked into a tamper-evident hash chain: its ``hash`` covers the canonical
+    tuple below plus the ``prev_hash`` (the hash of the immediately preceding event by id, or a
+    fixed genesis constant for the first). Reading the tail, computing the hash, and inserting all
+    happen inside ``write_lock`` so concurrent emits stay correctly ordered and the chain is dense.
+    """
     with write_lock:
+        prev = conn.execute(
+            "SELECT hash FROM events ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        prev_hash = prev["hash"] if prev is not None and prev["hash"] else AUDIT_GENESIS_HASH
+        ts = _now()
+        event_hash = _audit_event_hash(prev_hash, ts, event_type, worker_id, job_id, detail)
         conn.execute(
-            "INSERT INTO events (ts, type, worker_id, job_id, detail) VALUES (?, ?, ?, ?, ?)",
-            (_now(), event_type, worker_id, job_id, detail),
+            "INSERT INTO events (ts, type, worker_id, job_id, detail, prev_hash, hash) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (ts, event_type, worker_id, job_id, detail, prev_hash, event_hash),
         )
         conn.commit()
 
@@ -938,6 +1009,27 @@ def create_app(
         items = [dict(row) for row in rows]
         last_id = items[-1]["id"] if items else since
         return {"events": items, "last_id": last_id}
+
+    @app.get("/events/verify")
+    def events_verify() -> dict:
+        """Read-only integrity check: re-derive the audit hash chain and report the first break."""
+        return verify_audit_chain(conn)
+
+    @app.get("/events/export")
+    def events_export() -> Response:
+        """Export the audit log as newline-delimited JSON (JSONL) for SIEM ingestion.
+
+        One event object per line, each carrying id/ts/type/worker_id/job_id/detail/prev_hash/hash,
+        ordered by id so the hash chain is reconstructable downstream (e.g. Microsoft Sentinel).
+        """
+        rows = conn.execute(
+            "SELECT id, ts, type, worker_id, job_id, detail, prev_hash, hash "
+            "FROM events ORDER BY id ASC"
+        ).fetchall()
+        body = "".join(
+            json.dumps(dict(row), separators=(",", ":"), ensure_ascii=False) + "\n" for row in rows
+        )
+        return Response(content=body, media_type="application/x-ndjson")
 
     @app.get("/healthz")
     def healthz() -> dict:
