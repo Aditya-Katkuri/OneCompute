@@ -54,7 +54,9 @@ CREATE TABLE IF NOT EXISTS events (
     type      TEXT NOT NULL,   -- registered | approved | submitted | assigned | completed | yielded | failed | blacklisted
     worker_id TEXT,
     job_id    TEXT,
-    detail    TEXT
+    detail    TEXT,
+    prev_hash TEXT,            -- tamper-evident chain: hash of the immediately preceding event (genesis for the first)
+    hash      TEXT             -- sha256_hex(canonical_bytes([prev_hash, ts, type, worker_id, job_id, detail]))
 );
 
 -- Opt-in measurement pilot: the latest on-device usage envelope per worker (derived hour-of-week
