@@ -110,43 +110,77 @@ def _job_detail(row: sqlite3.Row) -> JobDetail:
     )
 
 
-def _build_workload_jobs(kind: str, n_tiles: int, params: dict) -> list[dict]:
+def _build_workload_jobs(
+    kind: str, n_tiles: int, params: dict, weights: list[float] | None = None
+) -> list[dict]:
     """Build the split SubmitRequest dicts for a launchable workload kind.
 
     Lazy imports keep the orchestrator import-light and avoid pulling the workload builders
-    (and their optional PIL/numpy deps) unless POST /workloads is actually used. The hardcoded
-    fleet split lives in the builders (one tile per machine via workloads.partition)."""
+    (and their optional PIL/numpy deps) unless POST /workloads is actually used. When ``weights``
+    is given (one per tile) the range-splitting builders size their tiles proportionally, so a
+    more capable / more idle machine is handed a larger share; passing ``None`` keeps the original
+    uniform (near-even) split. Builders that do not split by tile weight ignore ``weights``."""
     if kind == "fractal":
         from workloads.fractal import build_fractal_jobs
-        return build_fractal_jobs(n_tiles=n_tiles, **params)
+        return build_fractal_jobs(n_tiles=n_tiles, weights=weights, **params)
     if kind == "optimize":
         from workloads.optimize import build_optimize_jobs
-        return build_optimize_jobs(n_tiles=n_tiles, **params)
+        return build_optimize_jobs(n_tiles=n_tiles, weights=weights, **params)
     if kind == "ai.synth":
         from workloads.synth import build_synth_jobs
-        return build_synth_jobs(n_tiles=n_tiles, **params)
+        return build_synth_jobs(n_tiles=n_tiles, weights=weights, **params)
     if kind == "ai.batch_infer":
         from workloads.ai_batch import build_prompt_jobs
         return build_prompt_jobs(**params)  # slices by slice_size, not n_tiles
     if kind == "data.transform":
         from workloads.cpu_fanout import generate_jobs
-        return generate_jobs(n_jobs=n_tiles, **params)
+        return generate_jobs(n_jobs=n_tiles, **params)  # uniform fan-out, no per-tile weighting
     if kind == "montecarlo":
         from workloads.montecarlo import build_montecarlo_jobs
-        return build_montecarlo_jobs(n_tiles=n_tiles, **params)
+        return build_montecarlo_jobs(n_tiles=n_tiles, weights=weights, **params)
     if kind == "hashcrack":
         from workloads.hashcrack import build_hashcrack_jobs
-        return build_hashcrack_jobs(n_tiles=n_tiles, **params)
+        return build_hashcrack_jobs(n_tiles=n_tiles, weights=weights, **params)
     if kind == "ai.infer":
         from workloads.infer import build_infer_jobs
-        return build_infer_jobs(n_tiles=n_tiles, **params)
+        return build_infer_jobs(n_tiles=n_tiles, weights=weights, **params)
     if kind == "ai.eval":
         from workloads.eval import build_eval_jobs
-        return build_eval_jobs(n_tiles=n_tiles, **params)
+        return build_eval_jobs(n_tiles=n_tiles, weights=weights, **params)
     if kind == "ai.graph":
         from workloads.graph import build_graph_jobs
-        return build_graph_jobs(n_tiles=n_tiles, **params)
+        return build_graph_jobs(n_tiles=n_tiles, weights=weights, **params)
     raise ValueError(f"unknown or non-launchable workload kind: {kind!r}")
+
+
+def _capability_tile_weights(conn: sqlite3.Connection, n_tiles: int) -> list[float] | None:
+    """Per-tile weights from the live fleet, or ``None`` to keep the uniform split.
+
+    Reads the approved, non-blacklisted worker rows (deterministically ordered) and turns each
+    into a positive weight via :func:`workloads.partition.worker_weight` (capability x idle
+    headroom x free RAM). Returns weights only when there is exactly one worker per tile and the
+    fleet is actually heterogeneous; otherwise returns ``None`` so a homogeneous fleet (or a tile
+    count that does not line up one-per-machine) keeps the original near-even behavior."""
+    from workloads.partition import worker_weight
+
+    rows = conn.execute(
+        "SELECT class_weight, free_ram_gb, cpu_pct, gpu_pct FROM workers "
+        "WHERE approved = 1 AND blacklisted = 0 ORDER BY worker_id ASC"
+    ).fetchall()
+    if not rows or len(rows) != n_tiles:
+        return None
+    weights = [
+        worker_weight(
+            row["class_weight"],
+            row["free_ram_gb"],
+            _load_score(row["cpu_pct"], row["gpu_pct"]),
+        )
+        for row in rows
+    ]
+    # A uniform fleet needs no weighting: fall back to the original even split so nothing changes.
+    if max(weights) - min(weights) <= 1e-9:
+        return None
+    return weights
 
 
 # The example workloads a dashboard offers as launch buttons. A UI renders these without
@@ -944,15 +978,17 @@ def create_app(
 
     @app.post("/workloads", response_model=WorkloadLaunchResponse)
     def launch_workload(req: WorkloadLaunchRequest, authorization: str | None = Header(default=None)) -> WorkloadLaunchResponse:
-        """Launch a whole workload across the fleet in one call: build the hardcoded split
-        (one tile per machine) and enqueue every tile tagged with a shared workload_id."""
+        """Launch a whole workload across the fleet in one call: build a capability-weighted split
+        (more capable / more idle machines get proportionally larger tiles) and enqueue every tile
+        tagged with a shared workload_id. Falls back to the uniform split for a homogeneous fleet."""
         _require_submit_token(authorization)
         if req.kind not in LAUNCHABLE_KINDS:
             raise HTTPException(
                 status_code=400, detail=f"kind must be one of {list(LAUNCHABLE_KINDS)}"
             )
+        weights = _capability_tile_weights(conn, req.n_tiles)
         try:
-            specs = _build_workload_jobs(req.kind, req.n_tiles, req.params)
+            specs = _build_workload_jobs(req.kind, req.n_tiles, req.params, weights)
         except (TypeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=f"could not build workload: {exc}") from exc
         workload_id = uuid4().hex
