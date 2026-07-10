@@ -92,6 +92,13 @@ def init_db(db_path: str = ":memory:") -> sqlite3.Connection:
             conn.execute(f"ALTER TABLE events ADD COLUMN {column} TEXT")
         except sqlite3.OperationalError:
             pass
+    # Backward-compat: a persistent DB created before device-identity binding lacks the
+    # workers.cert_fingerprint column. Add it idempotently the same way (additive, nullable).
+    for column in ("cert_fingerprint",):
+        try:
+            conn.execute(f"ALTER TABLE workers ADD COLUMN {column} TEXT")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     return conn
 

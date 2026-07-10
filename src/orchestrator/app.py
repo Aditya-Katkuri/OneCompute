@@ -343,7 +343,17 @@ def _require_worker_token(
     conn: sqlite3.Connection,
     worker_id: str,
     authorization: str | None,
+    bind_device_identity: bool = False,
+    presented_fingerprint: str | None = None,
 ) -> sqlite3.Row:
+    """Authenticate an authenticated worker call by its bearer token, and (when device-identity
+    binding is on and the worker registered a fingerprint) also by its TLS client-cert fingerprint.
+
+    The device fingerprint is the lowercase hex SHA-256 of the client certificate's DER bytes,
+    presented in the ``X-Client-Cert-SHA256`` header. This is the STRIDE Spoofing (boundary B3)
+    control: it binds worker identity to the device key so a stolen bearer token alone cannot
+    impersonate the worker. When binding is off (the default) behavior is exactly as before.
+    """
     worker = conn.execute(
         "SELECT * FROM workers WHERE worker_id = ?",
         (worker_id,),
@@ -358,6 +368,13 @@ def _require_worker_token(
         stored_token = str(worker["token"]) if worker is not None else "0" * 32
         token_matches = bool(token) and compare_digest(token, stored_token)
         if worker is not None and token_matches:
+            stored_fingerprint = worker["cert_fingerprint"]
+            if bind_device_identity and stored_fingerprint:
+                presented = (presented_fingerprint or "").strip().lower()
+                if not (presented and compare_digest(presented, str(stored_fingerprint))):
+                    _emit(conn, "auth_failed", worker_id=worker_id,
+                          detail="device_fingerprint_mismatch")
+                    raise HTTPException(status_code=401, detail="device_fingerprint_mismatch")
             return worker
     # A request for a worker we don't have (e.g. one an admin disconnected, or one that never
     # registered) isn't a credential attack: fail it quietly so a removed-but-still-running agent
@@ -502,6 +519,7 @@ def create_app(
     require_approval: bool = False,
     rate_limit_per_min: int | None = None,
     submit_token: str | None = None,
+    bind_device_identity: bool = False,
 ) -> FastAPI:
     conn = open_serialized_db(db_path)
     if signer is None:
@@ -555,20 +573,29 @@ def create_app(
         return response
 
     @app.post("/register", response_model=RegisterResponse)
-    def register(cap: Capability) -> RegisterResponse:
+    def register(
+        cap: Capability,
+        x_client_cert_sha256: str | None = Header(default=None, alias="X-Client-Cert-SHA256"),
+    ) -> RegisterResponse:
         token = uuid4().hex
         now = _now()
         weight = class_weight_for(cap)
         approved = 0 if require_approval else 1
         # Only pending workers carry a device code; an auto-approved (non-gated) worker has none.
         device_code = None if approved else _make_device_code()
+        # Device-identity binding (opt-in): when on and the mTLS front end / proxy (or this PoC
+        # path) presents the client-cert fingerprint, bind it to the worker row so later calls
+        # must prove the same device key. Stored lowercase; NULL leaves the worker unbound.
+        cert_fingerprint = None
+        if bind_device_identity and x_client_cert_sha256:
+            cert_fingerprint = x_client_cert_sha256.strip().lower()
         with write_lock:
             conn.execute(
                 """
                 INSERT INTO workers (
                     worker_id, token, capability_json, class_weight, free_ram_gb, idle,
-                    approved, device_code, registered_at, last_heartbeat
-                ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+                    approved, device_code, registered_at, last_heartbeat, cert_fingerprint
+                ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
                 ON CONFLICT(worker_id) DO UPDATE SET
                     token = excluded.token,
                     capability_json = excluded.capability_json,
@@ -581,13 +608,15 @@ def create_app(
                     device_code = CASE WHEN workers.approved = 1 THEN NULL
                                        ELSE excluded.device_code END,
                     registered_at = excluded.registered_at,
-                    last_heartbeat = excluded.last_heartbeat
+                    last_heartbeat = excluded.last_heartbeat,
+                    -- keep a previously bound fingerprint if this re-register carries none.
+                    cert_fingerprint = COALESCE(excluded.cert_fingerprint, workers.cert_fingerprint)
                 """,
                 (
                     cap.worker_id, token, cap.model_dump_json(), weight,
                     cap.free_ram_gb if cap.free_ram_gb is not None else cap.ram_gb,
                     approved, device_code,
-                    now, now,
+                    now, now, cert_fingerprint,
                 ),
             )
             conn.commit()
@@ -617,8 +646,16 @@ def create_app(
         return SubmitResponse(job_id=job_id)
 
     @app.get("/jobs/next", response_model=JobAssignment)
-    def jobs_next(worker_id: str, authorization: str | None = Header(default=None)):
-        worker = _require_worker_token(conn, worker_id, authorization)
+    def jobs_next(
+        worker_id: str,
+        authorization: str | None = Header(default=None),
+        x_client_cert_sha256: str | None = Header(default=None, alias="X-Client-Cert-SHA256"),
+    ):
+        worker = _require_worker_token(
+            conn, worker_id, authorization,
+            bind_device_identity=bind_device_identity,
+            presented_fingerprint=x_client_cert_sha256,
+        )
         if worker["blacklisted"]:
             return Response(status_code=204)
         if not worker["approved"]:
@@ -667,8 +704,13 @@ def create_app(
     def heartbeat(
         req: HeartbeatRequest,
         authorization: str | None = Header(default=None),
+        x_client_cert_sha256: str | None = Header(default=None, alias="X-Client-Cert-SHA256"),
     ) -> HeartbeatResponse:
-        _require_worker_token(conn, req.worker_id, authorization)
+        _require_worker_token(
+            conn, req.worker_id, authorization,
+            bind_device_identity=bind_device_identity,
+            presented_fingerprint=x_client_cert_sha256,
+        )
         worker = _worker_or_404(conn, req.worker_id)
         approved = bool(worker["approved"])
         now = _now()
@@ -751,10 +793,15 @@ def create_app(
         job_id: str,
         req: ResultRequest,
         authorization: str | None = Header(default=None),
+        x_client_cert_sha256: str | None = Header(default=None, alias="X-Client-Cert-SHA256"),
     ) -> ResultResponse:
         if req.job_id != job_id:
             raise HTTPException(status_code=400, detail="job id mismatch")
-        worker = _require_worker_token(conn, req.worker_id, authorization)
+        worker = _require_worker_token(
+            conn, req.worker_id, authorization,
+            bind_device_identity=bind_device_identity,
+            presented_fingerprint=x_client_cert_sha256,
+        )
         if worker["blacklisted"]:
             return ResultResponse(accepted=False, reason="blacklisted")
         now = _now()
@@ -902,13 +949,18 @@ def create_app(
     def ingest_profile(
         req: ProfileReport,
         authorization: str | None = Header(default=None),
+        x_client_cert_sha256: str | None = Header(default=None, alias="X-Client-Cert-SHA256"),
     ) -> ProfileIngestResponse:
         """Opt-in measurement pilot: a worker uploads its on-device usage envelope (derived
         hour-of-week stats only, never raw activity) so the control plane can roll up fleet-wide
         MEASURED idle headroom without job execution. Same bearer-token auth as /heartbeat; the
         report is sanitized and clamped before storage (the wire is never trusted). One row per
         worker, replaced on each report."""
-        _require_worker_token(conn, req.worker_id, authorization)
+        _require_worker_token(
+            conn, req.worker_id, authorization,
+            bind_device_identity=bind_device_identity,
+            presented_fingerprint=x_client_cert_sha256,
+        )
         clean = _sanitize_profile_buckets(req.buckets)
         now = _now()
         with write_lock:
