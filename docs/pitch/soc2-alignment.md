@@ -52,7 +52,7 @@ All citations are `path:line` into this repository, verified against the current
 
 | TSC point | OneCompute control | Status | Citation | Gap / note |
 |---|---|---|---|---|
-| CC8.1 Authorized changes only | Frozen data contracts and SQLite schema treated as deliberate seams; tests mirror source layout | **Implemented** | `src/contracts/models.py`, `src/contracts/schema.sql`; `tests/` | 239 tests, 2 skipped (Docker-only) |
+| CC8.1 Authorized changes only | Frozen data contracts and SQLite schema treated as deliberate seams; tests mirror source layout | **Implemented** | `src/contracts/models.py`, `src/contracts/schema.sql`; `tests/` | 356 tests, 2 skipped (Docker-only) |
 | CC8.1 Supply chain / build provenance | Ed25519 manifest signing; pinned dependency lockfile; pinned `cryptography` trust root; **generated CycloneDX SBOM**; **signed SLSA v1 in-toto provenance attestation**; **Sigstore cosign integration** (inert-when-absent) | **Implemented** (SBOM + pinning + signing + offline attestation + cosign integration) | signing `src/trust/signing.py`; SBOM `scripts/generate_sbom.py`; provenance `scripts/generate_provenance.py`; cosign `src/trust/cosign.py` + `scripts/cosign_attest.py` + `docs/cosign.md`; pin in `pyproject.toml` | Transparency-logged keyless signing (cosign/OIDC/Rekor + full SLSA build levels) remains **Roadmap** (needs network + OIDC) |
 
 ---

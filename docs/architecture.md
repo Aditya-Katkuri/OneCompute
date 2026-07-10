@@ -212,7 +212,7 @@ A job is a **signed manifest** + input payload. The manifest is the trust contra
 
 ## 6. Workload adapters
 
-The same fabric carries different job kinds via small adapters. The PoC ships an **example workload catalog, originally four, now ~10 launchable kinds**, fanned across the fleet via **capability-weighted dynamic partitioning** (`src/workloads/partition.py` `weighted_partition`/`weighted_ranges`: more idle/capable machines get larger tiles, falling back to an even split for a homogeneous fleet; see [`partitioning.md`](./partitioning.md)); the dynamic governor is set aside for the demo. The four below are the original worked examples: two non-AI and two AI, to show range. Full per-workload detail (inputs, outputs, aggregation, preemptibility) lives in [`workloads.md`](./workloads.md), not duplicated here.
+The same fabric carries different job kinds via small adapters. The PoC ships an **example workload catalog, originally four, now ~10 launchable kinds**, fanned across the fleet via **capability-weighted dynamic partitioning** (`src/workloads/partition.py` `weighted_partition`/`weighted_ranges`: more idle/capable machines get larger tiles, falling back to an even split for a homogeneous fleet; see [`partitioning.md`](./partitioning.md)); an opt-in `oversubscribe` factor over-decomposes a workload into more, smaller tiles than there are workers so the existing pull queue naturally steals work to idle/fast machines while a slow machine holds one small tile (see [`work-stealing.md`](./work-stealing.md)); the dynamic governor is set aside for the demo. The four below are the original worked examples: two non-AI and two AI, to show range. Full per-workload detail (inputs, outputs, aggregation, preemptibility) lives in [`workloads.md`](./workloads.md), not duplicated here.
 
 | Job kind | AI? | Runtime on worker | PoC demo use |
 |---|---|---|---|
@@ -287,7 +287,7 @@ sequenceDiagram
 
 ## 10. PoC build plan (suggested order)
 
-> **Current status (branch `main`):** steps 2–9 are implemented and green (239 tests pass, 2 skipped), plus the additive dashboard-readiness layer (device-code approval gate, four fanned example workloads, `POST /workloads` launch + read API, live per-device usage stream). The dashboard **front-end UI is owned by the dashboard team**; the backend is integration-ready (see [`dashboard-api.md`](./dashboard-api.md)); we don't ship a finished UI.
+> **Current status (branch `main`):** steps 2–9 are implemented and green (356 tests pass, 2 skipped), plus the additive dashboard-readiness layer (device-code approval gate, the ~10-kind fanned example workload catalog, `POST /workloads` launch + read API, live per-device usage stream). The dashboard **front-end UI is owned by the dashboard team**; the backend is integration-ready (see [`dashboard-api.md`](./dashboard-api.md)); we don't ship a finished UI.
 
 1. **Spike the two unknowns first** *(de-risk day 1)*: (a) GPU passthrough into Windows Sandbox on the real demo SKU; (b) plain-HTTPS long-poll reachable across the corporate LAN.
 2. **Orchestrator skeleton**: FastAPI: `register`, `jobs/next` (long-poll), `heartbeat`, `results`; SQLite state; in-process scheduler.
