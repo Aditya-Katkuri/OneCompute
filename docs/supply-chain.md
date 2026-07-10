@@ -76,6 +76,150 @@ Roadmap (not built here, tracked in `docs/pitch/OneCompute-Threat-Model.md` sect
   builder.
 - Signed update channel with mandatory signature verification (no silent auto-update).
 
+## Signed provenance attestation
+
+`scripts/generate_provenance.py` takes a concrete, offline step toward the build-provenance
+roadmap item above. It builds an [in-toto Statement](https://in-toto.io/Statement/v1) whose
+`predicateType` is [SLSA Provenance v1](https://slsa.dev/provenance/v1) and Ed25519-signs it
+by reusing the project's manifest trust root (`src/trust/signing.Signer`, the same primitive
+that signs job manifests). It is pure standard library (`json` + `hashlib` + `tomllib`) plus
+`src/trust` for signing.
+
+### Statement and predicate shape
+
+```json
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    {"name": "sbom.cyclonedx.json", "digest": {"sha256": "<hex>"}},
+    {"name": "src-tree",            "digest": {"sha256": "<hex>"}}
+  ],
+  "predicateType": "https://slsa.dev/provenance/v1",
+  "predicate": {
+    "buildDefinition": {
+      "buildType": "https://onecompute.dev/provenance/buildtypes/offline-attestation/v1",
+      "externalParameters": {"project": "onecompute", "entryPoint": "scripts/generate_provenance.py", "subjects": ["sbom.cyclonedx.json", "src-tree"]},
+      "internalParameters": {},
+      "resolvedDependencies": [{"uri": "pkg:pypi/<name>@<version>", "digest": {"sha256": "<hex>"}}]
+    },
+    "runDetails": {"builder": {"id": "https://onecompute.dev/provenance/builders/offline-ed25519/v1"}}
+  }
+}
+```
+
+Two **subjects** are attested, both deterministic so the digests are reproducible:
+
+- `sbom.cyclonedx.json`: the CycloneDX SBOM regenerated in-process by the existing
+  `scripts/generate_sbom.py` generator (pinned to a fixed timestamp and serial number so the
+  digest is stable), hashed over its canonical bytes (`contracts.hashing.canonical_bytes` /
+  `sha256_hex`).
+- `src-tree`: a digest of the tracked sources, defined as the sha256 of the sorted list of
+  `[posix-relative-path, sha256-of-file-content]` pairs over `src/**/*.py`.
+
+The **predicate** is a faithful, minimal SLSA v1 shape. `resolvedDependencies` is derived
+from `uv.lock`: one entry per locked registry package as `{uri: pkg:pypi/<name>@<version>,
+digest: {sha256: ...}}`, with the sha256 taken from the package's sdist hash (falling back to
+the first wheel hash) and omitted only when the lock records none. `builder.id` identifies the
+offline Ed25519 attestor.
+
+Stubbed / deliberately empty fields (honest scope): `internalParameters` is empty (this
+offline PoC has no build-system internal configuration to record), and `runDetails.metadata`
+(invocationId, `startedOn` / `finishedOn` timestamps) is omitted so the statement is
+byte-reproducible. Recording real, signed build metadata is part of the roadmap below.
+
+### Signing envelope (DSSE-lite)
+
+The statement's canonical bytes are Ed25519-signed and emitted as a DSSE-lite JSON envelope:
+
+```json
+{
+  "payloadType": "application/vnd.in-toto+json",
+  "payload": { "...the in-toto Statement..." },
+  "signatures": [{"sig": "<hex>", "keyid": "<pubkey-hex>", "publicKey": "<pubkey-hex>"}]
+}
+```
+
+The public key is recorded in the envelope so verification is self-contained for the PoC. This
+mirrors the manifest signer: a key can be pinned out of band, but by default the carried key is
+used. Full [DSSE](https://github.com/secure-systems-lab/dsse) PAE framing, cosign/OIDC keyless
+signing, and a Rekor transparency-log entry are the production upgrade.
+
+### Generate and verify
+
+```powershell
+# From the repository root. Writes attestation.intoto.jsonl at the repo root.
+uv run python scripts/generate_provenance.py generate
+
+# Alternatives:
+uv run python scripts/generate_provenance.py generate --output build/attestation.intoto.jsonl
+uv run python scripts/generate_provenance.py generate --stdout
+
+# Verify (recomputes the statement bytes and checks the Ed25519 signature):
+uv run python scripts/generate_provenance.py verify attestation.intoto.jsonl
+```
+
+Signing uses a hex Ed25519 private key from `--private-key` or `$ONECOMPUTE_PROVENANCE_KEY`;
+if neither is set an ephemeral key is generated (like `Signer`'s default). `verify` returns a
+non-zero exit (and the `verify_envelope` function returns `False`) if the payload or the
+signature is tampered by even one byte.
+
+Source of truth:
+
+- Generator / verifier: `scripts/generate_provenance.py`
+- Tests: `tests/test_provenance.py`
+- Trust root reused for signing: `src/trust/signing.py`
+- Subjects hashed: the in-process SBOM (`scripts/generate_sbom.py`) and `src/**/*.py`
+
+### Honest scope
+
+This is a **lock-and-source attestation, signed offline**. It cryptographically binds a
+specific SBOM and source tree together and proves they were attested by the holder of an
+Ed25519 key. It is **not** a hardware-rooted or transparency-logged build proof: the signature
+is checked against a key carried in the envelope (or a locally supplied one), there is no
+independent builder identity, no OIDC-issued short-lived certificate, and no Rekor entry that a
+third party can audit. It attests the resolved dependency set and source, not the bytes of a
+built and shipped artifact.
+
+Roadmap (closing the remaining gap): cosign keyless OIDC signing (a short-lived,
+identity-bound certificate instead of a self-carried key) + Rekor transparency-log inclusion +
+full DSSE PAE framing + progression up the SLSA build levels (a hosted, isolated builder that
+generates the provenance, rather than an offline script the operator runs).
+
+### Microsoft SDL alignment
+
+This attestation extends the Microsoft Security Development Lifecycle (SDL) supply-chain
+practices already covered by the SBOM:
+
+- **Secure the build and establish provenance:** a signed SLSA v1 statement binds the resolved
+  dependency graph and source tree under one Ed25519 signature, giving a verifiable,
+  machine-readable provenance record where before there was only an unsigned SBOM.
+- **Reuse an approved cryptographic trust root:** signing reuses the vetted Ed25519 manifest
+  signer (`src/trust/signing.py`) and the CVE-watched, pinned `cryptography` dependency, rather
+  than introducing a new signing primitive.
+- **Verification is enforceable:** `verify` fails closed on any tampering, so the attestation
+  can gate a release or pilot hand-off.
+- **Roadmap tracked honestly:** cosign/OIDC/Rekor and higher SLSA build levels are named as the
+  path to a hardware-rooted, transparency-logged proof.
+
+### STRIDE: Tampering (build provenance)
+
+This work addresses the **Tampering** category of STRIDE for the build/release step,
+complementing the supply-chain Tampering mitigations above (risk R13, section 14 of
+`docs/pitch/OneCompute-Threat-Model.md`).
+
+- **Threat:** an attacker alters the resolved dependency set or the source tree between build
+  and deployment, or swaps in a different SBOM, so that what ships does not match what was
+  reviewed.
+- **Mitigation in place:** an Ed25519-signed SLSA v1 statement binds the SBOM digest and the
+  `src/**/*.py` source digest together; `verify` recomputes the statement bytes and rejects any
+  single-byte change to the payload or signature, so post-attestation tampering is detected.
+- **Residual risk / roadmap:** trust rests on a self-carried (or locally pinned) key rather than
+  an OIDC-issued builder identity, and there is no transparency log, so a fully compromised
+  signer could still produce a valid-looking attestation. Closing this means cosign keyless
+  signing + Rekor inclusion + full DSSE and SLSA build-level progression, as above. Until then
+  the honest posture is: dependencies and source cryptographically bound and offline-signed,
+  hardware-rooted and transparency-logged build proof on the roadmap.
+
 ## Dependency-pinning policy
 
 - `uv.lock` is the single resolved lock for the project and is committed to the
