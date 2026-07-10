@@ -65,6 +65,11 @@ MAX_RESULT_OUTPUT_BYTES = 8 * 1024 * 1024
 LOAD_PRIORITY_GRACE_S = 1.5   # only defer while a job is this fresh (seconds)
 LOAD_PRIORITY_MARGIN = 15.0   # a peer must be at least this many load-points (%) lighter to win priority
 LIVE_PEER_WINDOW_S = 3.0      # a peer only counts as a live competitor if it heartbeat within this window
+
+# Over-decomposition (docs/work-stealing.md): when a launch opts into oversubscription, the workload
+# is split into ~oversubscribe x (worker count) tiles, capped here so a large fleet or factor can
+# never explode the queue. The pull queue then distributes the small tiles, which IS the work-stealing.
+MAX_WORKLOAD_TILES = 512
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
@@ -181,6 +186,36 @@ def _capability_tile_weights(conn: sqlite3.Connection, n_tiles: int) -> list[flo
     if max(weights) - min(weights) <= 1e-9:
         return None
     return weights
+
+
+def _approved_worker_count(conn: sqlite3.Connection) -> int:
+    """Live count of workers that can actually pull work (approved and not blacklisted)."""
+    row = conn.execute(
+        "SELECT COUNT(*) AS n FROM workers WHERE approved = 1 AND blacklisted = 0"
+    ).fetchone()
+    return int(row["n"]) if row else 0
+
+
+def _resolve_tile_count(conn: sqlite3.Connection, req: WorkloadLaunchRequest) -> int:
+    """How many tiles to carve a launch into (docs/work-stealing.md).
+
+    Three cases, ordered so today's behavior is byte-identical by default:
+
+    - The caller set ``n_tiles`` explicitly: respect it verbatim (clamped to the cap). This keeps
+      every existing launch, including the capability-weighted one-per-machine split, unchanged.
+    - Otherwise ``oversubscribe > 1`` opts into over-decomposition: carve ~``oversubscribe`` x (live
+      approved worker count) smaller tiles so idle/fast machines keep pulling the next one.
+    - Otherwise (the default ``oversubscribe == 1``, no explicit ``n_tiles``): the model default.
+    """
+    if "n_tiles" in req.model_fields_set:
+        return max(1, min(req.n_tiles, MAX_WORKLOAD_TILES))
+    if req.oversubscribe > 1:
+        from workloads.partition import oversubscribed_tiles
+
+        return oversubscribed_tiles(
+            _approved_worker_count(conn), req.oversubscribe, MAX_WORKLOAD_TILES
+        )
+    return req.n_tiles
 
 
 # The example workloads a dashboard offers as launch buttons. A UI renders these without
@@ -1030,17 +1065,21 @@ def create_app(
 
     @app.post("/workloads", response_model=WorkloadLaunchResponse)
     def launch_workload(req: WorkloadLaunchRequest, authorization: str | None = Header(default=None)) -> WorkloadLaunchResponse:
-        """Launch a whole workload across the fleet in one call: build a capability-weighted split
-        (more capable / more idle machines get proportionally larger tiles) and enqueue every tile
-        tagged with a shared workload_id. Falls back to the uniform split for a homogeneous fleet."""
+        """Launch a whole workload across the fleet in one call. By default this builds a
+        capability-weighted one-tile-per-worker split (more capable / more idle machines get
+        proportionally larger tiles), falling back to the uniform split for a homogeneous fleet.
+        With ``oversubscribe > 1`` it over-decomposes into more, smaller tiles than there are
+        workers so the pull queue naturally steals work to idle/fast machines (docs/work-stealing.md);
+        every tile is tagged with a shared workload_id and enqueued for the existing pull queue."""
         _require_submit_token(authorization)
         if req.kind not in LAUNCHABLE_KINDS:
             raise HTTPException(
                 status_code=400, detail=f"kind must be one of {list(LAUNCHABLE_KINDS)}"
             )
-        weights = _capability_tile_weights(conn, req.n_tiles)
+        n_tiles = _resolve_tile_count(conn, req)
+        weights = _capability_tile_weights(conn, n_tiles)
         try:
-            specs = _build_workload_jobs(req.kind, req.n_tiles, req.params, weights)
+            specs = _build_workload_jobs(req.kind, n_tiles, req.params, weights)
         except (TypeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=f"could not build workload: {exc}") from exc
         workload_id = uuid4().hex
