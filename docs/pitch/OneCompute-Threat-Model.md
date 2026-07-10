@@ -2,7 +2,7 @@
 
 **Engine codename:** NightShift  ·  **Document class:** Microsoft Confidential (draft for security/privacy review)
 **Audience:** CISO and Azure Security, Microsoft Digital (MSD), CELA, Privacy/Purview, HR
-**Scope of this revision:** the proof-of-concept (PoC) as built, and the proposed contained pilot. It is explicit about what is enforced in code today versus what is honest roadmap. v1.1 synced the document to three merged controls (MXC OS-enforced backend, `--require-isolation` fail-closed switch, `--trusted-key` out-of-band pinned signer) and expanded the side-channel, dependency supply-chain, and data-erasure coverage. v1.2 adds the shipped transport hardening: optional TLS + mutual TLS and per-client rate limiting. v1.3 adds submitter authentication: an optional operator token that gates job/workload submission. v1.4 adds two supply-chain / isolation-assurance controls: a generated CycloneDX SBOM and an MXC launch-path validation harness.
+**Scope of this revision:** the proof-of-concept (PoC) as built, and the proposed contained pilot. It is explicit about what is enforced in code today versus what is honest roadmap. v1.1 synced the document to three merged controls (MXC OS-enforced backend, `--require-isolation` fail-closed switch, `--trusted-key` out-of-band pinned signer) and expanded the side-channel, dependency supply-chain, and data-erasure coverage. v1.2 adds the shipped transport hardening: optional TLS + mutual TLS and per-client rate limiting. v1.3 adds submitter authentication: an optional operator token that gates job/workload submission. v1.4 adds two supply-chain / isolation-assurance controls: a generated CycloneDX SBOM and an MXC launch-path validation harness. v1.5 adds a signed SLSA v1 build-provenance attestation and a hash-chained, tamper-evident, SIEM-exportable audit log.
 
 > **One-paragraph summary.** OneCompute runs an opt-in agent on employee machines that harvests spare CPU/GPU headroom for cloud-substitutable batch work and yields the machine back to the employee in under a second. It is internal-only, opt-in, sandboxed, signed, verified, and audited. This document models the threats across every trust boundary, scores the residual risk honestly, maps each control to the teams that must accept it, and proposes a small, reversible, time-boxed pilot as the next safe step. It does not request enterprise rollout.
 
@@ -12,12 +12,12 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.4 (draft) |
+| Version | 1.5 (draft) |
 | Status | For review; not yet socialized with CELA/MSD/CISO |
 | Owner | Colin Finney (intern) + sponsor TBD |
 | Methodologies | Microsoft SDL threat modeling, STRIDE (per boundary), LINDDUN (privacy), MITRE ATT&CK mapping, qualitative likelihood x impact risk scoring |
 | Framework crosswalk | SOC 2 TSC (see `soc2-alignment.md`), NIST CSF, NIST 800-53 control families, CIS Controls, OWASP ASVS (control concepts) |
-| Related docs | `idea.md` (concept), `architecture.md` (design), `mxc-sandbox.md` (MXC backend design + preview caveats), `mxc-validation.md` (MXC launch-path harness), `supply-chain.md` (SBOM + provenance), `soc2-alignment.md` (control-to-code mapping), `pilot-security-approval.md` (sanction runbook), `pilot-plan.md` (pilot operations), `OneCompute-Risk-Memo.docx` |
+| Related docs | `idea.md` (concept), `architecture.md` (design), `mxc-sandbox.md` (MXC backend design + preview caveats), `mxc-validation.md` (MXC launch-path harness), `supply-chain.md` (SBOM + signed provenance), `audit-log.md` (tamper-evident audit + SIEM export), `soc2-alignment.md` (control-to-code mapping), `pilot-security-approval.md` (sanction runbook), `pilot-plan.md` (pilot operations), `OneCompute-Risk-Memo.docx` |
 
 **Revision history**
 
@@ -28,7 +28,8 @@
 | 1.1 | prior rev | Truth-sync to shipped controls: MXC OS-enforced backend as preferred boundary (fail-closed, inert until a real runtime exists), `--require-isolation` fail-closed switch, `--trusted-key` out-of-band pinned signer. Reconciled risk register (R2/R3/R6 residuals lowered; new R15 for MXC preview immaturity), expanded side-channel (11.1), dependency supply-chain, and ledger-erasure coverage, and authored the three companion docs (`soc2-alignment.md`, `pilot-security-approval.md`, `pilot-plan.md`) |
 | 1.2 | prior rev | Transport hardening shipped: optional TLS + mutual TLS (orchestrator `--tls-cert/--tls-key/--tls-client-ca`; worker `--tls-ca/--client-cert/--client-key`) and per-client rate limiting (`--rate-limit`). Updated B3 Tampering/Info-disclosure/DoS rows, the crypto + network sections, R9 (residual lowered), and the CISO Q&A |
 | 1.3 | prior rev | Submitter authentication shipped: optional operator `--submit-token` gates job/workload submission (`Authorization: Bearer`, constant-time, audited). Updated B4 Spoofing/Tampering/EoP rows, abuse-case 1 (fleet-as-botnet), and the traceability matrix |
-| 1.4 | this rev | Supply-chain + isolation assurance: a generated **CycloneDX SBOM** (`scripts/generate_sbom.py`, `supply-chain.md`) and an **MXC launch-path validation harness** (stub `wxc-exec` driving real `_run_mxc`, `mxc-validation.md`). Updated abuse-case 6, section 11 + section 14, R13 (residual lowered) and R15 (wiring proven), the residual summary, the CISO Q&A, and the traceability matrix; fixed a stale note that still listed the `cryptography` pin as an open gap |
+| 1.4 | prior rev | Supply-chain + isolation assurance: a generated **CycloneDX SBOM** (`scripts/generate_sbom.py`, `supply-chain.md`) and an **MXC launch-path validation harness** (stub `wxc-exec` driving real `_run_mxc`, `mxc-validation.md`). Updated abuse-case 6, section 11 + section 14, R13 (residual lowered) and R15 (wiring proven), the residual summary, the CISO Q&A, and the traceability matrix; fixed a stale note that still listed the `cryptography` pin as an open gap |
+| 1.5 | this rev | Two more controls: a **signed SLSA v1 build-provenance attestation** (`scripts/generate_provenance.py`, STRIDE Tampering) and a **hash-chained tamper-evident audit log** with verify + JSONL SIEM export (`GET /events/verify`, `GET /events/export`, STRIDE Repudiation, Microsoft Sentinel). Updated the B1/B3 Repudiation rows, sections 14 and 15, R13, and the traceability matrix |
 
 **Sign-off (to be completed during review)**
 
@@ -146,7 +147,7 @@ Legend for status: [PoC] enforced in code today · [Roadmap] documented, deferre
 | STRIDE | Threat | Mitigation | Status | Residual |
 |---|---|---|---|---|
 | Tampering | agent weakens device config | no-admin user-space run; no policy changes; subprocess+Job-Object fallback | [PoC] | low |
-| Repudiation | unattributable agent action | append-only audit incl. approval and auth_failed | [PoC] | low |
+| Repudiation | unattributable agent action | append-only, **hash-chained (tamper-evident)** audit incl. approval and auth_failed; `GET /events/verify` re-derives the chain and flags any post-hoc edit at the offending event id | [PoC] | low |
 | Info-disclosure | agent reads files/mail/browser | per-job sandbox; agent has no data-collection function beyond local profile | [PoC] | low |
 | DoS | agent degrades the machine | instant-yield governor vs learned profile; CPU/mem/timeout caps; never on battery | [PoC] | med (governor mis-sizing) |
 | Elevation | agent used to escalate | least privilege; no admin; signed + allow-listed | [PoC]+[Roadmap signing pipeline] | med |
@@ -167,7 +168,7 @@ Legend for status: [PoC] enforced in code today · [Roadmap] documented, deferre
 |---|---|---|---|---|
 | Spoofing | fake worker | per-worker bearer token (issued at register, constant-time check) | [PoC] | med (token vs device-bound SSO) |
 | Tampering | alter control messages | Ed25519-signed manifests; typed/validated inputs. By default the public key travels with the manifest (proves integrity, not provenance); **an out-of-band pinned signer is now shipped (`--trusted-key`), so a worker can reject any key but the operator-provisioned one.** **Optional TLS and mutual TLS on the transport are now shipped** (`--tls-cert/--tls-key`, `--tls-client-ca`; worker `--client-cert/--client-key`) | [PoC sign + pinned key + optional TLS/mTLS] | low-med (mTLS closes on-path tampering when enabled) |
-| Repudiation | deny actions | append-only audit (register/assign/complete/yield/fail/auth_failed) | [PoC] | low |
+| Repudiation | deny actions | append-only audit (register/assign/complete/yield/fail/auth_failed), now **hash-chained and tamper-evident** with a verify endpoint (`GET /events/verify`) and a JSONL SIEM export (`GET /events/export`) | [PoC] | low |
 | Info-disclosure | sniff control plane | **optional TLS in transit now shipped** (`--tls-cert/--tls-key`); data-minimized payloads; internal LAN as a floor | [PoC optional TLS] | low-med (encrypted when TLS enabled) |
 | DoS | flood orchestrator | lease timeouts + requeue; payload cap; per-job limits; **per-client rate limiting now shipped** (`--rate-limit`, default 600/min, keyed by worker token or IP, returns 429 + Retry-After) | [PoC] | low-med |
 | Replay | reuse old manifest/lease | manifest expiry; lease ownership; nonce/short TTL roadmap | [PoC expiry]+[Roadmap nonce] | low-med |
@@ -271,17 +272,17 @@ Because a job shares physical CPU, cache, and memory (and, for GPU kinds, the GP
 
 ## 14. Supply-chain security
 - **Agent build:** reproducible build script; record publisher + post-sign SHA-256.
-- **Dependencies:** the sandboxed job payload is **pure-stdlib** by design (`jobkit` uses only `urllib`), so no third-party code runs inside the container - a real strength. The control plane and worker use `fastapi`/`uvicorn` (API), `pydantic` (frozen contracts), `httpx` (worker outbound client), `psutil` (headroom/idle governor), and `cryptography` (Ed25519 sign/verify - the trust root). **Status:** (1) `cryptography` (the trust root) is now a **pinned, CVE-watched direct dependency** in `pyproject.toml` (gap closed); (2) a **CycloneDX SBOM is now generated** from `uv.lock` (`scripts/generate_sbom.py`; see `supply-chain.md`) for automated CVE scanning. Remaining hardening: the declared set is still broad (borrowed from the CoworkBench toolbox: `anthropic`, `openai`, `pandas`, `playwright`, `matplotlib`, `pymupdf`, ...), so a hardened agent build should trim to the actual worker/orchestrator import surface, and a signed **build attestation** (cosign/OIDC/Rekor + SLSA) remains roadmap.
+- **Dependencies:** the sandboxed job payload is **pure-stdlib** by design (`jobkit` uses only `urllib`), so no third-party code runs inside the container - a real strength. The control plane and worker use `fastapi`/`uvicorn` (API), `pydantic` (frozen contracts), `httpx` (worker outbound client), `psutil` (headroom/idle governor), and `cryptography` (Ed25519 sign/verify - the trust root). **Status:** (1) `cryptography` (the trust root) is now a **pinned, CVE-watched direct dependency** in `pyproject.toml` (gap closed); (2) a **CycloneDX SBOM is now generated** from `uv.lock` (`scripts/generate_sbom.py`; see `supply-chain.md`) for automated CVE scanning. Remaining hardening: the declared set is still broad (borrowed from the CoworkBench toolbox: `anthropic`, `openai`, `pandas`, `playwright`, `matplotlib`, `pymupdf`, ...), so a hardened agent build should trim to the actual worker/orchestrator import surface, and a signed **build-provenance attestation** is now produced offline (a signed SLSA v1 in-toto statement over the SBOM + source tree via `scripts/generate_provenance.py`; see `supply-chain.md`), while transparency-logged, hardware-rooted signing (cosign/OIDC keyless + Rekor + full SLSA build levels) remains roadmap.
 - **Update channel:** signed updates; no silent auto-update without signature verification (roadmap formalization).
 - **Provenance:** Ed25519 now; cosign/OIDC/Rekor transparency log on the roadmap (SLSA-style).
 
 ---
 
 ## 15. Logging, audit, monitoring, detection
-- Append-only **audit event stream**: register, submit, assign, complete, yield, fail, blacklist, approved, **auth_failed**, each timestamped, queryable via `GET /events`.
+- Append-only **audit event stream**: register, submit, assign, complete, yield, fail, blacklist, approved, **auth_failed**, each timestamped, queryable via `GET /events`. The stream is **hash-chained (tamper-evident)**: each event carries `prev_hash`/`hash`, `GET /events/verify` re-derives the chain and reports the first broken link, and `GET /events/export` emits JSONL for a SIEM (Microsoft Sentinel).
 - Live operator dashboard surfaces fleet, ledger, and the yield beat.
 - Pilot adds per-machine telemetry (CPU impact, yield rate, governor decisions) and **any AV alerts**.
-- Roadmap: SIEM integration, tamper-evident log export, alerting thresholds.
+- **Shipped:** the audit stream is now **hash-chained and tamper-evident** (`verify_audit_chain` / `GET /events/verify`) with a **JSONL export** (`GET /events/export`) for SIEM ingestion (Microsoft Sentinel). Roadmap: SIEM alerting thresholds, and external anchoring / WORM / Rekor-style transparency to defeat a live-write attacker.
 
 ---
 
@@ -331,7 +332,7 @@ Likelihood/Impact: L/M/H. Severity = combined. Owner/treatment shown; residual a
 | R10 | Data leakage via intermediate state (activations) | L-M | M-H | **Med-High** | restrict sensitive job classes; disclosed; class policy roadmap | Med |
 | R11 | Churn -> lost/double work | M | L-M | **Low-Med** | lease timeout + requeue; idempotent crediting | Low |
 | R12 | Legal/works-council/tax non-compliance | L-M | M-H | **Med-High** | CELA/HR review; voluntary capped rewards; regional handling | Med (pending legal) |
-| R13 | Supply-chain compromise of agent | L | H | **Med-High** | Ed25519 signing; dependency pinning (pinned `cryptography` trust root); **CycloneDX SBOM shipped** (`scripts/generate_sbom.py`) for CVE scanning; cosign/SLSA build provenance roadmap | Low-Med (inventory + pinning + signing in place; build attestation roadmap) |
+| R13 | Supply-chain compromise of agent | L | H | **Med-High** | Ed25519 signing; dependency pinning (pinned `cryptography` trust root); **CycloneDX SBOM** + **signed SLSA v1 provenance attestation** shipped (`scripts/generate_sbom.py`, `scripts/generate_provenance.py`); transparency-logged cosign/OIDC/Rekor signing roadmap | Low-Med (inventory + pinning + signing + offline attestation in place; transparency-logged build proof roadmap) |
 | R14 | Hardware wear / thermal / battery | L-M | M | **Med** | never on battery; bounded duty cycle; MSD confirm | Low-Med |
 | R15 | MXC preview immaturity (overly-permissive default policies; denied-paths unsupported on Windows; not a security boundary yet; unvalidated against a real runtime) | M | M-H | **Med-High** | fail closed on any policy we cannot verify; inert until a real `wxc-exec` runtime is present; **a validation harness (stub `wxc-exec`) now proves the launch/policy/probe wiring end-to-end** (`mxc-validation.md`), so a real preview can be dropped in without a OneCompute code change; keep Docker/Job-Object + `--require-isolation` enforced meanwhile | Med (contained by fail-closed; OneCompute-side wiring proven, real-runtime validation still pending) |
 
@@ -367,6 +368,8 @@ The PoC enforces the technical heart of a secure design (authenticated, signed, 
 | Optional TLS + mutual TLS (server `--tls-*`, worker `--tls-ca`/`--client-cert`) | B3 tamper/info-disclosure, R9 |
 | Per-client rate limiting (`--rate-limit`, 429 + Retry-After) | B3 DoS, B4 fleet-abuse, R9 |
 | Operator submit token (`--submit-token`, constant-time, audited) | B4 spoofing/tampering/EoP, abuse-case 1 |
+| Signed SLSA v1 provenance attestation (`scripts/generate_provenance.py`) | Tampering (build), abuse-case 6, R13 |
+| Hash-chained tamper-evident audit + verify/export (`GET /events/verify`, `/events/export`) | B1/B3 Repudiation, SIEM/Sentinel |
 | Instant-yield governor vs learned profile; never on battery | A1, R8, R14 |
 | Challenge/ringer + server-assigned credit + append-only ledger | A4/A5, R7 |
 | On-device-only profiling; data minimization; no-persistence | A2, B5/LINDDUN, R4/R10 |
@@ -401,7 +404,7 @@ The PoC enforces the technical heart of a secure design (authenticated, signed, 
 TEE (trusted execution environment), WDAC (Windows Defender Application Control), DLP (data loss prevention), MDE (Microsoft Defender for Endpoint), DPIA (data protection impact assessment), Sybil (many fake identities), IOC (indicator of compromise), governor (the demand-adaptive admission/yield loop).
 
 ## Appendix B - References
-Internal: `idea.md` (§8 trust, §10 risks), `architecture.md` (§3.2 governor, §3.3 sandbox, §9 security), `mxc-sandbox.md` (MXC backend design + preview caveats), `mxc-validation.md` (MXC launch-path validation harness), `supply-chain.md` (SBOM + provenance), `soc2-alignment.md` (control-to-code map), `pilot-security-approval.md` (sanction runbook), `pilot-plan.md` (pilot operations), `OneCompute-Risk-Memo.docx`. External concepts: Microsoft SDL threat modeling, STRIDE, LINDDUN, MITRE ATT&CK, NIST CSF/800-53, CISA cryptojacking guidance, Golle and Mironov (result verification), BOINC security/code-signing.
+Internal: `idea.md` (§8 trust, §10 risks), `architecture.md` (§3.2 governor, §3.3 sandbox, §9 security), `mxc-sandbox.md` (MXC backend design + preview caveats), `mxc-validation.md` (MXC launch-path validation harness), `supply-chain.md` (SBOM + signed provenance), `audit-log.md` (tamper-evident audit + SIEM export), `soc2-alignment.md` (control-to-code map), `pilot-security-approval.md` (sanction runbook), `pilot-plan.md` (pilot operations), `OneCompute-Risk-Memo.docx`. External concepts: Microsoft SDL threat modeling, STRIDE, LINDDUN, MITRE ATT&CK, NIST CSF/800-53, CISA cryptojacking guidance, Golle and Mironov (result verification), BOINC security/code-signing.
 
 ## Appendix C - MITRE ATT&CK touchpoints (illustrative)
 Execution (T1059) and Resource Hijacking (T1496) are the behaviors our agent **resembles** and must be allow-listed against; Exfiltration over C2 (T1041) and Ingress Tool Transfer (T1105) are blocked for CPU container jobs by `--network none`, while AI and GPU jobs run host-side with network by necessity and so rely on signed-only job code, class policy, and audit instead; Valid Accounts/Sybil map to our SSO + one-identity-per-node metering. We will provide a full technique-by-technique sheet to the endpoint team on request.
