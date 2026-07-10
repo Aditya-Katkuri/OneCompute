@@ -44,7 +44,7 @@ All citations are `path:line` into this repository, verified against the current
 
 | TSC point | OneCompute control | Status | Citation | Gap / note |
 |---|---|---|---|---|
-| CC7.2 Monitoring / anomaly detection | Append-only audit event stream: `registered`, `approved`, `submitted`, `assigned`, `completed`, `yielded`, `failed`, `blacklisted`, `removed`, and `auth_failed`, each timestamped and queryable via `GET /events` | **Implemented** | emits `app.py:330, 448, 463, 507, 571, 593, 661, 683, 696`; table `schema.sql:51-58` | SIEM export + alerting thresholds are **Roadmap** |
+| CC7.2 Monitoring / anomaly detection | Append-only audit event stream (`registered`, `approved`, `submitted`, `assigned`, `completed`, `yielded`, `failed`, `blacklisted`, `removed`, `auth_failed`), each timestamped and queryable via `GET /events`; the stream is **hash-chained (tamper-evident)** with a verify endpoint and a **JSONL SIEM export** (Microsoft Sentinel) | **Implemented** | emits `app.py` (`_emit` chain); verify `verify_audit_chain` + `GET /events/verify`; export `GET /events/export`; `tests/orchestrator/test_audit_chain.py`; `docs/audit-log.md` | SIEM alerting thresholds + external anchoring / Rekor-style transparency are **Roadmap** |
 | CC7.3 Integrity of results (anti-cheat) | Proof-hash match required (`invalid_proof`); hidden challenge/ringer with a server-known answer; a wrong answer blacklists the worker and credits zero | **Implemented** | `app.py:641-664`; ringer `src/trust/challenge.py` | Challenge ringer is exact-integer; tolerance-aware comparison for FP workloads lives with the result verifiers, not the ringer |
 | CC7.4 Incident response / kill switch | Stop the orchestrator and all workers idle within one poll; operator disconnect requeues held work; employee can Ctrl-C/uninstall | **Implemented** | disconnect+requeue `app.py:577-593`; lease reaping `app.py:238, 247-248` | IR playbook in threat-model section 18 |
 
@@ -53,7 +53,7 @@ All citations are `path:line` into this repository, verified against the current
 | TSC point | OneCompute control | Status | Citation | Gap / note |
 |---|---|---|---|---|
 | CC8.1 Authorized changes only | Frozen data contracts and SQLite schema treated as deliberate seams; tests mirror source layout | **Implemented** | `src/contracts/models.py`, `src/contracts/schema.sql`; `tests/` | 239 tests, 2 skipped (Docker-only) |
-| CC8.1 Supply chain / build provenance | Ed25519 manifest signing; pinned dependency lockfile; pinned `cryptography` trust root; **generated CycloneDX SBOM** | **Implemented** (SBOM + pinning + signing) | signing `src/trust/signing.py`; SBOM `scripts/generate_sbom.py` + `tests/test_sbom.py` + `docs/supply-chain.md`; pin in `pyproject.toml` | Signed **build attestation** (cosign/OIDC/Rekor + SLSA) remains **Roadmap** (threat-model section 14) |
+| CC8.1 Supply chain / build provenance | Ed25519 manifest signing; pinned dependency lockfile; pinned `cryptography` trust root; **generated CycloneDX SBOM**; **signed SLSA v1 in-toto provenance attestation** | **Implemented** (SBOM + pinning + signing + offline attestation) | signing `src/trust/signing.py`; SBOM `scripts/generate_sbom.py`; provenance `scripts/generate_provenance.py` + `tests/test_provenance.py` + `docs/supply-chain.md`; pin in `pyproject.toml` | Transparency-logged / hardware-rooted signing (cosign/OIDC/Rekor + full SLSA build levels) remains **Roadmap** |
 
 ---
 
@@ -102,9 +102,9 @@ Privacy is analyzed in depth in the threat model's LINDDUN section (section 7). 
 
 ## 6. Summary: implemented vs. roadmap
 
-**Implemented in code (the technical heart of the design):** authenticated (constant-time worker token), admission-gated (device-code approval), optional submission authorization (operator submit token), signed + hash-bound + expiring manifests, optional out-of-band pinned signer, OS-enforced isolation with a fail-closed switch, MXC as the preferred boundary (fail-closed/inert until a runtime exists), no-network CPU containment, lease/requeue for churn, server-assigned append-only crediting, challenge/ringer anti-cheat with blacklisting, append-only audit including `auth_failed`, 8 MB result cap, security response headers, optional TLS + mutual TLS transport, per-client rate limiting, `cryptography` pinned as a direct dependency, a generated CycloneDX SBOM, an MXC launch-path validation harness, never-on-battery demand-aware yield, and on-device-only data minimization.
+**Implemented in code (the technical heart of the design):** authenticated (constant-time worker token), admission-gated (device-code approval), optional submission authorization (operator submit token), signed + hash-bound + expiring manifests, optional out-of-band pinned signer, OS-enforced isolation with a fail-closed switch, MXC as the preferred boundary (fail-closed/inert until a runtime exists), no-network CPU containment, lease/requeue for churn, server-assigned append-only crediting, challenge/ringer anti-cheat with blacklisting, append-only audit including `auth_failed` (hash-chained and tamper-evident, with a verify endpoint and JSONL SIEM export), 8 MB result cap, security response headers, optional TLS + mutual TLS transport, per-client rate limiting, `cryptography` pinned as a direct dependency, a generated CycloneDX SBOM, a signed SLSA v1 provenance attestation, an MXC launch-path validation harness, never-on-battery demand-aware yield, and on-device-only data minimization.
 
-**Roadmap (named, not built here):** full submitter SSO/OIDC (an optional operator submit token is shipped as the PoC step), device-bound certificates, HSM-custodied signing key, cosign/OIDC/Rekor + SLSA build attestation, TLS-on-by-default with automated cert issuance/rotation, SIEM export, MXC validation against a real `wxc-exec` runtime (its launch-path wiring is proven via a stub harness), and a formal DPIA.
+**Roadmap (named, not built here):** full submitter SSO/OIDC (an optional operator submit token is shipped as the PoC step), device-bound certificates, HSM-custodied signing key, transparency-logged cosign/OIDC/Rekor + full SLSA build levels (an offline signed attestation is shipped), TLS-on-by-default with automated cert issuance/rotation, SIEM alerting thresholds + external audit anchoring (a hash-chained tamper-evident log with JSONL export is shipped), MXC validation against a real `wxc-exec` runtime (its launch-path wiring is proven via a stub harness), and a formal DPIA.
 
 ## 7. Traceability to the threat-model risk register
 
@@ -119,5 +119,5 @@ Privacy is analyzed in depth in the threat model's LINDDUN section (section 7). 
 | R8 Governor mis-sizing | A1.1 headroom governor (measured in pilot) |
 | R9 Transport insecure | CC6.7 optional TLS/mTLS + A1.2 rate limiting |
 | R11 Churn | A1.2 lease/requeue |
-| R13 Supply chain | CC8.1 SBOM + pinning + Ed25519 signing (build attestation roadmap) |
+| R13 Supply chain | CC8.1 SBOM + pinning + Ed25519 signing + signed SLSA provenance attestation (transparency-logged signing roadmap) |
 | R15 MXC preview immaturity | CC6.x MXC fail-closed/inert; launch-path validated via stub harness; real-runtime validation before reliance |

@@ -206,7 +206,7 @@ A job is a **signed manifest** + input payload. The manifest is the trust contra
 
 - **Signed with Ed25519** (`src/trust/signing.py`; cosign/OIDC is the roadmap, see §11). The worker verifies signature + `input_sha256` + expiry **before** executing and refuses on mismatch. By default the public key travels with the manifest (integrity); a worker can **pin an out-of-band signer** with `--trusted-key` / `$ONECOMPUTE_TRUSTED_PUBKEY` so a compromised orchestrator or MITM cannot inject a self-signed job ([BOINC code-signing pattern](https://github.com/BOINC/boinc/wiki/SecurityIssues)).
 - **Workload grouping.** Jobs launched together via `POST /workloads` (the fleet tiles of one workload) share a `workload_id` column so the dashboard can read them back as a unit (`GET /workloads/{id}`).
-- **Tamper-evident audit log** (Rekor-style append-only) of who-submitted-what-ran-where: the non-repudiation property an enterprise security review demands.
+- **Tamper-evident audit log**: an append-only, **hash-chained** record of who-submitted-what-ran-where (each event carries `prev_hash`/`hash`; `GET /events/verify` re-derives the chain, `GET /events/export` emits JSONL for a SIEM), the non-repudiation property an enterprise security review demands. External anchoring / Rekor-style transparency is the roadmap.
 
 ---
 
@@ -277,8 +277,8 @@ sequenceDiagram
 | **Confidentiality** | data minimization, no-persistence | **TEE / confidential compute** (needs datacenter GPUs: consumer RTX/NPU have no GPU TEE) |
 | **Onboarding / admission** | **device-code dashboard-approval gate** (`--require-approval`): a joining worker is PENDING with a short code until an admin approves it; gets no work until then | Intune/SSO-driven enrollment + per-worker certs |
 | **Submission auth** | optional operator **`--submit-token`** gates job/workload submission (`Authorization: Bearer`, constant-time, audited); the PoC form of submitter SSO | submitter SSO/OIDC + per-team scopes/quotas |
-| **Supply chain** | dependency pinning (`uv.lock` + pinned `cryptography` trust root); a generated **CycloneDX SBOM** (`scripts/generate_sbom.py`, see [`supply-chain.md`](./supply-chain.md)) for CVE scanning; Ed25519 manifest signing | cosign/OIDC/Rekor build signing + SLSA provenance; signed update channel |
-| **Auditability** | append-only audit log (incl. an `approved` event) | Rekor transparency log |
+| **Supply chain** | dependency pinning (`uv.lock` + pinned `cryptography` trust root); a generated **CycloneDX SBOM** (`scripts/generate_sbom.py`) for CVE scanning; a **signed SLSA v1 provenance attestation** (`scripts/generate_provenance.py`, Ed25519 over the SBOM + source tree); Ed25519 manifest signing (see [`supply-chain.md`](./supply-chain.md)) | transparency-logged cosign/OIDC/Rekor + full SLSA build levels; signed update channel |
+| **Auditability** | append-only audit log, **hash-chained and tamper-evident** (`verify_audit_chain` / `GET /events/verify`) with a **JSONL SIEM export** (`GET /events/export`, Microsoft Sentinel); see [`audit-log.md`](./audit-log.md) | external anchoring / WORM / Rekor transparency log; SIEM alerting |
 
 > **The enterprise-acceptance gate (highest risk).** Sustained CPU/GPU bursts are the literal signature of [cryptojacking](https://www.cisa.gov/news-events/news/defending-against-illicit-cryptocurrency-mining-activity); Purview DLP can silently block a job's data egress. The agent must be **code-signed, Intune-deployed, Defender/AV allow-listed, and route I/O through sanctioned channels**, designed to **pass, not bypass**. Internal scope shrinks attack surface and makes actions attributable; it does **not** let us skip controls. ([Purview endpoint DLP](https://learn.microsoft.com/en-us/purview/endpoint-dlp-learn-about))
 
@@ -349,7 +349,7 @@ sequenceDiagram
 9. **Guard pynvml; run the agent as a foreground user process (MEDIUM).** Wrap pynvml in try/except → `has_gpu=false` (it crashes with no NVIDIA driver). Foreground user session avoids the session-0 "always idle" bug. One bootstrap script, run identically on every worker.
 
 ### Cut / defer list
-True checkpoint/resume → hard-kill + requeue · GPU-in-Sandbox → host Job Object · per-job disposable `.wsb` → one pre-warmed sandbox · cosign/OIDC/Rekor → Ed25519 · vLLM → deleted, local serving → SDK · 60s long-poll → 1–2s short poll · adaptive replication / N-way quorum / fuzzy comparators → **one hardcoded challenge task** with a known answer on a deterministic job · CreditNew/scarcity/uptime → `credits = accepted_units × class_weight` (GPU=5, CPU=1), **server-assigned, never the agent's claimed TOPS** · "tamper-evident" log → add a 20-line prev-hash chain or downgrade the wording · NPU / sharding / NATS / multi-orchestrator / TEE → roadmap slides · real GPU fleet → multiple worker processes on 1–2 laptops + one real second PC.
+True checkpoint/resume → hard-kill + requeue · GPU-in-Sandbox → host Job Object · per-job disposable `.wsb` → one pre-warmed sandbox · cosign/OIDC/Rekor → Ed25519 · vLLM → deleted, local serving → SDK · 60s long-poll → 1–2s short poll · adaptive replication / N-way quorum / fuzzy comparators → **one hardcoded challenge task** with a known answer on a deterministic job · CreditNew/scarcity/uptime → `credits = accepted_units × class_weight` (GPU=5, CPU=1), **server-assigned, never the agent's claimed TOPS** · "tamper-evident" log → **now built** as a prev-hash chain with a verify endpoint (`GET /events/verify`) · NPU / sharding / NATS / multi-orchestrator / TEE → roadmap slides · real GPU fleet → multiple worker processes on 1–2 laptops + one real second PC.
 
 ### Recommended minimal demo (4–5 min, pre-warmed)
 1. **Idle fleet (10s):** dashboard shows 2–3 idle tiles, points at 0.
