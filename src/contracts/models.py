@@ -46,6 +46,12 @@ class Capability(BaseModel):
     gpu_vram_gb: float | None = None
     accel: list[str] = Field(default_factory=list)  # e.g. ["cuda", "directml"]
     benchmarked_tops: float | None = None
+    # NPU harvesting (roadmap: docs/npu-harvesting.md). Detection + advertisement only today; a
+    # Copilot+ PC NPU / DirectML provider is surfaced here so the fleet picture can include it.
+    # npu_tops is NAMEPLATE INT8 peak (spec sheet), never delivered throughput -- credit is still
+    # metered on the server-assigned class_weight, never on this number.
+    has_npu: bool = False
+    npu_tops: float | None = None
     labels: list[str] = Field(default_factory=list)
 
 
