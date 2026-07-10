@@ -121,18 +121,21 @@ def _serve(host: str, port: int, db_path: str, log_level: str,
            tls_client_ca: str | None = None,
            require_approval: bool = False,
            rate_limit_per_min: int | None = None,
-           submit_token: str | None = None) -> None:
+           submit_token: str | None = None,
+           bind_device_identity: bool = False) -> None:
     """Start uvicorn against a persistent file-backed app. Serves HTTPS when a TLS cert+key are
     given (the doctrine's 'plain HTTPS' transport for a cloud/multi-site pilot), and requires
     **mutual TLS** (each worker presents a client cert) when ``tls_client_ca`` is also given.
     ``rate_limit_per_min`` caps control-plane requests per client; ``submit_token`` gates job
     submission. When ``require_approval`` is set, joining workers are gated behind a dashboard
-    device-code approval. Blocks until shutdown."""
+    device-code approval. When ``bind_device_identity`` is set, a worker's bearer token is bound to
+    its TLS client-cert fingerprint (STRIDE Spoofing / B3). Blocks until shutdown."""
     app = create_app(
         db_path,
         require_approval=require_approval,
         rate_limit_per_min=rate_limit_per_min,
         submit_token=submit_token,
+        bind_device_identity=bind_device_identity,
     )
     ssl_kwargs: dict = {}
     if tls_cert and tls_key:
@@ -184,6 +187,15 @@ def main(argv: list[str] | None = None) -> int:
         help="Gate joining workers behind a dashboard device-code approval (a worker shows a code "
              "and is PENDING until an admin clicks Approve in the dashboard).",
     )
+    parser.add_argument(
+        "--bind-device-identity",
+        action="store_true",
+        help="Bind each worker's bearer token to its TLS client-cert fingerprint (STRIDE Spoofing "
+             "/ B3): later authenticated calls must present the same X-Client-Cert-SHA256 the "
+             "worker registered, so a stolen token alone cannot impersonate the device. In "
+             "production the mTLS-terminating front end injects this header after verifying the "
+             "client cert. Off by default.",
+    )
     args = parser.parse_args(argv)
 
     host = args.host if args.host is not None else env_host
@@ -218,6 +230,8 @@ def main(argv: list[str] | None = None) -> int:
         print("  Submit gate: ON. Job/workload submission requires the operator token.")
     if args.require_approval:
         print("  Credential gate: ON. Workers join PENDING and need dashboard approval (device code).")
+    if args.bind_device_identity:
+        print("  Device identity: ON. Worker tokens are bound to the TLS client-cert fingerprint (B3).")
     sys.stdout.flush()
 
     try:
@@ -228,6 +242,7 @@ def main(argv: list[str] | None = None) -> int:
             require_approval=args.require_approval,
             rate_limit_per_min=rate_limit_per_min,
             submit_token=args.submit_token,
+            bind_device_identity=args.bind_device_identity,
         )
     except KeyboardInterrupt:
         print("\nshutting down (Ctrl-C)")

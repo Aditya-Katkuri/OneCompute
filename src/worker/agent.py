@@ -7,6 +7,7 @@ import logging
 import threading
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
@@ -34,6 +35,32 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Header name carrying the device's TLS client-certificate fingerprint. In production the
+# mTLS-terminating front end / reverse proxy injects this after verifying the client cert; in
+# this PoC (or behind such a proxy) the worker sends it so a pilot can bind token to device.
+CLIENT_CERT_HEADER = "X-Client-Cert-SHA256"
+
+
+def _client_cert_fingerprint(client_cert_path: str | None) -> str | None:
+    """Return the lowercase hex SHA-256 of the client certificate's DER bytes, or None.
+
+    Best-effort: returns None when no cert is configured or the file cannot be read/parsed, so a
+    worker with no client cert (or a malformed one) simply sends no fingerprint header and keeps
+    working exactly as before. The fingerprint binds this worker's identity to its device key.
+    """
+    if not client_cert_path:
+        return None
+    try:
+        from cryptography.hazmat.primitives.serialization import Encoding
+        from cryptography.x509 import load_pem_x509_certificate
+
+        pem = Path(client_cert_path).read_bytes()
+        der = load_pem_x509_certificate(pem).public_bytes(Encoding.DER)
+        return sha256_hex(der)
+    except Exception as exc:  # missing file, bad PEM, or cryptography absent -> unbound
+        logger.debug("could not compute client-cert fingerprint: %s", exc)
+        return None
+
 
 class WorkerAgent:
     def __init__(
@@ -46,6 +73,7 @@ class WorkerAgent:
         isolated: bool = False,
         require_isolation: bool = False,
         trusted_public_key_hex: str | None = None,
+        client_cert_path: str | None = None,
     ) -> None:
         self.base_url = base_url
         self.capability = capability
@@ -61,6 +89,10 @@ class WorkerAgent:
         # Out-of-band trusted signer key (hex). When set, only manifests signed by exactly this
         # key are accepted, so a compromised orchestrator cannot inject a self-signed job.
         self.trusted_public_key_hex = trusted_public_key_hex
+        # Device-identity binding: the SHA-256 DER fingerprint of our TLS client cert, sent on
+        # every authenticated call so a token stays useless without this device's key (STRIDE
+        # Spoofing / B3). None when no client cert is configured (behaves exactly as before).
+        self.client_cert_fingerprint = _client_cert_fingerprint(client_cert_path)
         self._yield = threading.Event()
         self._job_running = threading.Event()
         self._yield_watcher_stop = threading.Event()
@@ -73,9 +105,14 @@ class WorkerAgent:
         self.device_code: str | None = None
 
     def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+        headers = dict(kwargs.get("headers") or {})
         if self.worker_token:
-            headers = dict(kwargs.get("headers") or {})
             headers["Authorization"] = f"Bearer {self.worker_token}"
+        # Present the device fingerprint on register AND every authenticated call so the
+        # orchestrator can bind (and later enforce) token-to-device when binding is on.
+        if self.client_cert_fingerprint:
+            headers[CLIENT_CERT_HEADER] = self.client_cert_fingerprint
+        if headers:
             kwargs["headers"] = headers
         try:
             response = self.client.request(method, url, **kwargs)

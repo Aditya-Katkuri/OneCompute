@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS workers (
     approved       INTEGER NOT NULL DEFAULT 1,  -- dashboard-approval gate; 1 keeps non-gated flows unchanged
     device_code    TEXT,                        -- short human code shown while pending approval
     last_heartbeat TEXT,
-    registered_at  TEXT NOT NULL
+    registered_at  TEXT NOT NULL,
+    cert_fingerprint TEXT                        -- lowercase hex SHA-256 of the worker's TLS client-cert DER; binds device identity (STRIDE Spoofing / B3). NULL = unbound
 );
 
 CREATE TABLE IF NOT EXISTS jobs (

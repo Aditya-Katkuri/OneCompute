@@ -236,6 +236,7 @@ def main() -> None:
         isolated=args.isolated,
         require_isolation=args.require_isolation,
         trusted_public_key_hex=args.trusted_key,
+        client_cert_path=args.client_cert,
     )
     gate: IdleGate | AdaptiveGovernor | None = None
     usage_stop: threading.Event | None = None
