@@ -212,7 +212,7 @@ A job is a **signed manifest** + input payload. The manifest is the trust contra
 
 ## 6. Workload adapters
 
-The same fabric carries different job kinds via small adapters. The PoC ships an **example workload catalog, originally four, now ~10 launchable kinds**, fanned across the fleet via a **hardcoded split: one tile per machine** (`src/workloads/partition.py`, `even_ranges`/`weighted_ranges`); the dynamic governor is set aside for the demo. The four below are the original worked examples: two non-AI and two AI, to show range. Full per-workload detail (inputs, outputs, aggregation, preemptibility) lives in [`workloads.md`](./workloads.md), not duplicated here.
+The same fabric carries different job kinds via small adapters. The PoC ships an **example workload catalog, originally four, now ~10 launchable kinds**, fanned across the fleet via **capability-weighted dynamic partitioning** (`src/workloads/partition.py` `weighted_partition`/`weighted_ranges`: more idle/capable machines get larger tiles, falling back to an even split for a homogeneous fleet; see [`partitioning.md`](./partitioning.md)); the dynamic governor is set aside for the demo. The four below are the original worked examples: two non-AI and two AI, to show range. Full per-workload detail (inputs, outputs, aggregation, preemptibility) lives in [`workloads.md`](./workloads.md), not duplicated here.
 
 | Job kind | AI? | Runtime on worker | PoC demo use |
 |---|---|---|---|
@@ -277,7 +277,8 @@ sequenceDiagram
 | **Confidentiality** | data minimization, no-persistence | **TEE / confidential compute** (needs datacenter GPUs: consumer RTX/NPU have no GPU TEE) |
 | **Onboarding / admission** | **device-code dashboard-approval gate** (`--require-approval`): a joining worker is PENDING with a short code until an admin approves it; gets no work until then | Intune/SSO-driven enrollment + per-worker certs |
 | **Submission auth** | optional operator **`--submit-token`** gates job/workload submission (`Authorization: Bearer`, constant-time, audited); the PoC form of submitter SSO | submitter SSO/OIDC + per-team scopes/quotas |
-| **Supply chain** | dependency pinning (`uv.lock` + pinned `cryptography` trust root); a generated **CycloneDX SBOM** (`scripts/generate_sbom.py`) for CVE scanning; a **signed SLSA v1 provenance attestation** (`scripts/generate_provenance.py`, Ed25519 over the SBOM + source tree); Ed25519 manifest signing (see [`supply-chain.md`](./supply-chain.md)) | transparency-logged cosign/OIDC/Rekor + full SLSA build levels; signed update channel |
+| **Device identity** | optional **`--bind-device-identity`** ties the worker token to its TLS client-cert SHA-256 fingerprint (`X-Client-Cert-SHA256`), so a token replayed from another host fails closed (audited `device_fingerprint_mismatch`); see [`device-identity.md`](./device-identity.md) | Intune/Entra-managed device certs; the mTLS terminator injects the verified fingerprint |
+| **Supply chain** | dependency pinning (`uv.lock` + pinned `cryptography` trust root); a generated **CycloneDX SBOM** (`scripts/generate_sbom.py`) for CVE scanning; a **signed SLSA v1 provenance attestation** (`scripts/generate_provenance.py`, Ed25519 over the SBOM + source tree); a **Sigstore cosign integration** (`src/trust/cosign.py`, inert when cosign is absent); Ed25519 manifest signing (see [`supply-chain.md`](./supply-chain.md), [`cosign.md`](./cosign.md)) | transparency-logged keyless cosign/OIDC/Rekor + full SLSA build levels; signed update channel |
 | **Auditability** | append-only audit log, **hash-chained and tamper-evident** (`verify_audit_chain` / `GET /events/verify`) with a **JSONL SIEM export** (`GET /events/export`, Microsoft Sentinel); see [`audit-log.md`](./audit-log.md) | external anchoring / WORM / Rekor transparency log; SIEM alerting |
 
 > **The enterprise-acceptance gate (highest risk).** Sustained CPU/GPU bursts are the literal signature of [cryptojacking](https://www.cisa.gov/news-events/news/defending-against-illicit-cryptocurrency-mining-activity); Purview DLP can silently block a job's data egress. The agent must be **code-signed, Intune-deployed, Defender/AV allow-listed, and route I/O through sanctioned channels**, designed to **pass, not bypass**. Internal scope shrinks attack surface and makes actions attributable; it does **not** let us skip controls. ([Purview endpoint DLP](https://learn.microsoft.com/en-us/purview/endpoint-dlp-learn-about))
@@ -320,7 +321,7 @@ sequenceDiagram
 
 ## 12. Roadmap (beyond the PoC)
 
-- **NPU harvesting** - ONNX Runtime + DirectML/QNN to tap the 40–55 TOPS NPUs (unlocks the 1.8-ExaOPS ceiling story).
+- **NPU harvesting** - NPU detection + Capability advertisement is now shipped (ONNX Runtime `DmlExecutionProvider` / `QNNExecutionProvider` probe; see [`npu-harvesting.md`](./npu-harvesting.md)); NPU job execution via ONNX Runtime + DirectML/QNN to tap the 40-55 TOPS NPUs (the 1.8-ExaOPS ceiling story) remains roadmap.
 - **Cross-machine model sharding** - llama.cpp RPC / exo / Petals on an isolated network for "model too big for one laptop."
 - **Confidential compute** - TEE-backed execution for sensitive workloads as datacenter-class GPU TEEs reach the desk (Surface RTX Spark Dev Box / DGX Station tier).
 - **Durable queue + multi-orchestrator** - NATS JetStream / Temporal for production scale.
