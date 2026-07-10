@@ -76,11 +76,54 @@ def _gpu_info() -> tuple[bool, str | None, float | None, list[str]]:
         return False, None, None, []
 
 
+# A DirectML execution provider surfaces any DirectX 12 accelerator (NPU or iGPU/dGPU), so it is
+# a weak NPU signal on its own. QNN is Qualcomm's NPU-specific provider (Snapdragon X Copilot+).
+_NPU_PROVIDERS = ("QNNExecutionProvider", "DmlExecutionProvider")
+
+
+def detect_npu() -> tuple[bool, float | None]:
+    """Best-effort NPU detection for the fleet picture. NEVER raises.
+
+    Returns (has_npu, npu_tops) where npu_tops is a NAMEPLATE INT8 peak (spec sheet) when the
+    device family is recognizable, else None. This advertises an NPU / DirectML execution
+    provider; it does NOT run NPU jobs (see docs/npu-harvesting.md -- execution is roadmap and
+    needs onnxruntime-directml + real Copilot+ hardware).
+
+    Detection order, each guarded independently:
+      1. ONNX Runtime execution providers (QNN NPU provider, or DirectML) if importable.
+      2. A cheap Windows environment hint (ONECOMPUTE_NPU / ONECOMPUTE_NPU_TOPS) for pilots that
+         want to declare a known NPU out-of-band without a heavy runtime.
+    """
+    # (1) ONNX Runtime execution providers.
+    try:
+        import onnxruntime  # type: ignore[import-not-found]
+
+        providers = list(onnxruntime.get_available_providers())
+        if "QNNExecutionProvider" in providers:
+            return True, None
+        if "DmlExecutionProvider" in providers:
+            return True, None
+    except Exception:
+        pass
+
+    # (2) Cheap, opt-in Windows env hint (no heavy dependency, no registry scan by default).
+    try:
+        if os.environ.get("ONECOMPUTE_NPU", "").strip().lower() in ("1", "true", "yes"):
+            tops_raw = os.environ.get("ONECOMPUTE_NPU_TOPS", "").strip()
+            tops = float(tops_raw) if tops_raw else None
+            return True, tops
+    except Exception:
+        pass
+
+    return False, None
+
+
 def detect_capability(worker_id: str | None = None) -> Capability:
     """Detect worker capacity without ever raising to callers."""
     try:
         resolved_worker_id = worker_id or f"{socket.gethostname()}-{uuid4().hex[:6]}"
         has_gpu, gpu_model, gpu_vram_gb, accel = _gpu_info()
+        has_npu, npu_tops = detect_npu()
         return Capability(
             worker_id=resolved_worker_id,
             cpus=os.cpu_count() or 1,
@@ -90,6 +133,8 @@ def detect_capability(worker_id: str | None = None) -> Capability:
             gpu_model=gpu_model,
             gpu_vram_gb=gpu_vram_gb,
             accel=accel,
+            has_npu=has_npu,
+            npu_tops=npu_tops,
         )
     except Exception:
         try:
@@ -105,5 +150,7 @@ def detect_capability(worker_id: str | None = None) -> Capability:
                 gpu_vram_gb=None,
                 accel=[],
                 benchmarked_tops=None,
+                has_npu=False,
+                npu_tops=None,
                 labels=[],
             )
