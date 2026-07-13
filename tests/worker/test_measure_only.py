@@ -177,6 +177,75 @@ def test_measure_loop_survives_keyboardinterrupt_and_profile_saves(tmp_path, mon
     assert (tmp_path / "profile.json").exists()
 
 
+def test_measure_loop_persists_profile_during_the_run_not_only_on_exit(tmp_path, monkeypatch) -> None:
+    """A reboot/power-loss must cost at most one upload window: the loop saves the profile locally
+    on the upload cadence, not only in its finally block."""
+    agent = _SpyAgent(has_gpu=False)
+    governor = _pin_samples(tmp_path, monkeypatch, cpu=10.0, gpu=0.0, ram=20.0)
+    telem = PilotTelemetry("measure-1", path=tmp_path / "telem.jsonl", enabled=False)
+
+    saves = {"n": 0}
+    real_save = governor.profiler.save
+
+    def counting_save() -> None:
+        saves["n"] += 1
+        real_save()
+
+    monkeypatch.setattr(governor.profiler, "save", counting_save)
+
+    ticks = {"n": 0}
+
+    def fake_sleep(_seconds: float) -> None:
+        ticks["n"] += 1
+        if ticks["n"] >= 3:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(time, "sleep", fake_sleep)
+
+    # interval=0.0 -> post_every=1, so every sample saves. 3 in-loop saves happen BEFORE the
+    # finally block ever runs, proving persistence is periodic (survives a hard kill), not exit-only.
+    wm.run_measure_loop(agent, governor, telem, interval=0.0, once=False)
+
+    assert saves["n"] >= 3
+    assert (tmp_path / "profile.json").exists()
+
+
+def test_measure_loop_survives_transient_sample_errors(tmp_path, monkeypatch) -> None:
+    """One bad sample (a psutil hiccup, a disk blip) must never kill a week-long observer: the
+    iteration is logged and skipped, and the loop keeps going."""
+    agent = _SpyAgent(has_gpu=False)
+    governor = _pin_samples(tmp_path, monkeypatch, cpu=10.0, gpu=0.0, ram=20.0)
+    telem = PilotTelemetry("measure-1", path=tmp_path / "telem.jsonl", enabled=False)
+
+    calls = {"n": 0}
+
+    def flaky_ram() -> float:
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            raise RuntimeError("transient psutil hiccup")
+        return 20.0
+
+    monkeypatch.setattr(wm, "system_ram_load_pct", flaky_ram)
+
+    ticks = {"n": 0}
+
+    def fake_sleep(_seconds: float) -> None:
+        ticks["n"] += 1
+        if ticks["n"] >= 4:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(time, "sleep", fake_sleep)
+
+    samples = wm.run_measure_loop(agent, governor, telem, interval=1.0, once=False)
+
+    # 4 iterations ran: the first 2 raised (recorded nothing, did NOT crash) and the last 2 folded
+    # a sample. The loop survived to a clean Ctrl-C, and no job was ever touched.
+    assert ticks["n"] == 4
+    assert samples == 2
+    assert governor.profiler.profile_now().n == 2
+    assert agent.job_calls == []
+
+
 def test_main_measure_only_once_engages_heartbeat_and_pulls_no_jobs(tmp_path, monkeypatch) -> None:
     app, state = _fake_orchestrator()
 

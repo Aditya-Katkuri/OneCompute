@@ -21,7 +21,7 @@ Explicit non-objectives: enterprise rollout, sensitive-data workloads, GPU/AI wo
 - Complete every gate in `pilot-security-approval.md` section 0. No device joins until G1-G10 are YES.
 - In parallel (partnership track): engage **Azure Compute** and the **CISO office** on the design for safely routing cloud-substitutable requests into the fleet pool. This is a design conversation during the pilot, not a pilot dependency.
 
-### Phase 1 - Measurement only (approx. 2 weeks)
+### Phase 1 - Measurement only (approx. 1 week)
 - Consenting devices run the worker in `--measure-only` mode. It tracks CPU/GPU/RAM and joins the fleet view, but **never pulls or runs a job** (`src/worker/__main__.py` measure-only path).
 - Each device uploads only a derived hour-of-week usage envelope via `POST /profile`; raw activity never leaves the device (`src/measurement/headroom.py`, `src/contracts/schema.sql:60-68`).
 - Fleet-wide measured idle headroom is rolled up at `GET /measurement` and on the dashboard's "Measured idle headroom" beat.
