@@ -29,6 +29,7 @@
 | 1.2 | prior rev | Transport hardening shipped: optional TLS + mutual TLS (orchestrator `--tls-cert/--tls-key/--tls-client-ca`; worker `--tls-ca/--client-cert/--client-key`) and per-client rate limiting (`--rate-limit`). Updated B3 Tampering/Info-disclosure/DoS rows, the crypto + network sections, R9 (residual lowered), and the CISO Q&A |
 | 1.3 | prior rev | Submitter authentication shipped: optional operator `--submit-token` gates job/workload submission (`Authorization: Bearer`, constant-time, audited). Updated B4 Spoofing/Tampering/EoP rows, abuse-case 1 (fleet-as-botnet), and the traceability matrix |
 | 1.4 | this rev | Access-control + reward-integrity fixes: the `approve`/`disconnect` admin endpoints now require the operator token (`--submit-token`), closing a B3 self-admit bypass where a pending worker could approve itself and lease real work; credit is now metered on the JOB's GPU requirement from the signed manifest, not the worker's self-reported `has_gpu`, closing a 5x credit-inflation path. Updated the credit-integrity control, the mitigations matrix, and `architecture.md` §4.1/§9 |
+| 1.5 | this rev | **Harvest-phase threat model** (new section 24): models routing real Azure/Foundry workloads onto employee machines, where the trust model inverts and the device operator becomes an adversary against the workload's data. Adds boundary B6 (Foundry/routing-gateway) and flow F9, the data-confidentiality-on-a-curious-host threat, and the shipped mitigation: **data-classification-gated routing to server-assigned device trust tiers** (`src/orchestrator/routing_policy.py`, fail-closed; classification is in the signed manifest, the tier is server-assigned and never self-reported). Companion design: `azure-routing.md`; control detail: `routing-policy.md` |
 | 1.4 | prior rev | Supply-chain + isolation assurance: a generated **CycloneDX SBOM** (`scripts/generate_sbom.py`, `supply-chain.md`) and an **MXC launch-path validation harness** (stub `wxc-exec` driving real `_run_mxc`, `mxc-validation.md`). Updated abuse-case 6, section 11 + section 14, R13 (residual lowered) and R15 (wiring proven), the residual summary, the CISO Q&A, and the traceability matrix; fixed a stale note that still listed the `cryptography` pin as an open gap |
 | 1.5 | prior rev | Two more controls: a **signed SLSA v1 build-provenance attestation** (`scripts/generate_provenance.py`, STRIDE Tampering) and a **hash-chained tamper-evident audit log** with verify + JSONL SIEM export (`GET /events/verify`, `GET /events/export`, STRIDE Repudiation, Microsoft Sentinel). Updated the B1/B3 Repudiation rows, sections 14 and 15, R13, and the traceability matrix |
 | 1.6 | this rev | Four workstreams: **device-identity binding** (`--bind-device-identity`, B3 Spoofing, Intune/Entra), **Sigstore cosign integration** (`src/trust/cosign.py`, Tampering/SDL, inert-when-absent), plus two capability items -- **NPU detection/advertisement** (Copilot+/DirectML, `docs/npu-harvesting.md`) and **capability-weighted dynamic partitioning** (`docs/partitioning.md`). Updated the B3 Spoofing row, section 14, the CISO Q&A, the traceability matrix, and Related docs |
@@ -401,6 +402,58 @@ The PoC enforces the technical heart of a secure design (authenticated, signed, 
 
 **HR**
 - *Rewards / off-the-clock / tax?* Voluntary, capped rewards for passive device use, not labor; we want HR to confirm structure and tax treatment.
+
+---
+
+## 24. Harvest phase: routing real Azure / Foundry workloads onto employee machines
+
+Sections 1-23 model the measurement pilot and the example-workload PoC, where the workloads are our own signed adapters. The **harvest phase** (see `Azure_Integration_Plan.md` Phases 1-4 and `azure-routing.md`) is different in kind: Azure AI Foundry routes **real, tenant-owned workloads** (batch inference, evaluation, agent runs) onto the fleet via a `compute: onecompute` target. That real data changes the threat model, so this section extends the boundaries, flows, and STRIDE analysis for it rather than restating them.
+
+### 24.1 The trust model inverts
+
+In the PoC the workload is the untrusted party (B2): we protect the *employee's machine* from *submitter code*. In the harvest phase a second, opposite risk appears: we must also protect the *workload's data* from the *machine's operator*. An employee whose idle laptop is running a routed job is now a potential adversary against that job's input and results (they own the hardware, the OS, the debugger, and physical access). **The host is untrusted with respect to the workload it runs.** Any Confidential or Restricted data placed on such a machine can, in principle, be read by a determined operator, because software isolation on hardware the adversary controls is not a confidentiality guarantee (only a hardware TEE is; see 24.5).
+
+### 24.2 New boundary and flow
+
+| ID | Boundary | Why it matters | Primary reviewer |
+|---|---|---|---|
+| **B6** | Azure / Foundry <-> OneCompute routing gateway | who may inject a real workload, at what data classification, for which tenant/region; and the authenticity/provenance of a routed job | CISO, Azure Security, CELA |
+
+New flow, layered on the section 2.2 diagram:
+```
+[Azure AI Foundry] --(F9 routed workload + data classification, per-tenant)--> [Routing gateway] --> [Orchestrator]
+        (gateway authenticates the tenant, stamps a signed classification into the manifest, enforces residency)
+```
+F9 control: the routing gateway is the only submitter of routed workloads; it authenticates via the operator/submitter credential (B4), sets `data_classification` inside the **Ed25519-signed manifest** (so it is tamper-evident downstream), and the orchestrator gates assignment on classification vs the target device's server-assigned trust tier (24.4).
+
+### 24.3 STRIDE for the harvest phase (delta over section 6)
+
+| Threat | Harvest-phase scenario | Mitigation |
+|---|---|---|
+| **Information disclosure (headline)** | A curious or malicious employee reads a routed job's input/results from their own machine's memory or disk. | **Classification-gated routing to server-assigned device tiers** (24.4): Confidential/Restricted data is never assigned to an ordinary laptop; only Public/Internal data is. High classifications require a confidential-compute tier (24.5). Plus the existing per-job sandbox, no-persistence (`--rm`), and data-minimized input slices. |
+| **Spoofing / Tampering (classification downgrade)** | A rogue submitter labels sensitive data as `public` to route it cheaply onto laptops; or a worker claims a high trust tier to receive Confidential jobs. | `data_classification` lives in the **signed manifest** (a worker cannot alter it; a compromised submitter is bounded by B4 submitter auth and, with `--trusted-key`, out-of-band signer pinning). The device **trust tier is server-assigned and never read from the worker's self-report**, elevated only by IT via the operator-token-gated `POST /workers/{id}/tier` (mirrors the reward-integrity fix in v1.4). Fail-closed: unknown classification or tier denies routing. |
+| **Information disclosure (exfiltration)** | A routed job, or the curious host, exfiltrates job data over the network. | Default **no-egress** sandbox (`--network none`) for container kinds; egress is declared and enforced, not implicit. DLP and residency checks belong at the routing gateway (B6). Host-side AI/GPU kinds that need provider egress are the disclosed exception and are the first candidates for a confidential-compute tier. |
+| **Tampering / Repudiation (tenant + residency isolation)** | Multi-tenant Foundry data crosses tenants or regions, or a routing decision is later disputed. | Per-tenant provenance stamped by the gateway; region/residency as a routing constraint (roadmap, alongside classification). Every routing decision (classification, chosen tier, worker) is written to the **hash-chained audit stream** (`GET /events/verify`). |
+| **Elevation of privilege** | A low-tier device is used to reach data it should not. | The tier gate is enforced **server-side in the scheduler**, not on the device; a device only ever receives what its assigned tier permits, and the default tier (`untrusted`) permits only `public`. |
+
+### 24.4 Shipped control: classification-gated routing to server-assigned tiers
+
+The concrete, fail-closed control (detail in `routing-policy.md`):
+
+- Every routed job carries a `data_classification` in its signed manifest: `public < internal < confidential < restricted`.
+- Every worker has a **server-assigned** `trust_tier`: `untrusted < managed < sanctioned < confidential_compute`. A new device defaults to `untrusted`; only IT elevates it (out-of-band, operator-token-gated). The worker's own claim is ignored.
+- `routing_policy.may_route(classification, tier)` permits assignment only when the device tier meets the minimum for that classification (public->untrusted, internal->managed, confidential->sanctioned, restricted->confidential_compute). Unknown values deny.
+- The scheduler consults it on every assignment, so **Confidential/Restricted data provably cannot be leased to an ordinary (untrusted/managed) employee laptop.**
+
+This lets the harvest phase start safely with **low-sensitivity workloads on ordinary machines** while the higher-assurance tiers are built out.
+
+### 24.5 Confidential compute for high classifications (roadmap, grounded)
+
+Software isolation on operator-controlled hardware protects the host from the job, not the job's data from the host. Genuinely running Confidential/Restricted data on employee machines requires a hardware **TEE** (Intel SGX / AMD SEV-SNP / confidential VMs) with **remote attestation** (Azure Attestation), so the routing gateway can require "assign only to an attested confidential-compute node" before releasing sensitive data. That is the `confidential_compute` tier's real backing; until it exists and is validated (mirroring how the MXC backend is fail-closed and inert until a real runtime is present), the tier is simply unreachable and such data stays in Azure. TEE side channels remain a documented residual (section 11.1).
+
+### 24.6 CISO acceptance posture
+
+The harvest phase does not ship until Azure Compute (functionality) and the CISO office (safety) co-develop and sanction the routing per `Azure_Integration_Plan.md` Phase 0. The controls above are the starting position for that review: classification in the signed manifest, server-assigned fail-closed device tiers, no-egress-by-default sandboxing, per-decision audit, and a hard rule that sensitive classifications wait for attested confidential compute. New harvest-phase residual risks (curious-host data disclosure on non-TEE tiers; correct classification labeling upstream in Foundry/Purview) are added to the section 19 register at review time and owned jointly by CISO and CELA.
 
 ---
 
