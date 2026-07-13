@@ -104,6 +104,17 @@ First-generation cycle-scavengers (HTCondor, SETI@home) were **binary**: run fla
 
 > **Why it matters:** a laptop running a browser is ~90% idle, not 0%. Idle-only harvesting leaves most of the day on the table. Headroom harvesting reclaims that continuously, multiplying harvested compute-hours per machine, *without* degrading the employee's experience, because it is governed by their own learned demand. (**Implementation status:** the PoC ships the binary instant-yield *floor* today; the rolling-window profiler + adaptive governor are the next build, see `architecture.md` §3.2.)
 
+### Waking a machine vs. using it awake (power policy)
+
+Harvesting only helps if the machine is actually on, so OneCompute is deliberate about **when it may wake a device versus only use one that is already awake**, and it treats laptops and always-on machines very differently.
+
+- **Measurement pilot: never wake.** During the opt-in measurement phase (§9, `docs/measurement-pilot.md`) OneCompute **never wakes a machine**. It only records CPU/GPU/RAM while the device is already awake, resumes on wake, and restarts on reboot/logon. Waking a machine to measure it would be pointless (a sleeping machine has no foreground demand to learn) and a breach of trust: honest data is data taken on the employee's terms.
+- **Laptops: use awake, on AC, in headroom, never wake, never on battery.** A personal laptop is only ever harvested when it is **already awake, plugged into AC, and inside its learned headroom**. OneCompute does not wake a sleeping laptop, does not keep one awake, and **never runs on battery** (§8). If the lid closes or the machine sleeps, the job simply yields and requeues elsewhere.
+- **Always-on, AC-powered, IT-sanctioned machines: wake-and-use is fair game.** Dev boxes, desktops, lab/SAW machines, break-room Xboxes, and the DGX/RTX desk-supercomputer tier are the prime targets for **actively reaching for compute**: they are mains-powered, centrally managed, and expected to be up. For these, waking a fully-idle machine to run sanctioned work (via **Wake-on-LAN**, platform **wake timers**, or **Modern Standby** scheduling) is legitimate, IT-coordinated infrastructure, not a violation.
+- **Wake is IT-coordinated, never an agent whim.** Any wake path is provisioned and governed with **Azure Compute + the CISO office** (the same partners as the routing-safety work, §9): which machine classes may be woken, in which hours, under what policy. The worker never invents a reason to wake a device the organization has not sanctioned for it.
+
+The throughline: **measurement is passive and never wakes anything; harvesting wakes only always-on, AC-powered, IT-sanctioned machines, and treats every laptop as use-only, awake-only, AC-only.**
+
 ---
 
 ## 6. Workloads: AI *and* non-AI, CPU *and* GPU
