@@ -7,6 +7,12 @@ def _register(client: TestClient, worker_id: str = "worker") -> tuple[str, dict[
     response = client.post("/register", json={"worker_id": worker_id, "cpus": 2})
     assert response.status_code == 200
     token = response.json()["worker_token"]
+    # Elevate to 'managed' so the default (internal) workloads these tests submit are routable; a
+    # fresh worker defaults to the fail-closed 'untrusted' tier (see docs/routing-policy.md).
+    assert (
+        client.post(f"/workers/{worker_id}/tier", json={"trust_tier": "managed"}).status_code
+        == 200
+    )
     return token, {"Authorization": f"Bearer {token}"}
 
 

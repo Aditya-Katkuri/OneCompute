@@ -11,6 +11,11 @@ def test_min_ram_gates_on_live_free_ram_not_total():
     busy_token = client.post(
         "/register", json={"worker_id": "busy-big", "cpus": 8, "ram_gb": 32.0}
     ).json()["worker_token"]
+    # Elevate to 'managed' so the default (internal) job is routable (fresh workers default to the
+    # fail-closed 'untrusted' tier); the live free-RAM gate still applies. See docs/routing-policy.md.
+    assert client.post(
+        "/workers/busy-big/tier", json={"trust_tier": "managed"}
+    ).status_code == 200
     client.post(
         "/heartbeat",
         json={"worker_id": "busy-big", "free_ram_gb": 2.0},
@@ -19,6 +24,9 @@ def test_min_ram_gates_on_live_free_ram_not_total():
     free_token = client.post(
         "/register", json={"worker_id": "free-big", "cpus": 8, "ram_gb": 32.0}
     ).json()["worker_token"]
+    assert client.post(
+        "/workers/free-big/tier", json={"trust_tier": "managed"}
+    ).status_code == 200
     client.post(
         "/heartbeat",
         json={"worker_id": "free-big", "free_ram_gb": 24.0},
@@ -57,6 +65,11 @@ def test_free_ram_defaults_to_total_before_first_heartbeat():
     token = client.post(
         "/register", json={"worker_id": "w", "cpus": 4, "ram_gb": 32.0}
     ).json()["worker_token"]
+    # Elevate to 'managed' so the default (internal) job routes; fresh workers default to the
+    # fail-closed 'untrusted' tier (see docs/routing-policy.md).
+    assert client.post(
+        "/workers/w/tier", json={"trust_tier": "managed"}
+    ).status_code == 200
     client.post(
         "/jobs",
         json={

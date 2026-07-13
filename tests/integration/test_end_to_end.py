@@ -21,6 +21,14 @@ def _client(app) -> TestClient:
     return TestClient(app)
 
 
+def _elevate(client, worker_id, tier="managed") -> None:
+    # A new worker defaults to the fail-closed 'untrusted' tier, so it may not receive the default
+    # 'internal'-classified job. An operator elevates the device out-of-band; no submit_token is
+    # configured in this app, so the admin gate is open.
+    r = client.post(f"/workers/{worker_id}/tier", json={"trust_tier": tier})
+    assert r.status_code == 200, r.text
+
+
 def test_submit_run_credit_cpu() -> None:
     app = create_app(":memory:")
     client = _client(app)
@@ -32,6 +40,8 @@ def test_submit_run_credit_cpu() -> None:
 
     cap = Capability(worker_id="w-int-cpu", cpus=4, ram_gb=8.0, has_gpu=False)
     agent = WorkerAgent("http://test", cap, client=client)
+    agent.register()
+    _elevate(client, cap.worker_id)
     rr = agent.run_once()
 
     assert rr is not None, "worker did not pick up the job"
@@ -60,6 +70,8 @@ def test_gpu_worker_earns_more() -> None:
     )
     cap = Capability(worker_id="w-int-gpu", cpus=8, ram_gb=16.0, has_gpu=True, accel=["cuda"], gpu_vram_gb=8)
     agent = WorkerAgent("http://test", cap, client=client)
+    agent.register()
+    _elevate(client, cap.worker_id)
     rr = agent.run_once()
 
     assert rr is not None and rr.status == "completed"

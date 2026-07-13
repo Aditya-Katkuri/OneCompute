@@ -25,6 +25,7 @@ def submit_job(
         input_sha256=sha256_hex(req.input),
         requires=req.requires,
         limits=req.limits,
+        data_classification=req.data_classification,
     )
     now = _now()
     with write_lock:

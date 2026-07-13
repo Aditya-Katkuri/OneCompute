@@ -26,6 +26,12 @@ def _register(client: TestClient, worker_id: str, **cap) -> str:
     """Register (and auto-approve) a worker; return its bearer token."""
     resp = client.post("/register", json={"worker_id": worker_id, "cpus": 4, **cap})
     assert resp.status_code == 200
+    # Elevate to 'managed' so the default (internal) fractal tiles route to it; fresh workers
+    # default to the fail-closed 'untrusted' tier (see docs/routing-policy.md).
+    assert (
+        client.post(f"/workers/{worker_id}/tier", json={"trust_tier": "managed"}).status_code
+        == 200
+    )
     return resp.json()["worker_token"]
 
 

@@ -12,6 +12,11 @@ def test_worker_and_ledger_survive_db_reopen(tmp_path):
     client = TestClient(app)
 
     token = client.post("/register", json={"worker_id": "w1", "cpus": 4}).json()["worker_token"]
+    # Elevate to 'managed' so the default (internal) job routes; fresh workers default to the
+    # fail-closed 'untrusted' tier (see docs/routing-policy.md).
+    assert client.post(
+        "/workers/w1/tier", json={"trust_tier": "managed"}
+    ).status_code == 200
     auth = {"Authorization": f"Bearer {token}"}
     # x=3 -> challenge expects y = x*x + 1 = 10, so {"y": 10} is a valid answer.
     submit = client.post("/jobs", json={"kind": "challenge", "input": {"x": 3}, "units": 2})

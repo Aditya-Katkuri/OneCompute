@@ -99,6 +99,15 @@ def init_db(db_path: str = ":memory:") -> sqlite3.Connection:
             conn.execute(f"ALTER TABLE workers ADD COLUMN {column} TEXT")
         except sqlite3.OperationalError:
             pass
+    # Backward-compat: a persistent DB created before classification-aware routing lacks the
+    # workers.trust_tier column. Add it idempotently with the fail-closed default so existing rows
+    # become the lowest ("untrusted") tier until an admin elevates them (see routing_policy.py).
+    try:
+        conn.execute(
+            "ALTER TABLE workers ADD COLUMN trust_tier TEXT NOT NULL DEFAULT 'untrusted'"
+        )
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     return conn
 

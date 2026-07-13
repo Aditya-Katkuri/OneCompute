@@ -30,6 +30,12 @@ def test_gated_worker_is_pending_then_approved_then_leases():
 
     reg = client.post("/register", json=CPU_CAP)
     assert reg.status_code == 200
+    # Elevate to 'managed' so the default (internal) job is routable once approved; fresh workers
+    # default to the fail-closed 'untrusted' tier (see docs/routing-policy.md). The approval gate is
+    # independent and still blocks a pending worker below.
+    assert client.post(
+        "/workers/cpu-1/tier", json={"trust_tier": "managed"}
+    ).status_code == 200
     body = reg.json()
     auth = {"Authorization": f"Bearer {body['worker_token']}"}
     assert body["approved"] is False
@@ -79,6 +85,11 @@ def test_default_flow_is_unchanged_without_approval():
 
     reg = client.post("/register", json=CPU_CAP)
     assert reg.status_code == 200
+    # Elevate to 'managed' so the default (internal) job routes; fresh workers default to the
+    # fail-closed 'untrusted' tier (see docs/routing-policy.md).
+    assert client.post(
+        "/workers/cpu-1/tier", json={"trust_tier": "managed"}
+    ).status_code == 200
     body = reg.json()
     auth = {"Authorization": f"Bearer {body['worker_token']}"}
     assert body["approved"] is True

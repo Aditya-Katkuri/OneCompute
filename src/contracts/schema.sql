@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS workers (
     on_ac          INTEGER NOT NULL DEFAULT 1,
     blacklisted    INTEGER NOT NULL DEFAULT 0,
     approved       INTEGER NOT NULL DEFAULT 1,  -- dashboard-approval gate; 1 keeps non-gated flows unchanged
+    trust_tier     TEXT NOT NULL DEFAULT 'untrusted',  -- SERVER-ASSIGNED device trust tier (never the worker's self-report); drives classification-aware routing (untrusted < managed < sanctioned < confidential_compute)
     device_code    TEXT,                        -- short human code shown while pending approval
     last_heartbeat TEXT,
     registered_at  TEXT NOT NULL,

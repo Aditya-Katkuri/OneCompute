@@ -9,6 +9,12 @@ def test_job_routes_only_to_worker_with_enough_ram():
     big = {"worker_id": "big", "cpus": 8, "ram_gb": 32.0, "has_gpu": False}
     small_token = client.post("/register", json=small).json()["worker_token"]
     big_token = client.post("/register", json=big).json()["worker_token"]
+    # Elevate both to 'managed' so the default (internal) job is routable; fresh workers default to
+    # the fail-closed 'untrusted' tier (see docs/routing-policy.md). The RAM gate still applies.
+    for _wid in ("small", "big"):
+        assert client.post(
+            f"/workers/{_wid}/tier", json={"trust_tier": "managed"}
+        ).status_code == 200
 
     submit = client.post(
         "/jobs",
@@ -43,6 +49,11 @@ def test_no_min_ram_matches_any_worker():
     token = client.post(
         "/register", json={"worker_id": "tiny", "cpus": 2, "ram_gb": 2.0}
     ).json()["worker_token"]
+    # Elevate to 'managed' so the default (internal) job routes; fresh workers default to the
+    # fail-closed 'untrusted' tier (see docs/routing-policy.md).
+    assert client.post(
+        "/workers/tiny/tier", json={"trust_tier": "managed"}
+    ).status_code == 200
     client.post(
         "/jobs",
         json={"kind": "data.transform", "input": {"items": [1], "op": "square"}, "units": 1},
