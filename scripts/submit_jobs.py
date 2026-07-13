@@ -97,7 +97,7 @@ def main() -> int:
 
     jobs = build_jobs(args)
     try:
-        ids = submit_all(args.url, jobs, token=args.token)
+        ids = submit_all(args.url, jobs, token=args.token, classification="public")
     except Exception as exc:
         print(f"submit failed: {exc}", file=sys.stderr)
         return 1

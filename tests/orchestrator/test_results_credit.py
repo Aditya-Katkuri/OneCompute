@@ -19,6 +19,11 @@ def test_completed_result_credits_gpu_weight():
         },
     )
     assert register.status_code == 200
+    # Elevate to 'managed' so the default (internal) job routes; fresh workers default to the
+    # fail-closed 'untrusted' tier (see docs/routing-policy.md). GPU credit weighting is unchanged.
+    assert client.post(
+        "/workers/gpu-1/tier", json={"trust_tier": "managed"}
+    ).status_code == 200
     auth = {"Authorization": f"Bearer {register.json()['worker_token']}"}
     submit = client.post(
         "/jobs",
@@ -57,6 +62,12 @@ def test_results_require_lease_owner_and_do_not_double_credit():
     other_token = client.post("/register", json={"worker_id": "other", "cpus": 2}).json()[
         "worker_token"
     ]
+    # Elevate both to 'managed' so the default (internal) job routes; fresh workers default to the
+    # fail-closed 'untrusted' tier (see docs/routing-policy.md).
+    for _wid in ("owner", "other"):
+        assert client.post(
+            f"/workers/{_wid}/tier", json={"trust_tier": "managed"}
+        ).status_code == 200
     owner_auth = {"Authorization": f"Bearer {owner_token}"}
     other_auth = {"Authorization": f"Bearer {other_token}"}
     submit = client.post(
@@ -115,6 +126,11 @@ def test_expired_result_is_requeued_without_credit(tmp_path):
     token = client.post("/register", json={"worker_id": "worker", "cpus": 2}).json()[
         "worker_token"
     ]
+    # Elevate to 'managed' so the default (internal) job routes; fresh workers default to the
+    # fail-closed 'untrusted' tier (see docs/routing-policy.md).
+    assert client.post(
+        "/workers/worker/tier", json={"trust_tier": "managed"}
+    ).status_code == 200
     auth = {"Authorization": f"Bearer {token}"}
     submit = client.post("/jobs", json={"kind": "challenge", "input": {"x": 5}, "units": 4})
     assert submit.status_code == 200
@@ -145,6 +161,11 @@ def test_invalid_challenge_result_blacklists_the_cheater():
     token = client.post("/register", json={"worker_id": "worker", "cpus": 2}).json()[
         "worker_token"
     ]
+    # Elevate to 'managed' so the default (internal) challenge job routes; fresh workers default to
+    # the fail-closed 'untrusted' tier (see docs/routing-policy.md).
+    assert client.post(
+        "/workers/worker/tier", json={"trust_tier": "managed"}
+    ).status_code == 200
     auth = {"Authorization": f"Bearer {token}"}
     submit = client.post("/jobs", json={"kind": "challenge", "input": {"x": 3}, "units": 4})
     assert submit.status_code == 200
@@ -176,6 +197,11 @@ def test_self_reported_gpu_does_not_inflate_credit_on_a_cpu_job():
         "/register",
         json={"worker_id": "faker", "cpus": 8, "has_gpu": True, "accel": ["cuda"]},
     ).json()["worker_token"]
+    # Elevate to 'managed' so the default (internal) CPU job routes; fresh workers default to the
+    # fail-closed 'untrusted' tier (see docs/routing-policy.md). Credit weighting is unchanged.
+    assert client.post(
+        "/workers/faker/tier", json={"trust_tier": "managed"}
+    ).status_code == 200
     auth = {"Authorization": f"{scheme} {token}"}
     submit = client.post("/jobs", json={"kind": "challenge", "input": {"x": 3}, "units": 4})
     assert submit.status_code == 200

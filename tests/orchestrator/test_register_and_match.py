@@ -16,6 +16,12 @@ def test_gpu_job_only_matches_gpu_worker():
 
     gpu_token = client.post("/register", json=gpu_cap).json()["worker_token"]
     cpu_token = client.post("/register", json=cpu_cap).json()["worker_token"]
+    # Elevate both to 'managed' so the default (internal) job is routable; fresh workers default to
+    # the fail-closed 'untrusted' tier (see docs/routing-policy.md). GPU matching still applies.
+    for _wid in ("gpu-1", "cpu-1"):
+        assert client.post(
+            f"/workers/{_wid}/tier", json={"trust_tier": "managed"}
+        ).status_code == 200
     submit = client.post(
         "/jobs",
         json={

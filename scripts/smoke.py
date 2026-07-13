@@ -70,7 +70,8 @@ def main() -> None:
             submitter.post(
                 "/jobs",
                 json=SubmitRequest(
-                    kind="data.transform", input=payload, units=len(payload["items"])
+                    kind="data.transform", input=payload, units=len(payload["items"]),
+                    data_classification="public",
                 ).model_dump(),
             )
     print(f"submitted {len(batch)} jobs")

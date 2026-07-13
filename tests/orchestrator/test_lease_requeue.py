@@ -14,6 +14,11 @@ def test_expired_lease_requeues_for_another_worker(tmp_path):
         response = client.post("/register", json={"worker_id": worker_id, "cpus": 4})
         assert response.status_code == 200
         tokens[worker_id] = response.json()["worker_token"]
+        # Elevate to 'managed' so the default (internal) job routes; fresh workers default to the
+        # fail-closed 'untrusted' tier (see docs/routing-policy.md).
+        assert client.post(
+            f"/workers/{worker_id}/tier", json={"trust_tier": "managed"}
+        ).status_code == 200
     submit = client.post(
         "/jobs",
         json={"kind": "challenge", "input": {"x": 7}, "requires": {"min_cpus": 1}},
@@ -51,6 +56,11 @@ def test_heartbeat_does_not_renew_expired_lease(tmp_path):
     token = client.post("/register", json={"worker_id": "worker", "cpus": 4}).json()[
         "worker_token"
     ]
+    # Elevate to 'managed' so the default (internal) job routes; fresh workers default to the
+    # fail-closed 'untrusted' tier (see docs/routing-policy.md).
+    assert client.post(
+        "/workers/worker/tier", json={"trust_tier": "managed"}
+    ).status_code == 200
     submit = client.post("/jobs", json={"kind": "challenge", "input": {"x": 1}})
     assert submit.status_code == 200
     job_id = submit.json()["job_id"]

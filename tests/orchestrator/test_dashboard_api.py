@@ -10,6 +10,15 @@ from orchestrator.app import create_app
 def _register(client: TestClient, **cap) -> dict[str, str]:
     """Register a worker and return its bearer-auth headers (worker routes are token-gated)."""
     token = client.post("/register", json=cap).json()["worker_token"]
+    # Elevate to 'managed' so default (internal) workloads route to it (fresh workers default to
+    # the fail-closed 'untrusted' tier); see docs/routing-policy.md.
+    if "worker_id" in cap:
+        assert (
+            client.post(
+                f"/workers/{cap['worker_id']}/tier", json={"trust_tier": "managed"}
+            ).status_code
+            == 200
+        )
     return {"Authorization": f"Bearer {token}"}
 
 

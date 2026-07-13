@@ -25,6 +25,13 @@ ResultStatus = Literal["completed", "failed", "yielded"]
 SandboxType = Literal["docker", "windows_sandbox", "job_object"]
 Network = Literal["none", "host"]
 
+# Data sensitivity carried by a real workload, low to high. Part of the SIGNED manifest, so it is
+# tamper-evident. Drives classification-aware routing: a job may only land on a device whose
+# server-assigned trust tier is high enough (see src/orchestrator/routing_policy.py). The
+# conservative default is "internal", never "public", so an unclassified job is not treated as the
+# least sensitive.
+DataClassification = Literal["public", "internal", "confidential", "restricted"]
+
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
@@ -53,6 +60,13 @@ class Capability(BaseModel):
     has_npu: bool = False
     npu_tops: float | None = None
     labels: list[str] = Field(default_factory=list)
+    # ADVISORY ONLY. A worker may claim a device trust tier here, but the orchestrator NEVER uses
+    # this for routing: the routing tier is assigned server-side (workers.trust_tier) and defaults
+    # to the lowest tier. This mirrors the rule that credit is metered on the job's actual GPU
+    # requirement, never on the worker's self-reported has_gpu. Kept for future attestation
+    # tooling / diagnostics; treating a self-report as authoritative would let a rogue worker claim
+    # a high tier to receive confidential data (see docs/routing-policy.md).
+    attested_tier: str | None = None
 
 
 # --- job / manifest (architecture.md §5) -------------------------------------
@@ -89,6 +103,9 @@ class JobManifest(BaseModel):
     requires: Requires = Field(default_factory=Requires)
     limits: Limits = Field(default_factory=Limits)
     sandbox: SandboxPolicy = Field(default_factory=SandboxPolicy)
+    # Data sensitivity of this job's input. Signed as part of the manifest, so a worker cannot
+    # downgrade it to receive data it is not cleared for. Defaults to the conservative "internal".
+    data_classification: DataClassification = "internal"
     issued_at: datetime = Field(default_factory=_utcnow)
     expires_at: datetime | None = None
 
@@ -156,11 +173,22 @@ class SubmitRequest(BaseModel):
     input: dict[str, Any] = Field(default_factory=dict)
     requires: Requires = Field(default_factory=Requires)
     limits: Limits = Field(default_factory=Limits)
+    # Sensitivity of the submitted data. Carried into the signed manifest and enforced at routing.
+    # Defaults to the conservative "internal" so an unclassified submission is never treated public.
+    data_classification: DataClassification = "internal"
     units: int = 1
 
 
 class SubmitResponse(BaseModel):
     job_id: str
+
+
+class TierAssignmentRequest(BaseModel):
+    """Admin body for POST /workers/{id}/tier: the SERVER-ASSIGNED device trust tier IT elevates a
+    device to (out-of-band). Kept a plain string so an unknown/misspelled tier is rejected with an
+    explicit 400 by the endpoint rather than silently coerced; the operator-token gate protects it."""
+
+    trust_tier: str
 
 
 # --- dashboard read model (T5 reads GET /state) ------------------------------
@@ -177,6 +205,9 @@ class WorkerView(BaseModel):
     credits: float = 0.0
     approved: bool = True              # whether the worker has been admitted (dashboard approval gate)
     device_code: str | None = None     # short pending code shown until an admin approves
+    # SERVER-ASSIGNED device trust tier (never the worker's self-report). Defaults to the lowest
+    # tier "untrusted"; drives classification-aware routing. See src/orchestrator/routing_policy.py.
+    trust_tier: str = "untrusted"
 
 
 class JobView(BaseModel):

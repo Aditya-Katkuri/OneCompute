@@ -20,6 +20,14 @@ def _client(app) -> TestClient:
     return TestClient(app)
 
 
+def _elevate(client, worker_id, tier="managed") -> None:
+    # A new worker defaults to the fail-closed 'untrusted' tier, so it may not receive the default
+    # 'internal'-classified job. An operator elevates the device out-of-band; no submit_token is
+    # configured in this app, so the admin gate is open.
+    r = client.post(f"/workers/{worker_id}/tier", json={"trust_tier": tier})
+    assert r.status_code == 200, r.text
+
+
 def _submit(client, **kw) -> str:
     r = client.post("/jobs", json=SubmitRequest(**kw).model_dump())
     assert r.status_code == 200, r.text
@@ -31,6 +39,8 @@ def test_signed_job_is_verified_run_and_credited():
     with TestClient(app) as client:
         _submit(client, kind="data.transform", input={"items": [1, 2, 3], "op": "square"}, units=3)
         agent = WorkerAgent("http://test", Capability(worker_id="w1", cpus=4, ram_gb=8.0), client=client)
+        agent.register()
+        _elevate(client, "w1")
         rr = agent.run_once()
         assert rr is not None and rr.status == "completed"
         assert rr.output["results"] == [1, 4, 9]
@@ -45,6 +55,8 @@ def test_isolated_execution_path_completes():
             "http://test", Capability(worker_id="iso", cpus=4, ram_gb=8.0),
             client=client, isolated=True,  # runs jobkit inside a real sandbox subprocess
         )
+        agent.register()
+        _elevate(client, "iso")
         rr = agent.run_once()
         assert rr is not None and rr.status == "completed"
         assert rr.output["results"] == [4, 9, 16]
@@ -55,6 +67,7 @@ def test_tampered_input_is_refused_before_running():
     with TestClient(app) as client:
         _submit(client, kind="data.transform", input={"items": [1], "op": "square"}, units=1)
         register = client.post("/register", json=Capability(worker_id="w", cpus=2).model_dump())
+        _elevate(client, "w")
         auth = {"Authorization": f"Bearer {register.json()['worker_token']}"}
         assignment = JobAssignment(
             **client.get("/jobs/next", params={"worker_id": "w"}, headers=auth).json()
@@ -76,6 +89,8 @@ def test_cheater_is_caught_and_blacklisted():
 
         agent = WorkerAgent("http://test", Capability(worker_id="cheat", cpus=2),
                             client=client, runner=cheat)
+        agent.register()
+        _elevate(client, "cheat")
         agent.run_once()
         wv = next(w for w in client.get("/state").json()["workers"] if w["worker_id"] == "cheat")
         assert wv["blacklisted"] is True
@@ -90,6 +105,7 @@ def test_yield_requeues_and_another_worker_finishes():
         yielder = WorkerAgent("http://test", Capability(worker_id="yielder", cpus=4, ram_gb=8.0),
                               client=client)
         yielder.register()
+        _elevate(client, "yielder")
         assignment = yielder.poll_once()
         assert assignment is not None
         yielder.trigger_yield()
@@ -100,6 +116,8 @@ def test_yield_requeues_and_another_worker_finishes():
 
         finisher = WorkerAgent("http://test", Capability(worker_id="finisher", cpus=4, ram_gb=8.0),
                                client=client)
+        finisher.register()
+        _elevate(client, "finisher")
         rr2 = finisher.run_once()
         assert rr2 is not None and rr2.status == "completed"
         assert client.get("/state").json()["total_credits"] == 50.0

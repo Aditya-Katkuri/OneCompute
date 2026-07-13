@@ -4,6 +4,7 @@ from contracts.hashing import canonical_bytes, sha256_hex
 from contracts.models import (
     LAUNCHABLE_KINDS,
     Capability,
+    DataClassification,
     FleetState,
     HeartbeatRequest,
     HeartbeatResponse,
@@ -29,6 +30,7 @@ from contracts.models import (
     SignedManifest,
     SubmitRequest,
     SubmitResponse,
+    TierAssignmentRequest,
     UsageBucket,
     WorkerView,
     WorkloadLaunchRequest,
@@ -41,6 +43,7 @@ __all__ = [
     "sha256_hex",
     "LAUNCHABLE_KINDS",
     "Capability",
+    "DataClassification",
     "FleetState",
     "JobDetail",
     "WorkloadLaunchRequest",
@@ -69,6 +72,7 @@ __all__ = [
     "SignedManifest",
     "SubmitRequest",
     "SubmitResponse",
+    "TierAssignmentRequest",
     "UsageBucket",
     "WorkerView",
 ]

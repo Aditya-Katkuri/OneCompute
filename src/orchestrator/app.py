@@ -29,6 +29,7 @@ from contracts import (
     SignedManifest,
     SubmitRequest,
     SubmitResponse,
+    TierAssignmentRequest,
     UsageBucket,
     WorkerView,
     WorkloadLaunchRequest,
@@ -49,6 +50,7 @@ from measurement.headroom import (
 )
 from orchestrator.db import open_serialized_db, write_lock
 from orchestrator.ratelimit import RateLimiter, client_key
+from orchestrator.routing_policy import TIERS, is_valid_tier
 from orchestrator.scheduler import class_weight_for, pick_job_for
 from orchestrator.submit import submit_job
 from trust import Signer, check_challenge
@@ -648,6 +650,11 @@ def create_app(
         if bind_device_identity and x_client_cert_sha256:
             cert_fingerprint = x_client_cert_sha256.strip().lower()
         with write_lock:
+            # NOTE: workers.trust_tier is deliberately absent from this INSERT/UPDATE. A new row
+            # takes the schema default 'untrusted' (the fail-closed server-assigned tier, NEVER read
+            # from the incoming Capability), and a re-register leaves any admin-elevated tier
+            # untouched (preserved like `approved`). IT elevates a device only via POST
+            # /workers/{id}/tier (operator-token gated). See src/orchestrator/routing_policy.py.
             conn.execute(
                 """
                 INSERT INTO workers (
@@ -825,6 +832,36 @@ def create_app(
         _emit(conn, "approved", worker_id=worker_id, detail="admitted via dashboard")
         return {"ok": True, "worker_id": worker_id}
 
+    @app.post("/workers/{worker_id}/tier")
+    def set_tier(
+        worker_id: str,
+        req: TierAssignmentRequest,
+        authorization: str | None = Header(default=None),
+    ) -> dict:
+        """Assign a worker's SERVER-ASSIGNED trust tier (how IT elevates a device out-of-band).
+
+        Operator-token gated via the same admin path as approve/disconnect (auth first, then the
+        404 check), so only an authenticated admin can raise a device's tier - never the worker
+        itself. An unknown/misspelled tier is rejected with 400, and the default stays fail-closed
+        ('untrusted'). This is the sole way a device becomes eligible for higher-classification
+        data; see src/orchestrator/routing_policy.py and docs/routing-policy.md.
+        """
+        _require_admin_token(authorization)
+        _worker_or_404(conn, worker_id)
+        if not is_valid_tier(req.trust_tier):
+            raise HTTPException(
+                status_code=400,
+                detail=f"unknown trust tier: {req.trust_tier!r}; valid: {list(TIERS)}",
+            )
+        with write_lock:
+            conn.execute(
+                "UPDATE workers SET trust_tier = ? WHERE worker_id = ?",
+                (req.trust_tier, worker_id),
+            )
+            conn.commit()
+        _emit(conn, "tier_assigned", worker_id=worker_id, detail=req.trust_tier)
+        return {"ok": True, "worker_id": worker_id, "trust_tier": req.trust_tier}
+
     @app.delete("/workers/{worker_id}")
     def disconnect_worker(worker_id: str, authorization: str | None = Header(default=None)) -> dict:
         """Disconnect a device from the fleet (admin action from the dashboard, same operator-token
@@ -994,6 +1031,7 @@ def create_app(
                     credits=float(credits),
                     approved=bool(worker["approved"]),
                     device_code=worker["device_code"],
+                    trust_tier=worker["trust_tier"] or "untrusted",
                 )
             )
         job_rows = conn.execute("SELECT * FROM jobs ORDER BY created_at ASC").fetchall()

@@ -11,6 +11,12 @@ from orchestrator.db import open_serialized_db
 def _register(client: TestClient, worker_id: str = "w", cpus: int = 2) -> dict[str, str]:
     response = client.post("/register", json={"worker_id": worker_id, "cpus": cpus})
     assert response.status_code == 200
+    # Elevate to 'managed' so default (internal) jobs route to it; fresh workers default to the
+    # fail-closed 'untrusted' tier (see docs/routing-policy.md).
+    assert (
+        client.post(f"/workers/{worker_id}/tier", json={"trust_tier": "managed"}).status_code
+        == 200
+    )
     return {"Authorization": f"Bearer {response.json()['worker_token']}"}
 
 
