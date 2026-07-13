@@ -153,7 +153,13 @@ class UsageProfiler:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             payload = {"buckets": [asdict(b) for b in self.buckets]}
-            self.path.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+            # Atomic write: a hard power-loss mid-save must never truncate/corrupt the profile
+            # (which _load would then discard, losing a week of learning). Write a temp file in the
+            # same directory, then os.replace -- on the same volume that swap is atomic, so a crash
+            # leaves either the complete old profile or the complete new one, never a half-written file.
+            tmp = self.path.with_name(self.path.name + ".tmp")
+            tmp.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+            os.replace(tmp, self.path)
         except Exception:
             pass  # best-effort persistence; never raise on the demo path
 

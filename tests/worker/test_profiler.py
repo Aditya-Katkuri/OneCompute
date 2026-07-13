@@ -75,6 +75,37 @@ def test_load_tolerates_old_profile_missing_new_fields(tmp_path):
     assert b.ac_mean == 0.0 and b.idle_mean == 0.0
 
 
+def test_save_is_atomic_and_leaves_no_temp_file(tmp_path):
+    # A hard crash mid-save must never leave a half-written profile: save writes a temp file then
+    # atomically swaps it in, so the final file is always complete and no .tmp lingers.
+    import json
+
+    path = tmp_path / "prof.json"
+    when = datetime(2026, 6, 22, 9, 0)
+    p = UsageProfiler(path=path)
+    for _ in range(5):
+        p.record(30.0, 0.0, 40.0, when=when)
+    p.save()
+    assert path.exists()
+    assert not (tmp_path / "prof.json.tmp").exists()
+    data = json.loads(path.read_text(encoding="utf-8"))  # complete, valid JSON
+    assert isinstance(data["buckets"], list)
+
+
+def test_save_replaces_a_prior_corrupt_profile_cleanly(tmp_path):
+    # Even if a previous run left a corrupt file, load tolerates it (starts fresh) and the next
+    # atomic save replaces it with a valid profile -- a week is never stuck behind one bad write.
+    import json
+
+    path = tmp_path / "prof.json"
+    path.write_text("{ this is not valid json", encoding="utf-8")
+    p = UsageProfiler(path=path)
+    p.record(30.0, 0.0, 40.0)
+    p.save()
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(data["buckets"], list)
+
+
 def test_stale_bucket_resets(tmp_path):
     p = UsageProfiler(path=tmp_path / "prof.json")
     old = datetime(2026, 1, 1, 9, 0)
