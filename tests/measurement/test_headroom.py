@@ -30,6 +30,13 @@ def _bucket(cpu: float, gpu: float, ram: float, *, n: int = 10) -> dict:
     }
 
 
+def _bucket_ac(cpu: float, ram: float, ac: float, idle: float, *, n: int = 10) -> dict:
+    b = _bucket(cpu, 0.0, ram, n=n)
+    b["ac_mean"] = ac
+    b["idle_mean"] = idle
+    return b
+
+
 # --- finite ------------------------------------------------------------------
 
 
@@ -159,3 +166,27 @@ def test_aggregate_empty_is_zeroed() -> None:
 def test_default_margin_is_governor_comfort_margin() -> None:
     # Guards the "matches the governor" promise: the default must stay the 25% comfort margin.
     assert DEFAULT_MARGIN_PCT == 25.0
+
+
+def test_summarize_reports_ac_and_idle_averages() -> None:
+    profile = {
+        "device": "d",
+        "populated": [_bucket_ac(20, 40, ac=100.0, idle=60.0), _bucket_ac(30, 50, ac=80.0, idle=40.0)],
+    }
+    s = summarize_profile(profile)
+    assert math.isclose(s["ac_avg"], 90.0)    # mean(100, 80)
+    assert math.isclose(s["idle_avg"], 50.0)  # mean(60, 40)
+
+
+def test_aggregate_averages_ac_and_idle_across_devices() -> None:
+    a = summarize_profile({"device": "a", "populated": [_bucket_ac(20, 30, ac=100.0, idle=50.0)]})
+    b = summarize_profile({"device": "b", "populated": [_bucket_ac(40, 50, ac=60.0, idle=30.0)]})
+    agg = aggregate([a, b])
+    assert math.isclose(agg["ac_avg"], 80.0)    # mean(100, 60)
+    assert math.isclose(agg["idle_avg"], 40.0)  # mean(50, 30)
+
+
+def test_summarize_defaults_ac_idle_when_absent() -> None:
+    # Buckets from a pre-metric profile carry no ac/idle: summarize must default them to 0, not raise.
+    s = summarize_profile({"device": "d", "populated": [_bucket(20, 0, 40)]})
+    assert s["ac_avg"] == 0.0 and s["idle_avg"] == 0.0

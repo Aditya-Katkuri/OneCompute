@@ -28,7 +28,7 @@ DEFAULT_HARVEST_HIGH = 0.40
 
 # BucketStat numeric fields we read (see worker.profiler.BucketStat). ``index``/``cpu_min``/
 # ``updated_at`` are intentionally ignored: the estimate only needs demand means and peaks.
-BUCKET_FIELDS = ("cpu_mean", "cpu_max", "gpu_mean", "gpu_max", "ram_mean", "ram_max")
+BUCKET_FIELDS = ("cpu_mean", "cpu_max", "gpu_mean", "gpu_max", "ram_mean", "ram_max", "ac_mean", "idle_mean")
 
 
 def finite(value: object, default: float = 0.0) -> float:
@@ -118,6 +118,8 @@ def summarize_profile(
             "cpu": _empty_metric(),
             "gpu": _empty_metric(),
             "ram": {"avg": 0.0, "peak": 0.0, "headroom": 0.0},
+            "ac_avg": 0.0,
+            "idle_avg": 0.0,
         }
 
     cpu_means = [b["cpu_mean"] for b in populated]
@@ -155,6 +157,9 @@ def summarize_profile(
             "peak": max(b["ram_max"] for b in populated),
             "headroom": max(0.0, 100.0 - avg_ram),
         },
+        # Harvestable-window signals: % of measured time on AC power and % with the human idle/away.
+        "ac_avg": fmean([b.get("ac_mean", 0.0) for b in populated]),
+        "idle_avg": fmean([b.get("idle_mean", 0.0) for b in populated]),
     }
 
 
@@ -181,6 +186,8 @@ def aggregate(
             "cpu": _empty_metric(),
             "gpu": _empty_metric(),
             "ram": {"avg": 0.0, "headroom": 0.0},
+            "ac_avg": 0.0,
+            "idle_avg": 0.0,
         }
 
     mean_cpu_spare = fmean([s["cpu"]["mean_spare"] for s in contributing])
@@ -207,4 +214,6 @@ def aggregate(
             "recoverable_high": gpu_high,
         },
         "ram": {"avg": avg_ram, "headroom": max(0.0, 100.0 - avg_ram)},
+        "ac_avg": fmean([s.get("ac_avg", 0.0) for s in contributing]),
+        "idle_avg": fmean([s.get("idle_avg", 0.0) for s in contributing]),
     }

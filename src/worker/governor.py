@@ -221,7 +221,8 @@ class AdaptiveGovernor:
         """Fold the employee's current demand into the rolling profile. Call ONLY when our job
         is not running, so the envelope reflects the employee's usage and not the agent's."""
         self.profiler.record(
-            self.user_cpu(), system_gpu_load_pct(), system_ram_load_pct(), when=when
+            self.user_cpu(), system_gpu_load_pct(), system_ram_load_pct(), when=when,
+            on_ac=self.gate.on_ac(), idle=self.gate.user_idle(),
         )
 
     def should_run(self, when: datetime | None = None) -> bool:
@@ -239,7 +240,10 @@ class AdaptiveGovernor:
             headroom = self.headroom_now(when)          # pre-update profile
             threshold = self.admission_threshold(when)  # pre-update profile
             demand = self.user_cpu()
-            self.profiler.record(demand, system_gpu_load_pct(), system_ram_load_pct(), when=when)
+            self.profiler.record(
+                demand, system_gpu_load_pct(), system_ram_load_pct(), when=when,
+                on_ac=self.gate.on_ac(), idle=self.gate.user_idle(),
+            )
             admitted = headroom >= self.min_headroom_pct and demand < threshold
             self.last_decision = {
                 "admitted": admitted,

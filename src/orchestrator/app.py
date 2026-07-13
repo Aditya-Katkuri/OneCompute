@@ -541,6 +541,8 @@ def _sanitize_profile_buckets(buckets: list[UsageBucket]) -> list[dict]:
                 "gpu_max": _clamp_pct(b.gpu_max),
                 "ram_mean": _clamp_pct(b.ram_mean),
                 "ram_max": _clamp_pct(b.ram_max),
+                "ac_mean": _clamp_pct(getattr(b, "ac_mean", 0.0)),
+                "idle_mean": _clamp_pct(getattr(b, "idle_mean", 0.0)),
             }
         )
         if len(clean) >= BUCKETS_PER_WEEK:
@@ -1081,6 +1083,8 @@ def create_app(
             ),
             ram_avg=agg["ram"]["avg"],
             ram_headroom=agg["ram"]["headroom"],
+            ac_avg=agg["ac_avg"],
+            idle_avg=agg["idle_avg"],
         )
 
     @app.get("/jobs/{job_id}", response_model=JobDetail)

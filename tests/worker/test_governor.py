@@ -25,6 +25,9 @@ class _FakeGate:
     def active_now(self):
         return self._active
 
+    def user_idle(self):
+        return False
+
 
 def _gov(monkeypatch, tmp_path, user, gate, profile_cpu_mean=15.0):
     monkeypatch.setattr("worker.governor.system_gpu_load_pct", lambda: 0.0)

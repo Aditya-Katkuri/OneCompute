@@ -39,6 +39,42 @@ def test_persistence_roundtrip(tmp_path):
     assert abs(p2.profile_now(when).cpu_mean - p1.profile_now(when).cpu_mean) < 1e-6
 
 
+def test_record_folds_ac_and_idle_indicators(tmp_path):
+    # on_ac/idle are 0/1 indicators folded as percentages, so their bucket means become the % of
+    # time on AC and the % of time idle (the harvestable-window signals).
+    p = UsageProfiler(path=tmp_path / "p.json")
+    when = datetime(2026, 6, 22, 9, 0)
+    for _ in range(20):
+        p.record(10.0, 0.0, 40.0, when=when, on_ac=True, idle=True)
+    b = p.profile_now(when)
+    assert b.ac_mean == 100.0
+    assert b.idle_mean == 100.0
+
+
+def test_record_without_ac_idle_leaves_them_at_default(tmp_path):
+    p = UsageProfiler(path=tmp_path / "p.json")
+    when = datetime(2026, 6, 22, 9, 0)
+    p.record(10.0, 0.0, 40.0, when=when)  # no on_ac/idle passed
+    b = p.profile_now(when)
+    assert b.ac_mean == 0.0 and b.idle_mean == 0.0
+
+
+def test_load_tolerates_old_profile_missing_new_fields(tmp_path):
+    # A pre-upgrade profile has no ac_mean/idle_mean (and may carry an unknown legacy key): loading
+    # must default the new fields and drop the unknown key rather than raise.
+    import json
+
+    path = tmp_path / "old.json"
+    path.write_text(
+        json.dumps({"buckets": [{"n": 3, "cpu_mean": 20.0, "legacy_field": 1}]}),
+        encoding="utf-8",
+    )
+    p = UsageProfiler(path=path)
+    b = p.buckets[0]
+    assert b.n == 3 and b.cpu_mean == 20.0
+    assert b.ac_mean == 0.0 and b.idle_mean == 0.0
+
+
 def test_stale_bucket_resets(tmp_path):
     p = UsageProfiler(path=tmp_path / "prof.json")
     old = datetime(2026, 1, 1, 9, 0)

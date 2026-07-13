@@ -19,7 +19,7 @@ import ctypes
 import json
 import os
 from ctypes import wintypes
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from datetime import datetime
 from pathlib import Path
 
@@ -51,6 +51,8 @@ class BucketStat:
     gpu_max: float = 0.0
     ram_mean: float = 0.0
     ram_max: float = 0.0
+    ac_mean: float = 0.0    # % of samples the machine was on AC power (harvestable-window signal)
+    idle_mean: float = 0.0  # % of samples the human was idle/away (prime-harvest-window signal)
     updated_at: float = 0.0  # epoch seconds of the last record
 
 
@@ -137,8 +139,12 @@ class UsageProfiler:
         try:
             if self.path.exists():
                 data = json.loads(self.path.read_text(encoding="utf-8"))
+                known = {f.name for f in fields(BucketStat)}
                 for i, raw in enumerate(data.get("buckets", [])[:BUCKETS]):
-                    self.buckets[i] = BucketStat(**raw)
+                    if isinstance(raw, dict):
+                        # Tolerate schema drift: unknown keys are dropped and missing new fields
+                        # (e.g. ac_mean/idle_mean in a pre-upgrade profile) fall back to defaults.
+                        self.buckets[i] = BucketStat(**{k: v for k, v in raw.items() if k in known})
         except Exception:
             # Corrupt/unreadable profile -> start fresh; never raise.
             self.buckets = [BucketStat() for _ in range(BUCKETS)]
@@ -151,8 +157,22 @@ class UsageProfiler:
         except Exception:
             pass  # best-effort persistence; never raise on the demo path
 
-    def record(self, cpu: float, gpu: float, ram: float, when: datetime | None = None) -> None:
-        """Fold one (cpu%, gpu%, ram%) observation into the current hour-of-week bucket."""
+    def record(
+        self,
+        cpu: float,
+        gpu: float,
+        ram: float,
+        when: datetime | None = None,
+        on_ac: bool | None = None,
+        idle: bool | None = None,
+    ) -> None:
+        """Fold one (cpu%, gpu%, ram%) observation into the current hour-of-week bucket.
+
+        ``on_ac`` (machine plugged in) and ``idle`` (human away) are optional 0/1 indicators folded
+        as percentages, so their bucket means become the % of time on AC and the % of time idle --
+        the harvestable-window signals. When omitted (e.g. a caller that doesn't sample them) the
+        AC/idle means are left unchanged.
+        """
         now = when or datetime.now()
         b = self.buckets[bucket_index(now)]
         ts = now.timestamp()
@@ -165,6 +185,10 @@ class UsageProfiler:
         b.gpu_max = _roll_max(b.gpu_max, gpu, b.gpu_mean) if b.n else gpu
         b.ram_mean = _ewma(b.ram_mean, ram, b.n)
         b.ram_max = _roll_max(b.ram_max, ram, b.ram_mean) if b.n else ram
+        if on_ac is not None:
+            b.ac_mean = _ewma(b.ac_mean, 100.0 if on_ac else 0.0, b.n) if b.n else (100.0 if on_ac else 0.0)
+        if idle is not None:
+            b.idle_mean = _ewma(b.idle_mean, 100.0 if idle else 0.0, b.n) if b.n else (100.0 if idle else 0.0)
         b.n += 1
         b.updated_at = ts
         self.buckets[bucket_index(now)] = b

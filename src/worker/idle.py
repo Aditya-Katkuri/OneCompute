@@ -61,6 +61,17 @@ class IdleGate:
         except Exception:
             return True
 
+    def user_idle(self) -> bool:
+        """True when the human appears away: the session is locked, or there has been no keyboard/
+        mouse input for at least the idle threshold. Uses GetLastInputInfo only (a timestamp, never
+        keystroke content -- privacy/EDR clean). Never raises."""
+        try:
+            if self.locked():
+                return True
+            return self.input_idle_seconds() >= self.input_idle_threshold_s
+        except Exception:
+            return False
+
     def locked(self) -> bool:
         """Best-effort lock detection. Unknown defaults to unlocked."""
         return False

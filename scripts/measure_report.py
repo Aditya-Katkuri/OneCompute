@@ -120,10 +120,20 @@ def format_text(
 ) -> str:
     """Render a clean, aligned, projector-legible report. No em dashes; hyphens and commas only."""
     harvest = f"{harvest_low * 100:.0f}-{harvest_high * 100:.0f}%"
+    dev_names = [s["device"] for s in summaries]
+    dev_w = min(28, max([len("Device")] + [len(n) for n in dev_names])) if dev_names else 12
+    widths = [dev_w, 8, 8, 9, 15, 8, 15, 8, 9, 7, 7]
+    aligns = ["l", "r", "r", "r", "r", "r", "r", "r", "r", "r", "r"]
+    headers = [
+        "Device", "Cover", "CPU avg", "CPU peak", "Recover CPU%",
+        "GPU avg", "Recover GPU%", "RAM avg", "RAM head", "On AC", "Idle",
+    ]
+    header_row = _row(headers, widths, aligns)
+    width = max(_WIDTH, len(header_row))
     lines: list[str] = []
-    lines.append("=" * _WIDTH)
+    lines.append("=" * width)
     lines.append("OneCompute measurement pilot report (MEASURED idle headroom)")
-    lines.append("-" * _WIDTH)
+    lines.append("-" * width)
     lines.append(f"Source: {source}")
     lines.append("Measured on-device usage profiles, one per device. These MEASURED numbers")
     lines.append("replace the modeled estimates in docs/Financial_Impact.md with pilot data.")
@@ -137,17 +147,9 @@ def format_text(
     lines.append(
         "hour-of-week buckets. The governor's 80/95% ceilings are safety maxima, never targets."
     )
+    lines.append("On AC = % of time plugged in; Idle = % of time the user was away (harvest windows).")
     lines.append("")
-
-    dev_names = [s["device"] for s in summaries]
-    dev_w = min(28, max([len("Device")] + [len(n) for n in dev_names])) if dev_names else 12
-    widths = [dev_w, 8, 8, 9, 15, 8, 15, 8, 9]
-    aligns = ["l", "r", "r", "r", "r", "r", "r", "r", "r"]
-    headers = [
-        "Device", "Cover", "CPU avg", "CPU peak", "Recover CPU%",
-        "GPU avg", "Recover GPU%", "RAM avg", "RAM head",
-    ]
-    lines.append(_row(headers, widths, aligns))
+    lines.append(header_row)
     lines.append(_row(["-" * w for w in widths], widths, aligns))
     if not summaries:
         lines.append("(no profiles found)")
@@ -157,7 +159,7 @@ def format_text(
             name = name[: dev_w - 1] + "~"
         cover = f"{s['coverage_buckets']}/{BUCKETS_PER_WEEK}"
         if s["coverage_buckets"] == 0:
-            cells = [name, cover, "-", "-", "-", "-", "-", "-", "-"]
+            cells = [name, cover, "-", "-", "-", "-", "-", "-", "-", "-", "-"]
         else:
             cells = [
                 name,
@@ -169,6 +171,8 @@ def format_text(
                 _rng(s["gpu"]["recoverable_low"], s["gpu"]["recoverable_high"]),
                 _pct(s["ram"]["avg"]),
                 _pct(s["ram"]["headroom"]),
+                _pct(s["ac_avg"]),
+                _pct(s["idle_avg"]),
             ]
         lines.append(_row(cells, widths, aligns))
     lines.append("")
@@ -192,6 +196,10 @@ def format_text(
         lines.append(
             f"  RAM  avg {_pct(agg['ram']['avg'])}  headroom {_pct(agg['ram']['headroom'])}"
         )
+        lines.append(
+            f"  Harvest window: on AC {_pct(agg['ac_avg'])} of the time, "
+            f"user idle {_pct(agg['idle_avg'])}"
+        )
     lines.append("")
 
     if skipped:
@@ -200,13 +208,13 @@ def format_text(
             lines.append(f"  - {sk['path']} ({sk['reason']})")
         lines.append("")
 
-    lines.append("-" * _WIDTH)
+    lines.append("-" * width)
     lines.append(
         f"Estimated conservatively-recoverable CPU headroom across {n} devices: "
         f"{agg['cpu']['recoverable_low']:.1f}-{agg['cpu']['recoverable_high']:.1f} percent "
         f"(measured, margin={margin:.0f}%, harvest {harvest})"
     )
-    lines.append("=" * _WIDTH)
+    lines.append("=" * width)
     return "\n".join(lines)
 
 
