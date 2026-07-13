@@ -350,6 +350,8 @@ class WorkerAgent:
                 gpu_max=b.gpu_max,
                 ram_mean=b.ram_mean,
                 ram_max=b.ram_max,
+                ac_mean=getattr(b, "ac_mean", 0.0),
+                idle_mean=getattr(b, "idle_mean", 0.0),
             )
             for i, b in enumerate(getattr(profiler, "buckets", []))
             if getattr(b, "n", 0) > 0

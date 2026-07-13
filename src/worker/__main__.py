@@ -163,14 +163,19 @@ def run_measure_loop(
                 cpu = _live_cpu_pct(governor)
                 gpu = system_gpu_load_pct() if agent.capability.has_gpu else 0.0
                 ram = system_ram_load_pct()
-                governor.profiler.record(cpu, gpu, ram)  # learn the hour-of-week usage envelope
-                telem.log("measure", cpu=round(cpu, 1), gpu=round(gpu, 1), ram=round(ram, 1))
+                gate = getattr(governor, "gate", None)
+                on_ac = gate.on_ac() if gate is not None else None      # plugged in? harvest window
+                idle = gate.user_idle() if gate is not None else None   # human away? harvest window
+                governor.profiler.record(cpu, gpu, ram, on_ac=on_ac, idle=idle)  # learn the envelope
+                telem.log("measure", cpu=round(cpu, 1), gpu=round(gpu, 1), ram=round(ram, 1),
+                          ac=on_ac, idle=idle)
                 samples += 1
                 if samples == 1 or samples % post_every == 0:
                     _persist(governor.profiler)              # local durability: reboot loses <= one window
                     if upload:
                         agent.report_profile(governor.profiler)  # opt-in, best-effort, offline-safe
-                print(f"measure: cpu={cpu:.1f}% gpu={gpu:.1f}% ram={ram:.1f}% (no jobs will run)")
+                print(f"measure: cpu={cpu:.1f}% gpu={gpu:.1f}% ram={ram:.1f}% "
+                      f"ac={'Y' if on_ac else 'N'} idle={'Y' if idle else 'N'} (no jobs will run)")
             except KeyboardInterrupt:
                 raise
             except Exception as exc:  # a bad sample must never kill a week-long observer

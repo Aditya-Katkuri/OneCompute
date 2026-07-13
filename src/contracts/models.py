@@ -265,6 +265,8 @@ class UsageBucket(BaseModel):
     gpu_max: float = 0.0
     ram_mean: float = 0.0
     ram_max: float = 0.0
+    ac_mean: float = 0.0    # % of samples on AC power (harvestable-window signal)
+    idle_mean: float = 0.0  # % of samples with the human idle/away (prime-harvest-window signal)
 
 
 class ProfileReport(BaseModel):
@@ -306,3 +308,5 @@ class MeasurementSummary(BaseModel):
     gpu: MetricSummary = Field(default_factory=MetricSummary)
     ram_avg: float = 0.0
     ram_headroom: float = 0.0
+    ac_avg: float = 0.0    # fleet % of time on AC power
+    idle_avg: float = 0.0  # fleet % of time the user was idle/away

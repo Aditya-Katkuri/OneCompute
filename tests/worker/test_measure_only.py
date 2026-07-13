@@ -45,6 +45,9 @@ class _FakeGate:
     def active_now(self) -> bool:
         return False
 
+    def user_idle(self) -> bool:
+        return True
+
 
 class _SpyAgent:
     """Worker stand-in that fails loudly if any job path is ever touched in measure-only mode."""

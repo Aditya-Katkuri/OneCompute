@@ -31,7 +31,7 @@ class _StubProfiler:
         self.buckets = buckets if buckets is not None else []
         self.records: list[tuple[float, float, float]] = []
 
-    def record(self, cpu: float, gpu: float, ram: float, when=None) -> None:
+    def record(self, cpu: float, gpu: float, ram: float, when=None, on_ac=None, idle=None) -> None:
         self.records.append((cpu, gpu, ram))
 
 
