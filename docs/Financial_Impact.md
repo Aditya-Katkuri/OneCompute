@@ -69,3 +69,22 @@ The projection assumes that net recoverable compute value grows by approximately
 - The five-year case assumes approximately 15 percent annual growth in net recoverable compute value.
 - Growth is driven by higher device performance, more AI-capable endpoint hardware, broader opt-in participation, and improved scheduling efficiency.
 - The model assumes workloads are delay-tolerant and can run safely in isolated environments without impacting employee productivity.
+
+## Measured reconciliation (from the measurement pilot)
+
+The figures above are **modeled**: in particular the "recoverable hours per day" per device class is an assumption. The measurement pilot exists to replace those assumptions with data. A measurement-only worker records each device's real CPU/GPU/RAM envelope, plus the **fraction of time on AC power** and the **fraction of time the user is idle/away**, entirely on-device (see [`measurement-pilot.md`](./measurement-pilot.md)).
+
+`scripts/business_case.py` turns a pilot profile into the same shape of projection as the table above, but with the modeled inputs swapped for measured ones:
+
+- **recoverable %** is the governor-consistent recoverable headroom actually measured on the device (still the conservative 20-40% harvest of measured spare), not an assumed number of hours.
+- **awake hours/day** is derived from bucket coverage (a measurement-only worker samples only while the machine is on, so the distinct hour-of-week slots it populated over a week are a measured proxy for daily uptime).
+- **AC fraction** discounts a laptop to only the hours it was actually plugged in (never harvested on battery). Always-on classes (dev boxes, desktops) keep the 24h/day, on-AC assumption.
+
+Fleet size, vCPU-equivalent cores, and Azure-equivalent price stay labelled assumptions (the defaults in `src/measurement/business_case.py` mirror this document), so the measured run reconciles directly against the modeled case:
+
+```
+uv run python scripts/business_case.py "%LOCALAPPDATA%\OneCompute\usage_profile.json"
+uv run python scripts/business_case.py <dir-of-collected-profiles> --device-class laptop_assigned
+```
+
+Early in a pilot the measured projection is lower than the $125.6M modeled headline (coverage is thin, so measured awake-hours are small); as a week of coverage accumulates it converges toward a defensible measured range. That convergence, from modeled to measured, is the entire point of the pilot and the number to bring to Azure Compute and the CISO office.
