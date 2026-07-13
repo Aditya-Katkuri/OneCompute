@@ -382,3 +382,45 @@ def test_usage_heartbeat_streams_live_usage_to_orchestrator() -> None:
     assert response.ack is True
     assert state["heartbeats"] >= 1
     assert state["pulled"] is False
+
+
+def test_adaptive_governor_uses_custom_profile_path(tmp_path) -> None:
+    p = tmp_path / "alice.json"
+    gov = wm._adaptive_governor(60.0, str(p))
+    assert gov.profiler.path == p
+
+
+def test_adaptive_governor_defaults_profile_path_when_none() -> None:
+    gov = wm._adaptive_governor(60.0, None)
+    assert gov.profiler.path.name == "usage_profile.json"
+
+
+def test_main_measure_only_writes_to_the_custom_profile_path(tmp_path, monkeypatch) -> None:
+    # --profile lets each device write a distinctly-named profile so a coordinator can collect several
+    # into one folder for a single aggregate readout (multi-person pilot).
+    app, _state = _fake_orchestrator()
+
+    def _make_agent(url, capability, isolated=False, **_):
+        client = httpx.Client(transport=httpx.ASGITransport(app=app), base_url=url)
+        return WorkerAgent(url, capability, client=client, isolated=isolated)
+
+    monkeypatch.setattr(wm, "WorkerAgent", _make_agent)
+    monkeypatch.setattr(
+        wm, "detect_capability", lambda: Capability(worker_id="measure-1", has_gpu=False)
+    )
+    monkeypatch.setattr(wm, "system_ram_load_pct", lambda: 42.0)
+    if wm.psutil is not None:
+        monkeypatch.setattr(wm.psutil, "cpu_percent", lambda interval=None: 5.0)
+    monkeypatch.setattr(wm, "_start_usage_heartbeat", lambda agent, period_s=1.0: threading.Event())
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))  # where the DEFAULT profile would land
+    custom = tmp_path / "alice.json"
+    monkeypatch.setattr(
+        "sys.argv",
+        ["worker", "--url", "http://test", "--measure-only", "--once", "--profile", str(custom)],
+    )
+
+    wm.main()
+
+    assert custom.exists()  # wrote to the named profile
+    assert not (tmp_path / "OneCompute" / "usage_profile.json").exists()  # not the default location

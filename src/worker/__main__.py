@@ -14,6 +14,7 @@ from worker.agent import WorkerAgent
 from worker.capability import detect_capability
 from worker.governor import AdaptiveGovernor, system_gpu_load_pct, system_ram_load_pct
 from worker.idle import IdleGate
+from worker.profiler import UsageProfiler
 from worker.telemetry import PilotTelemetry
 
 try:  # psutil is a declared dependency; guard so the worker still runs without it
@@ -194,6 +195,19 @@ def run_measure_loop(
     return samples
 
 
+def _adaptive_governor(idle_threshold: float, profile_path: str | None = None) -> AdaptiveGovernor:
+    """Build the demand-adaptive governor, optionally backing its usage profiler with a custom path.
+
+    A per-device ``--profile`` lets a multi-person pilot collect distinctly-named profiles into one
+    folder for a single aggregate readout. When ``profile_path`` is None the profiler uses its default
+    location (``%LOCALAPPDATA%\\OneCompute\\usage_profile.json``).
+    """
+    profiler = UsageProfiler(path=profile_path) if profile_path else None
+    return AdaptiveGovernor(
+        profiler=profiler, idle_gate=IdleGate(input_idle_threshold_s=idle_threshold)
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a OneCompute worker agent")
     parser.add_argument(
@@ -205,6 +219,13 @@ def main() -> None:
     )
     parser.add_argument("--once", action="store_true", help="Run at most one job then exit")
     parser.add_argument("--idle-threshold", type=float, default=60.0, help="Input idle seconds before work")
+    parser.add_argument(
+        "--profile",
+        default=None,
+        help="Path to the on-device usage profile JSON (default: "
+             "%LOCALAPPDATA%\\OneCompute\\usage_profile.json). Give each device a distinct name to "
+             "collect profiles from several people into one folder for a single aggregate readout.",
+    )
     parser.add_argument(
         "--usage-interval",
         type=float,
@@ -338,7 +359,7 @@ def main() -> None:
                       "profile only; no registration, heartbeat, or upload.")
             # The governor is used ONLY to own + persist the on-device UsageProfiler; its
             # should_run()/active_now() admission+yield paths are intentionally never called.
-            gate = AdaptiveGovernor(idle_gate=IdleGate(input_idle_threshold_s=args.idle_threshold))
+            gate = _adaptive_governor(args.idle_threshold, args.profile)
             telem = PilotTelemetry(agent.capability.worker_id, enabled=args.telemetry)
             if args.telemetry:
                 print(f"pilot telemetry -> {telem.path}")
@@ -364,12 +385,15 @@ def main() -> None:
         # Once we've joined, stream live usage so the dashboard can show this device + its graph.
         usage_stop = _start_usage_heartbeat(agent, args.usage_interval)
 
-        idle_gate = IdleGate(input_idle_threshold_s=args.idle_threshold)
         adaptive = args.governor == "adaptive"
         # The adaptive governor is a drop-in for IdleGate: same should_run()/active_now(), but
         # it admits work into the machine's learned spare headroom (runs during light use) and
         # yields on the employee's own attributed compute demand. See worker/governor.py.
-        gate = AdaptiveGovernor(idle_gate=idle_gate) if adaptive else idle_gate
+        gate = (
+            _adaptive_governor(args.idle_threshold, args.profile)
+            if adaptive
+            else IdleGate(input_idle_threshold_s=args.idle_threshold)
+        )
         telem = PilotTelemetry(agent.capability.worker_id, enabled=args.telemetry)
         if args.telemetry:
             print(f"pilot telemetry -> {telem.path}")

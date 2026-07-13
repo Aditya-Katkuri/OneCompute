@@ -36,6 +36,7 @@
 param(
     [double]$IntervalSec = 30,
     [string]$Url = "",
+    [string]$ProfileFile = "",
     [switch]$Install,
     [switch]$Uninstall,
     [switch]$Status
@@ -46,6 +47,7 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 $VenvPy = Join-Path $RepoRoot ".venv\Scripts\python.exe"
 $Py = if (Test-Path $VenvPy) { $VenvPy } else { "python" }
 $ProfilePath = Join-Path $env:LOCALAPPDATA "OneCompute\usage_profile.json"
+if ($ProfileFile) { $ProfilePath = $ProfileFile }  # -ProfileFile names this device's profile (multi-person pilot)
 $TelemPath = Join-Path $env:LOCALAPPDATA "OneCompute\pilot-telemetry.jsonl"
 $Title = "OneCompute Observer"
 $StartupDir = [Environment]::GetFolderPath("Startup")
@@ -102,9 +104,10 @@ if ($Uninstall) {
 }
 
 $urlArg = if ($Url) { " --url `"$Url`"" } else { "" }
+$profArg = if ($ProfileFile) { " --profile `"$ProfileFile`"" } else { "" }
 
 if ($Install) {
-    $cmdBody = "@echo off`r`ntitle $Title`r`n`"$Py`" -m worker --measure-only --measure-interval $IntervalSec$urlArg`r`n"
+    $cmdBody = "@echo off`r`ntitle $Title`r`n`"$Py`" -m worker --measure-only --measure-interval $IntervalSec$urlArg$profArg`r`n"
     Set-Content -Path $StartupCmd -Value $cmdBody -Encoding ASCII
     Write-Host "Installed autostart -> $StartupCmd" -ForegroundColor Green
     Start-Process -FilePath $StartupCmd
@@ -122,4 +125,5 @@ Write-Host "Profile: $ProfilePath"
 Write-Host "----------------------------------------------------------------------"
 $argList = @("-m", "worker", "--measure-only", "--measure-interval", "$IntervalSec")
 if ($Url) { $argList += @("--url", $Url) }
+if ($ProfileFile) { $argList += @("--profile", $ProfileFile) }
 & $Py @argList
