@@ -61,25 +61,30 @@ function Get-ObserverPids {
 
 if ($Status) {
     Write-Host "OneCompute observer status" -ForegroundColor Cyan
-    Write-Host ("  profile : {0}" -f $ProfilePath)
-    if (Test-Path $ProfilePath) {
-        $age = [int]((Get-Date) - (Get-Item $ProfilePath).LastWriteTime).TotalSeconds
-        $fresh = [Math]::Max(120, 4 * $IntervalSec)
-        $verdict = if ($age -le $fresh) { "ALIVE (profile updating)" } else { "STALE (not updated recently)" }
-        Write-Host ("  last write : {0}s ago  ->  {1}" -f $age, $verdict)
+    # Definitive liveness: is a measure-only process actually running?
+    $procs = @(Get-ObserverPids)
+    if ($procs.Count -gt 0) {
+        Write-Host ("  observer : RUNNING  (PIDs {0} -- find in Task Manager > Details)" -f ($procs -join ', ')) -ForegroundColor Green
     } else {
-        Write-Host "  last write : (profile not created yet)"
+        Write-Host "  observer : NOT RUNNING (no measure-only process found)" -ForegroundColor Yellow
+    }
+    # Freshness from the telemetry log, which appends EVERY sample (the profile only saves ~every 5 min).
+    $freshFile = if (Test-Path $TelemPath) { $TelemPath } elseif (Test-Path $ProfilePath) { $ProfilePath } else { $null }
+    if ($freshFile) {
+        $age = [int]((Get-Date) - (Get-Item $freshFile).LastWriteTime).TotalSeconds
+        Write-Host ("  last sample : {0}s ago" -f $age)
+    } else {
+        Write-Host "  last sample : (none yet)"
     }
     if (Test-Path $TelemPath) {
         $samples = (Get-Content $TelemPath | Measure-Object -Line).Lines
         Write-Host ("  samples logged : {0}" -f $samples)
     }
-    $procs = @(Get-ObserverPids)
-    if ($procs.Count -gt 0) {
-        Write-Host ("  running PIDs : {0}   (find these in Task Manager > Details)" -f ($procs -join ', ')) -ForegroundColor Green
-    } else {
-        Write-Host "  running PIDs : none found (observer not currently running)" -ForegroundColor Yellow
+    if (Test-Path $ProfilePath) {
+        $psave = [int]((Get-Date) - (Get-Item $ProfilePath).LastWriteTime).TotalSeconds
+        Write-Host ("  profile saved : {0}s ago  (saves about every 5 min)" -f $psave)
     }
+    Write-Host ("  profile : {0}" -f $ProfilePath)
     $auto = if (Test-Path $StartupCmd) { "ON  ($StartupCmd)" } else { "OFF" }
     Write-Host ("  autostart at logon : {0}" -f $auto)
     return
