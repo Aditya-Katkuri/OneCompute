@@ -76,6 +76,20 @@ def _live_cpu_pct(governor: AdaptiveGovernor) -> float:
     return governor.user_cpu()
 
 
+def _persist(profiler) -> None:
+    """Best-effort local save of the learned usage profile.
+
+    Tolerates a stub profiler with no ``save()`` and never raises, so a persistence hiccup can
+    never take down a week-long observer.
+    """
+    save = getattr(profiler, "save", None)
+    if callable(save):
+        try:
+            save()
+        except Exception:
+            pass
+
+
 def run_measure_loop(
     agent: WorkerAgent,
     governor: AdaptiveGovernor,
@@ -85,10 +99,10 @@ def run_measure_loop(
 ) -> int:
     """Measurement-only loop for the low-risk pilot: fold this machine's live CPU/GPU/RAM into the
     on-device usage profile and (if telemetry is on) append a local ``measure`` event each tick.
-    It also uploads the learned envelope to the orchestrator on the first sample and about every
-    five minutes after (opt-in, best-effort via ``agent.report_profile``) so the central fleet
-    measurement view can roll it up; a failed upload is swallowed so the pilot keeps working with
-    no reachable orchestrator.
+    It also **saves the profile locally** and uploads the learned envelope to the orchestrator on
+    the first sample and about every five minutes after (opt-in, best-effort via
+    ``agent.report_profile``), so a reboot or power-loss costs at most one upload window of learning
+    and a failed upload is swallowed so the pilot keeps working with no reachable orchestrator.
 
     It **never** pulls or runs a job -- ``poll_once`` / ``run_once`` / ``run_guarded`` / ``run_job``
     are never called -- so an org can run a "measure first, run workloads later" pilot with zero
@@ -98,34 +112,55 @@ def run_measure_loop(
     only as the owner of the on-device ``UsageProfiler`` so the fold-in matches what
     ``AdaptiveGovernor.observe()`` records between jobs.
 
-    Returns the number of samples taken. With ``once=True`` it takes exactly one sample then
-    returns (keeps ``--once`` testable and non-hanging); otherwise it loops on ``interval`` until
-    interrupted, terminating cleanly on Ctrl-C. The caller persists the learned profile on exit.
+    Built to run unattended for a week: each iteration is wrapped so a transient sampling error
+    (a psutil hiccup, a disk blip) is logged and skipped rather than killing the loop, and a wake
+    from sleep/hibernate is detected and noted (the CPU reading is a fresh blocking sample, so it is
+    still valid for the current hour-of-week bucket). Returns the number of samples taken. With
+    ``once=True`` it takes exactly one sample then returns (keeps ``--once`` testable and
+    non-hanging); otherwise it loops on ``interval`` until interrupted, terminating cleanly on
+    Ctrl-C. The learned profile is saved and a final envelope uploaded on exit.
     """
     interval = max(0.0, interval)
-    # Upload the learned envelope to the orchestrator on the first sample (so the device shows up
-    # in the central measurement view fast) and roughly every five minutes after.
+    # Save + upload the learned envelope on the first sample (so the device shows up in the central
+    # measurement view fast) and roughly every five minutes after.
     post_every = max(1, round(300.0 / interval)) if interval > 0 else 1
     samples = 0
+    last_wall = time.monotonic()
     try:
         while True:
-            # No job runs in measure-only mode, so the employee's demand == the whole machine.
-            cpu = _live_cpu_pct(governor)
-            gpu = system_gpu_load_pct() if agent.capability.has_gpu else 0.0
-            ram = system_ram_load_pct()
-            governor.profiler.record(cpu, gpu, ram)  # learn the hour-of-week usage envelope
-            telem.log("measure", cpu=round(cpu, 1), gpu=round(gpu, 1), ram=round(ram, 1))
-            samples += 1
-            if samples == 1 or samples % post_every == 0:
-                agent.report_profile(governor.profiler)  # opt-in, best-effort, offline-safe
-            print(f"measure: cpu={cpu:.1f}% gpu={gpu:.1f}% ram={ram:.1f}% (no jobs will run)")
+            try:
+                now = time.monotonic()
+                gap = now - last_wall
+                last_wall = now
+                # A gap far larger than the interval means the machine was suspended (sleep or
+                # hibernate). The CPU reading below is a fresh blocking sample, so it stays valid for
+                # the current hour-of-week bucket; we just note the resume for the pilot log.
+                if interval > 0 and samples > 0 and gap > max(3 * interval, interval + 30.0):
+                    print(f"measure: resumed after {gap:.0f}s gap (sleep/hibernate); continuing")
+                # No job runs in measure-only mode, so the employee's demand == the whole machine.
+                cpu = _live_cpu_pct(governor)
+                gpu = system_gpu_load_pct() if agent.capability.has_gpu else 0.0
+                ram = system_ram_load_pct()
+                governor.profiler.record(cpu, gpu, ram)  # learn the hour-of-week usage envelope
+                telem.log("measure", cpu=round(cpu, 1), gpu=round(gpu, 1), ram=round(ram, 1))
+                samples += 1
+                if samples == 1 or samples % post_every == 0:
+                    _persist(governor.profiler)              # local durability: reboot loses <= one window
+                    agent.report_profile(governor.profiler)  # opt-in, best-effort, offline-safe
+                print(f"measure: cpu={cpu:.1f}% gpu={gpu:.1f}% ram={ram:.1f}% (no jobs will run)")
+            except KeyboardInterrupt:
+                raise
+            except Exception as exc:  # a bad sample must never kill a week-long observer
+                logging.warning("measure sample failed (%s); continuing", exc)
             if once:
                 break
             time.sleep(interval)
     except KeyboardInterrupt:
         print("stopped")
     finally:
-        # Land the final envelope so the central rollup reflects the full pilot window.
+        # Land the final envelope (and a local save) so the profile and central rollup reflect the
+        # full pilot window even on a clean stop.
+        _persist(governor.profiler)
         agent.report_profile(governor.profiler)
     return samples
 

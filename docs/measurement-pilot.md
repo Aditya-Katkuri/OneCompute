@@ -1,4 +1,4 @@
-# OneCompute Measurement Pilot Runbook (2 weeks, voluntary, no job execution)
+# OneCompute Measurement Pilot Runbook (1 week, voluntary, no job execution)
 
 The lowest-risk first step for OneCompute in a real org: measure how much idle CPU/GPU/RAM headroom actually exists across employee laptops, dev boxes, and Xboxes, before any workload is ever routed onto a device. This pilot runs pure read-only telemetry. It never pulls or runs a job, so there is no chance of a workload landing on someone's machine.
 
@@ -22,9 +22,37 @@ Pairs with `Azure_Integration_Plan.md` (Phase 0) and `Financial_Impact.md` (the 
 ```powershell
 uv run python -m worker --url http://<orchestrator-host>:8080 --measure-only
 ```
-- Prints `measure-only: tracking CPU/GPU/RAM, no jobs will run`, then samples on a cadence (default every 30s; tune with `--measure-interval`) and uploads its envelope to the orchestrator on the first sample and about every five minutes after.
+- Prints `measure-only: tracking CPU/GPU/RAM, no jobs will run`, then samples on a cadence (default every 30s; tune with `--measure-interval`) and saves the profile locally plus uploads its envelope to the orchestrator on the first sample and about every five minutes after.
 - For managed fleets, ship the signed single-exe instead of a Python checkout: build with `scripts/build_worker_exe.ps1` (it prints the SHA-256 for Defender allow-listing; sign it with the corporate cert), then run `onecompute-worker.exe --url http://<host>:8080 --measure-only`.
-- Leave it running for the pilot window (about two weeks) so the profile fills its 168 hour-of-week buckets across weekdays and weekends. Stop anytime with Ctrl-C; the learned profile is saved and a final envelope is uploaded on exit.
+- Leave it running for the pilot window (about one week, so the profile fills each of its 168 hour-of-week buckets at least once across weekdays and weekends). Stop anytime with Ctrl-C; the learned profile is saved and a final envelope is uploaded on exit.
+
+## 3.1 Keep it running across logoff, reboot, and sleep (recommended for the week)
+
+Running the command in a foreground window works, but it stops if the volunteer closes the window or reboots. To keep the observer alive for the whole week without babysitting, install it as a Windows Scheduled Task:
+
+```powershell
+# No admin needed: per-user task that starts now and re-launches at every logon.
+powershell -ExecutionPolicy Bypass -File scripts\install_observer.ps1 -Url http://<orchestrator-host>:8080
+
+# Always-on dev box/server (run in an elevated shell): also start at boot, before login.
+powershell -ExecutionPolicy Bypass -File scripts\install_observer.ps1 -Url http://<host>:8080 -AtStartup
+
+# Inspect what it would register, without registering:
+powershell -ExecutionPolicy Bypass -File scripts\install_observer.ps1 -Url http://<host>:8080 -DryRun
+
+# Opt out (remove it) at any time:
+powershell -ExecutionPolicy Bypass -File scripts\install_observer.ps1 -Uninstall
+```
+
+What this buys the pilot (the observer is built to run unattended for a week):
+
+- **Survives reboot / shutdown:** the logon trigger re-launches it when the volunteer logs back in; `-AtStartup` (admin) also starts it at boot before login for machines that stay on without a user.
+- **Survives sleep / hibernate:** the process resumes on wake; the loop detects the gap and keeps sampling (each CPU reading is a fresh sample, so no bogus data), and never runs on the frozen machine.
+- **Survives crashes:** the task auto-restarts on failure (once a minute), and `StartWhenAvailable` catches a trigger missed while the device was off.
+- **Survives network drops and power state:** uploads are best-effort (the profile keeps building locally when the orchestrator is unreachable), and it runs on battery too because measurement imposes zero compute load.
+- **Loses at most a few minutes on a hard power-loss:** the profile is saved locally on the upload cadence, not only on a clean exit, and reloaded on the next start so a week of learning accumulates across reboots.
+
+Managed-device note: on a locked-down corporate device, creating a scheduled task can require an elevated shell or IT deployment (Intune / Group Policy pushing the same measure-only command). The installer prints exactly that guidance if registration is blocked; `-DryRun` shows the definition IT would deploy.
 
 ## 4. Watch the fleet (live, central)
 - The operator dashboard (served at the orchestrator root `/`) shows a live "Measured idle headroom" beat: recoverable CPU headroom, contributing device count, average utilization, GPU and RAM.
