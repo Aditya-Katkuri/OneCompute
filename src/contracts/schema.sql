@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS workers (
     worker_id      TEXT PRIMARY KEY,
     token          TEXT NOT NULL,
     capability_json TEXT NOT NULL,
-    class_weight   REAL NOT NULL DEFAULT 1,   -- server-assigned (GPU=5, CPU=1); never the agent's claim
+    class_weight   REAL NOT NULL DEFAULT 1,   -- capability tier from self-reported has_gpu (GPU=5, CPU=1); drives scheduling only, NOT credit
     free_ram_gb    REAL,                       -- live available RAM (updated on heartbeat); drives free-RAM gating
     idle           INTEGER NOT NULL DEFAULT 1,
     cpu_pct        REAL,
@@ -35,7 +35,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     updated_at      TEXT NOT NULL
 );
 
--- Append-only rewards ledger (shared with T4). credits = accepted_units * class_weight.
+-- Append-only rewards ledger (shared with T4). credits = accepted_units * job GPU weight
+-- (5 for a job that requires a GPU, else 1), derived from the signed manifest server-side; the
+-- worker's self-reported class_weight drives scheduling only, never credit.
 CREATE TABLE IF NOT EXISTS ledger (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     worker_id  TEXT NOT NULL,

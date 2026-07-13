@@ -165,3 +165,37 @@ def test_invalid_challenge_result_blacklists_the_cheater():
     worker_view = next(w for w in state["workers"] if w["worker_id"] == "worker")
     assert worker_view["blacklisted"] is True
     assert worker_view["credits"] == 0.0
+
+
+def test_self_reported_gpu_does_not_inflate_credit_on_a_cpu_job():
+    # A worker can self-report has_gpu=True (unverified), but credit rewards the JOB's actual GPU
+    # requirement, not the worker's claim: a CPU job (needs_gpu unset) credits 1x, never 5x.
+    client = TestClient(create_app(":memory:"))
+    scheme = "Bearer"
+    token = client.post(
+        "/register",
+        json={"worker_id": "faker", "cpus": 8, "has_gpu": True, "accel": ["cuda"]},
+    ).json()["worker_token"]
+    auth = {"Authorization": f"{scheme} {token}"}
+    submit = client.post("/jobs", json={"kind": "challenge", "input": {"x": 3}, "units": 4})
+    assert submit.status_code == 200
+    job_id = submit.json()["job_id"]
+    assert client.get("/jobs/next", params={"worker_id": "faker"}, headers=auth).status_code == 200
+
+    result = client.post(
+        f"/results/{job_id}",
+        json={
+            "worker_id": "faker",
+            "job_id": job_id,
+            "status": "completed",
+            "output": {"y": 10},  # challenge x=3 -> y = 3*3+1 = 10, passes verification
+            "units": 4,
+        },
+        headers=auth,
+    )
+    assert result.status_code == 200
+    assert result.json()["accepted"] is True
+    # 4 units x 1 (CPU job), NOT 20 (which is 4 x 5 from the bogus self-reported GPU claim).
+    assert result.json()["credited"] == 4.0
+    assert client.get("/state").json()["total_credits"] == 4.0
+

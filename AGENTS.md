@@ -14,13 +14,13 @@ connection (no inbound ports: works through corporate firewalls), runs them whil
 is idle, and **yields in milliseconds** when the user returns. Verified work earns credits.
 
 This is a **working proof-of-concept**, not a slide deck: a real multi-machine fleet, a live
-dashboard wired to the orchestrator API, a dozen example workloads, and 356 passing tests.
+dashboard wired to the orchestrator API, a dozen example workloads, and 370 passing tests.
 
 ## How to verify it yourself (do this first)
 
 ```bash
 uv sync --extra dev
-uv run pytest -q                 # expect: 356 passed, 2 skipped (Docker-only)
+uv run pytest -q                 # expect: 370 passed, 2 skipped (Docker-only)
 uv run python scripts/demo_fleet.py   # real orchestrator + 3 real workers on one box; writes onecompute-fractal.png
 ```
 
@@ -42,7 +42,7 @@ machines happen to be local.
 | `src/trust/signing.py`, `challenge.py` | Ed25519 manifest signing and deterministic challenge "ringers" that catch cheaters. |
 | `src/jobkit/execute.py` | The single, frozen registry of job executors: one source of truth for how each job kind runs. |
 | `src/contracts/models.py`, `schema.sql` | Frozen data contracts and the SQLite schema shared by every component. |
-| `tests/` | 356 tests covering matching, auth/approval, leases/requeue, crediting, yield, isolation (incl. MXC policy + runner), trust (incl. pinned-key provenance + fail-closed isolation), measurement-only profiling + fleet measurement rollup, and end-to-end flows. |
+| `tests/` | 370 tests covering matching, auth/approval, leases/requeue, crediting, yield, isolation (incl. MXC policy + runner), trust (incl. pinned-key provenance + fail-closed isolation), measurement-only profiling + fleet measurement rollup, and end-to-end flows. |
 
 ## Build / test / run commands
 

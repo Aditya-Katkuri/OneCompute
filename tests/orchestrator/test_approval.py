@@ -107,3 +107,29 @@ def test_reregister_does_not_demote_approved_worker():
     reg = client.post("/register", json=CPU_CAP)
     assert reg.json()["approved"] is True
     assert reg.json()["device_code"] is None
+
+
+def test_admin_endpoints_require_the_operator_token_when_set():
+    # With an operator token configured, approve/disconnect are admin-gated so the pending worker
+    # (the very actor the approval gate excludes) cannot self-approve. Closes the B3 self-admit
+    # bypass where an unauthenticated approve let a rogue device lease real work and accrue credit.
+    scheme = "Bearer"
+    token = "op-secret-123"
+    client = TestClient(create_app(":memory:", require_approval=True, submit_token=token))
+    client.post("/register", json=CPU_CAP)
+
+    # No credential and a wrong credential are both rejected; the worker stays pending.
+    assert client.post("/workers/cpu-1/approve").status_code == 401
+    assert client.post(
+        "/workers/cpu-1/approve", headers={"Authorization": f"{scheme} wrong"}
+    ).status_code == 401
+    assert client.delete("/workers/cpu-1").status_code == 401
+    assert client.get("/state").json()["workers"][0]["approved"] is False
+
+    admin = {"Authorization": f"{scheme} {token}"}
+    ok = client.post("/workers/cpu-1/approve", headers=admin)
+    assert ok.status_code == 200 and ok.json() == {"ok": True, "worker_id": "cpu-1"}
+
+    # The same operator token gates disconnect.
+    assert client.delete("/workers/cpu-1", headers=admin).status_code == 200
+

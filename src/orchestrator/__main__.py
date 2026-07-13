@@ -230,6 +230,10 @@ def main(argv: list[str] | None = None) -> int:
         print("  Submit gate: ON. Job/workload submission requires the operator token.")
     if args.require_approval:
         print("  Credential gate: ON. Workers join PENDING and need dashboard approval (device code).")
+        if not args.submit_token:
+            print("  WARNING: --require-approval is set but no --submit-token: the approve and "
+                  "disconnect admin endpoints are UNAUTHENTICATED, so a pending worker could "
+                  "self-approve. Set --submit-token (or $ONECOMPUTE_SUBMIT_TOKEN) for a real pilot.")
     if args.bind_device_identity:
         print("  Device identity: ON. Worker tokens are bound to the TLS client-cert fingerprint (B3).")
     sys.stdout.flush()
