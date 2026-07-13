@@ -90,6 +90,27 @@ def _persist(profiler) -> None:
             pass
 
 
+def _wait_for_headroom(gate, adaptive: bool, base_interval: float, step: float = 0.5) -> None:
+    """Sleep up to ``base_interval`` seconds while the machine is busy, but wake EARLY the instant
+    spare headroom returns so a freed-up worker reroutes into work in ~``step`` seconds instead of a
+    full poll tick. Uses the governor's non-recording ``available_now`` (a plain IdleGate's cheap
+    ``should_run`` otherwise) so this fast re-checking never biases the learned usage profile."""
+    step = min(step, base_interval)
+    waited = 0.0
+    while waited < base_interval:
+        time.sleep(step)
+        waited += step
+        try:
+            if adaptive and isinstance(gate, AdaptiveGovernor):
+                if gate.available_now():
+                    return
+            elif not adaptive and gate.should_run():
+                return
+        except Exception:
+            continue
+
+
+
 def run_measure_loop(
     agent: WorkerAgent,
     governor: AdaptiveGovernor,
@@ -333,7 +354,9 @@ def main() -> None:
                 telem.log("tick", boundary=active_boundary(), **snap)
             if not admitted:
                 print("skip: outside headroom" if adaptive else "skip: not idle")
-                time.sleep(agent.poll_interval_s or 1.5)
+                # Proactive reroute-in: while the machine is busy, re-check availability at a fast,
+                # non-recording cadence so we pull work within ~0.5s of it freeing up, not a full tick.
+                _wait_for_headroom(gate, adaptive, agent.poll_interval_s or 1.5)
                 continue
             rr = agent.run_guarded(gate) if args.gate else agent.run_once()
             if rr is None:

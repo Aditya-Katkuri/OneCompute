@@ -115,6 +115,7 @@ class AdaptiveGovernor:
         hysteresis_pct: float = 10.0,     # yield threshold sits this far above admission
         min_headroom_pct: float = 15.0,   # only run where at least this much headroom exists
         sustained_samples: int = 3,       # consecutive over-threshold samples before yielding
+        gpu_yield_pct: float = 40.0,      # employee GPU load above which we also yield
         require_ac: bool = True,
     ) -> None:
         self.profiler = profiler if profiler is not None else UsageProfiler()
@@ -125,7 +126,9 @@ class AdaptiveGovernor:
         self.hysteresis_pct = hysteresis_pct
         self.min_headroom_pct = min_headroom_pct
         self.sustained_samples = sustained_samples
+        self.gpu_yield_pct = gpu_yield_pct
         self.require_ac = require_ac
+        self.our_job_uses_gpu = False  # set per-job so we don't yield on OUR job's own GPU load
         self._over = 0  # consecutive samples with user demand over the yield threshold
         self.last_decision: dict = {}  # readings from the last should_run(), for telemetry
         self._cpu = SystemCpuSampler()  # ctypes fallback when psutil is unavailable
@@ -175,6 +178,25 @@ class AdaptiveGovernor:
     def user_cpu(self) -> float:
         """Estimated CPU the EMPLOYEE is using = system minus our job tree (0-100)."""
         return max(0.0, min(100.0, self._system_cpu() - self._our_cpu()))
+
+    def note_job(self, needs_gpu: bool) -> None:
+        """Tell the governor whether the job it is about to guard uses the GPU, so ``active_now``
+        doesn't treat the GPU load OUR OWN job creates as the employee's demand (the GPU mirror of
+        the CPU self-attribution above). Call before running each job; reset to False after."""
+        self.our_job_uses_gpu = bool(needs_gpu)
+
+    def user_gpu(self) -> float:
+        """Estimated GPU% the EMPLOYEE is using (0-100). We can't cheaply attribute GPU per process,
+        so while our OWN job uses the GPU we report 0 here (the CPU signal still guards) rather than
+        yield on the load our job itself creates. For the common CPU job -- where our GPU use is ~0
+        -- system GPU load IS the employee's demand, so a user opening a GPU app reroutes our job
+        off their machine. Never raises."""
+        if self.our_job_uses_gpu:
+            return 0.0
+        try:
+            return float(system_gpu_load_pct())
+        except Exception:
+            return 0.0
 
     # --- thresholds derived from the learned profile -----------------------
 
@@ -230,16 +252,37 @@ class AdaptiveGovernor:
             return False
 
     def active_now(self, when: datetime | None = None) -> bool:
-        """Yield signal polled during a job. True once the EMPLOYEE'S OWN demand (system minus
-        our job tree) stays above the time-aware yield threshold for several samples -- they now
-        want more than the margin we left them. Deliberately does NOT yield on mere input (typing
-        while we use spare headroom is fine) and does NOT record into the profile (our job is
+        """Yield signal polled during a job. True once the EMPLOYEE'S OWN demand stays above a
+        yield line for several consecutive samples -- they now want more than the margin we left
+        them. Demand is measured as attributed CPU (system minus our job tree) OR employee GPU load
+        (system GPU, suppressed while our job is itself a GPU job). Deliberately does NOT yield on
+        mere input: typing or a stray mouse touch with no compute behind it never trips this -- only
+        a real, sustained CPU-or-GPU spike does. Does NOT record into the profile (our job is
         running, so the sample isn't the employee's baseline). Never raises."""
         try:
-            if self.user_cpu() > self.yield_threshold(when):
+            cpu_spike = self.user_cpu() > self.yield_threshold(when)
+            gpu_spike = self.user_gpu() > self.gpu_yield_pct
+            if cpu_spike or gpu_spike:
                 self._over += 1
             else:
                 self._over = 0
             return self._over >= self.sustained_samples
+        except Exception:
+            return False
+
+    def available_now(self, when: datetime | None = None) -> bool:
+        """Cheap 'is there spare headroom right now?' check for a fast reroute-in poll while the
+        machine is busy. Mirrors ``should_run``'s gates but does NOT fold the sample into the
+        profile, so polling it several times a second to catch the instant a machine frees up
+        doesn't bias the learned envelope. Never raises."""
+        try:
+            if self.require_ac and not self.gate.on_ac():
+                return False
+            if self.gate.locked() or self.gate.gpu_busy():
+                return False
+            return (
+                self.headroom_now(when) >= self.min_headroom_pct
+                and self.user_cpu() < self.admission_threshold(when)
+            )
         except Exception:
             return False

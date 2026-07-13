@@ -102,7 +102,18 @@ OneCompute doesn't just wait for a fully-idle machine: it harvests the **learned
 
 **Two thresholds, two phases:**
 - **Admission** (between jobs, when no OneCompute job runs, so live CPU ≈ the employee's own demand): admit only when on-AC, unlocked, GPU below cap, the **hour-of-week bucket has headroom**, and live CPU is below a **time-aware threshold** (`profiled_mean + margin`). This is what lets it run during *light* use, not only at full idle.
-- **Yield** (during a job, polled ~10×/s): yield once the **employee's own attributed demand** (`system − our job tree`, via `psutil`) exceeds the **time-aware yield threshold** for several samples → close the Job Object → the process tree dies sub-second → requeue, **resuming** when demand falls back into the headroom. It tolerates mere input (typing while we use spare headroom is fine); the hard *mouse-touch → instant-yield* reflex remains the binary `IdleGate`'s behavior (`--governor idle`) and the demo's explicit beat.
+- **Yield** (during a job, polled ~10×/s): yield once the **employee's own attributed demand** exceeds a yield line for several consecutive samples, then close the Job Object so the process tree dies sub-second and requeue, **resuming** when demand falls back into the headroom. Demand is **attributed CPU** (`system − our job tree`, via `psutil`) **OR employee GPU load** (system GPU util, suppressed while our own job is a GPU job so we never yield on the compute our job itself creates). Crucially it yields on **real, sustained CPU-or-GPU spikes, never on bare input**: typing or a stray one-second mouse touch with no compute behind it does not reroute the job. The hard *mouse-touch → instant-yield* reflex is a separate, opt-in mode (the binary `IdleGate`, `--governor idle`) kept for the demo's explicit beat; the default adaptive governor deliberately requires a compute spike.
+
+**The three clocks (how often each signal is checked).** OneCompute is not one poll rate but three, each matched to what it guards. There is **no OS event for "CPU/GPU demand just spiked"** (unlike lock/unlock or power, which are event-driven), so demand is sampled, but at a cadence fast enough to feel instant:
+
+| Clock | Cadence | Runs when | What it does |
+|---|---|---|---|
+| **Reflex (yield)** | ~100 ms (10×/s), 3 sustained samples ≈ 300 ms to yield | only *during* a job (`agent.py` yield watcher) | watches attributed CPU/GPU; the instant the employee's own demand spikes and holds, close the Job Object and requeue. |
+| **Admission** | ~1.5 s tick, dropping to a **~0.5 s reroute-in watch while busy** | *between* jobs | decides whether spare headroom exists to pull the next job; when the machine frees up, a non-recording `available_now()` check wakes early so we reroute in ~0.5 s, not a full tick. |
+| **Learning** | ~30 s | continuously | folds job-free samples into the 168-bucket hour-of-week envelope so admission/yield thresholds are time-aware. |
+
+Input freshness (`GetLastInputInfo`) informs **admission** (the "human is active" floor) and the opt-in `IdleGate` reflex, but in the adaptive governor it is a hint only: it can never *by itself* reroute a running job. We deliberately read input via `GetLastInputInfo` (a timestamp, no keystroke content) rather than a low-level keyboard hook, which would look like a keylogger to endpoint security, the very audience we need to trust the agent.
+
 
 **Usage profile (`src/worker/profiler.py`):** a rolling, **on-device** store of per-(hour-of-week) min / avg / peak CPU·GPU·RAM, learned **only from job-free samples** so the envelope reflects the *employee's* usage and not the agent's. Persisted locally (e.g. `%LOCALAPPDATA%\OneCompute`); only the derived spare-capacity number is ever advertised (idea.md §8).
 
@@ -110,7 +121,7 @@ OneCompute doesn't just wait for a fully-idle machine: it harvests the **learned
 
 **Yield path:** on the mouse-touch floor or sustained saturation → **hard-kill + requeue** (the PoC's resumable story; closing the sandbox's Job Object handle, `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, tears down the whole process tree cleanly for sub-second preemption).
 
-> **PoC scope:** conservative defaults (**25%** margin, **80%** admission ceiling, **+10%** yield hysteresis, **15%** min headroom, 3 sustained samples). The employee's own demand is **attributed via `psutil`** (`user_cpu = system − our job tree`), so the governor never yields on its own load and tolerates input while harvesting headroom. A Docker job's container runs in the WSL VM (not a child process), so its CPU isn't subtracted yet: `docker stats` accounting or a Job Object **`CpuRate`** self-cap is the next refinement. Disclosed honestly.
+> **PoC scope:** conservative defaults (**25%** margin, **80%** admission ceiling, **+10%** yield hysteresis, **15%** min headroom, 3 sustained samples, **40%** GPU-yield line). The employee's own demand is **attributed via `psutil`** (`user_cpu = system − our job tree`) and **GPU load** (suppressed while our job is itself a GPU job), so the governor yields on a real CPU-or-GPU spike, never on its own load and never on bare input while harvesting headroom. When a busy machine frees up, a non-recording `available_now()` poll reroutes work in ~0.5 s instead of a full 1.5 s tick. A Docker job's container runs in the WSL VM (not a child process), so its CPU isn't subtracted yet: `docker stats` accounting or a Job Object **`CpuRate`** self-cap is the next refinement, as is per-process GPU attribution. Disclosed honestly.
 
 ### 3.3 Job execution & sandbox
 

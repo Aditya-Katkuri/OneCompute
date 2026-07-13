@@ -97,6 +97,7 @@ class WorkerAgent:
         self._job_running = threading.Event()
         self._yield_watcher_stop = threading.Event()
         self._yield_watcher_thread: threading.Thread | None = None
+        self._active_gate = None  # governor guarding the running job, so run_job can note GPU use
         self.should_yield = self._yield.is_set
         self.worker_token: str | None = None
         self.poll_interval_s: float | None = None
@@ -233,6 +234,9 @@ class WorkerAgent:
 
     def run_job(self, assignment: JobAssignment) -> ResultRequest:
         manifest = assignment.signed_manifest.manifest
+        # Tell the guarding governor whether THIS job uses the GPU, so its yield signal doesn't
+        # treat the load our own GPU job creates as the employee's demand (set before we run).
+        self._note_job_gpu(manifest.requires.needs_gpu)
         t0 = perf_counter()
         if self.verify:
             ok, reason = self._verify_assignment(assignment)
@@ -283,6 +287,7 @@ class WorkerAgent:
         finally:
             self._job_running.clear()
             self._yield.clear()
+            self._note_job_gpu(False)  # our job is done; stop suppressing the GPU yield signal
         units = len(assignment.input.get("items", [])) or 1
         return ResultRequest(
             worker_id=self.capability.worker_id,
@@ -417,11 +422,23 @@ class WorkerAgent:
     def run_guarded(self, gate: IdleGate) -> ResultRequest | None:
         if not gate.should_run():
             return None
+        self._active_gate = gate
         self.start_yield_watcher(gate)
         try:
             return self.run_once()
         finally:
             self.stop_yield_watcher()
+            self._active_gate = None
+
+    def _note_job_gpu(self, needs_gpu: bool) -> None:
+        """Best-effort: tell the guarding governor whether the running job uses the GPU. No-op when
+        the gate is a plain IdleGate (no note_job) or when running ungoverned."""
+        note = getattr(self._active_gate, "note_job", None)
+        if callable(note):
+            try:
+                note(needs_gpu)
+            except Exception:
+                pass
 
     def close(self) -> None:
         self.stop_yield_watcher()

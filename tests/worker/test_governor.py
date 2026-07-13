@@ -92,6 +92,56 @@ def test_active_now_never_records_into_profile(monkeypatch, tmp_path):
     assert g.profiler.profile_now(when=WHEN).n == before
 
 
+def test_yields_on_sustained_gpu_spike(monkeypatch, tmp_path):
+    # A CPU job leaves our GPU use ~0, so a user opening a GPU app (system GPU 80% > 40 threshold)
+    # is the EMPLOYEE's demand -> yield after sustained_samples even while their CPU stays low.
+    g = _gov(monkeypatch, tmp_path, user=10.0, gate=_FakeGate(), profile_cpu_mean=15.0)
+    monkeypatch.setattr("worker.governor.system_gpu_load_pct", lambda: 80.0)
+    assert g.active_now(when=WHEN) is False  # sample 1 (needs 3 sustained)
+    assert g.active_now(when=WHEN) is False  # sample 2
+    assert g.active_now(when=WHEN) is True   # sample 3 -> sustained GPU spike -> yield
+
+
+def test_does_not_yield_on_gpu_while_running_a_gpu_job(monkeypatch, tmp_path):
+    # For a GPU job the load is OURS: note_job(True) suppresses the GPU yield signal so we never
+    # reroute on the compute our own job creates (the CPU signal still guards). Employee CPU low.
+    g = _gov(monkeypatch, tmp_path, user=10.0, gate=_FakeGate(), profile_cpu_mean=15.0)
+    monkeypatch.setattr("worker.governor.system_gpu_load_pct", lambda: 95.0)
+    g.note_job(True)
+    assert all(g.active_now(when=WHEN) is False for _ in range(10))
+    g.note_job(False)  # job done -> the GPU signal guards again
+    assert g.active_now(when=WHEN) is False  # sample 1 after reset
+    assert g.active_now(when=WHEN) is False  # sample 2
+    assert g.active_now(when=WHEN) is True   # sample 3 -> sustained spike -> yield
+
+
+def test_bare_input_without_compute_never_yields(monkeypatch, tmp_path):
+    # Headline guarantee: a stray touch with no CPU AND no GPU demand behind it must NOT reroute
+    # the job. active_now reads only attributed compute (CPU/GPU), never input freshness.
+    g = _gov(monkeypatch, tmp_path, user=5.0, gate=_FakeGate(), profile_cpu_mean=15.0)
+    monkeypatch.setattr("worker.governor.system_gpu_load_pct", lambda: 0.0)
+    assert all(g.active_now(when=WHEN) is False for _ in range(10))
+
+
+def test_available_now_reflects_headroom_without_recording(monkeypatch, tmp_path):
+    # Fast reroute-in check: True when there's headroom, False when busy, and it must NOT fold the
+    # sample into the profile (so polling it several times a second can't bias the learned envelope).
+    g = _gov(monkeypatch, tmp_path, user=20.0, gate=_FakeGate(), profile_cpu_mean=15.0)
+    before = g.profiler.profile_now(when=WHEN).n
+    assert g.available_now(when=WHEN) is True
+    monkeypatch.setattr(g, "user_cpu", lambda: 85.0)  # employee now busy
+    assert g.available_now(when=WHEN) is False
+    for _ in range(5):
+        g.available_now(when=WHEN)
+    assert g.profiler.profile_now(when=WHEN).n == before
+
+
+def test_available_now_requires_ac_unlocked_and_gpu_free(monkeypatch, tmp_path):
+    assert _gov(monkeypatch, tmp_path, 10.0, _FakeGate(on_ac=False)).available_now(when=WHEN) is False
+    assert _gov(monkeypatch, tmp_path, 10.0, _FakeGate(locked=True)).available_now(when=WHEN) is False
+    assert _gov(monkeypatch, tmp_path, 10.0, _FakeGate(gpu_busy=True)).available_now(when=WHEN) is False
+
+
 def test_headroom_and_thresholds(monkeypatch, tmp_path):
     g = _gov(monkeypatch, tmp_path, 10.0, _FakeGate(), profile_cpu_mean=30.0)
     assert abs(g.admission_threshold(when=WHEN) - 55.0) < 1.0  # 30 + 25 margin
