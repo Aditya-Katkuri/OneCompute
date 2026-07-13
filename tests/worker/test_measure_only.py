@@ -151,6 +151,24 @@ def test_measure_loop_records_logs_and_never_runs_a_job(tmp_path, monkeypatch) -
     assert agent.profile_reports >= 1
 
 
+def test_measure_loop_local_mode_records_but_never_uploads(tmp_path, monkeypatch) -> None:
+    # Local mode (no --url): the loop must record + persist the profile locally but NEVER call
+    # report_profile, so a solo/offline pilot makes no network calls at all.
+    agent = _SpyAgent()
+    governor = _pin_samples(tmp_path, monkeypatch, cpu=20.0, gpu=0.0, ram=40.0)
+    telem = PilotTelemetry("measure-1", path=tmp_path / "telem.jsonl", enabled=False)
+
+    samples = wm.run_measure_loop(
+        agent, governor, telem, interval=0.0, once=True, upload=False
+    )
+
+    assert samples == 1
+    assert agent.profile_reports == 0            # no upload attempted in local mode
+    assert agent.job_calls == []                 # and of course no job ran
+    assert governor.profiler.path.exists()       # but the profile IS persisted locally
+    assert governor.profiler.profile_now().n == 1
+
+
 def test_measure_loop_survives_keyboardinterrupt_and_profile_saves(tmp_path, monkeypatch) -> None:
     agent = _SpyAgent(has_gpu=False)
     governor = _pin_samples(tmp_path, monkeypatch, cpu=15.0, gpu=0.0, ram=50.0)

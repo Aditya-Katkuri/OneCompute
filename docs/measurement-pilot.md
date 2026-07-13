@@ -54,7 +54,28 @@ What this buys the pilot (the observer is built to run unattended for a week):
 
 Managed-device note: on a locked-down corporate device, creating a scheduled task can require an elevated shell or IT deployment (Intune / Group Policy pushing the same measure-only command). The installer prints exactly that guidance if registration is blocked; `-DryRun` shows the definition IT would deploy.
 
-## 4. Watch the fleet (live, central)
+## 3.2 Solo, local-only self-pilot (one machine, no orchestrator, no Scheduled Task)
+
+To observe just your own machine for a week with zero infrastructure, run measure-only **without a `--url`**: it records CPU/GPU/RAM to the on-device profile only, with no registration, heartbeat, upload, or network at all.
+
+```powershell
+# Start now AND autostart at every logon (no admin, no Scheduled Task -- uses the Startup folder,
+# so it works even where task creation is policy-blocked). Runs in a titled "OneCompute Observer"
+# window you can find in Task Manager.
+powershell -ExecutionPolicy Bypass -File scripts\observe_me.ps1 -Install
+
+# Check any day that it's still collecting (profile freshness, sample count, PIDs, autostart state):
+powershell -ExecutionPolicy Bypass -File scripts\observe_me.ps1 -Status
+
+# Stop the autostart when the week is done (then close the observer window):
+powershell -ExecutionPolicy Bypass -File scripts\observe_me.ps1 -Uninstall
+```
+
+- **Findable:** the observer runs in a console window titled **`OneCompute Observer`** (Task Manager > Processes, under Apps), and `-Status` prints its PID(s) for the Details tab. The `.venv` launcher re-execs the interpreter, so `-Status` may list two PIDs for the one observer (a parent launcher and its interpreter child).
+- **Same resilience as §3.1:** resumes on wake, relaunches at logon after a reboot, saves locally on the upload cadence, and never runs while the machine is asleep.
+- **Report at the end:** `uv run python scripts/measure_report.py "%LOCALAPPDATA%\OneCompute\usage_profile.json"` prints the measured idle-headroom readout (same governor-consistent math as the central rollup).
+
+
 - The operator dashboard (served at the orchestrator root `/`) shows a live "Measured idle headroom" beat: recoverable CPU headroom, contributing device count, average utilization, GPU and RAM.
 - Or read it directly: `GET /measurement` returns the fleet-wide measured idle-headroom rollup as JSON (see `dashboard-api.md`).
 

@@ -117,6 +117,7 @@ def run_measure_loop(
     telem: PilotTelemetry,
     interval: float,
     once: bool = False,
+    upload: bool = True,
 ) -> int:
     """Measurement-only loop for the low-risk pilot: fold this machine's live CPU/GPU/RAM into the
     on-device usage profile and (if telemetry is on) append a local ``measure`` event each tick.
@@ -167,7 +168,8 @@ def run_measure_loop(
                 samples += 1
                 if samples == 1 or samples % post_every == 0:
                     _persist(governor.profiler)              # local durability: reboot loses <= one window
-                    agent.report_profile(governor.profiler)  # opt-in, best-effort, offline-safe
+                    if upload:
+                        agent.report_profile(governor.profiler)  # opt-in, best-effort, offline-safe
                 print(f"measure: cpu={cpu:.1f}% gpu={gpu:.1f}% ram={ram:.1f}% (no jobs will run)")
             except KeyboardInterrupt:
                 raise
@@ -182,13 +184,20 @@ def run_measure_loop(
         # Land the final envelope (and a local save) so the profile and central rollup reflect the
         # full pilot window even on a clean stop.
         _persist(governor.profiler)
-        agent.report_profile(governor.profiler)
+        if upload:
+            agent.report_profile(governor.profiler)
     return samples
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a OneCompute worker agent")
-    parser.add_argument("--url", required=True, help="Orchestrator base URL")
+    parser.add_argument(
+        "--url",
+        default=None,
+        help="Orchestrator base URL. Required for the work loop; OPTIONAL with --measure-only "
+             "(omit for a fully local run that records CPU/GPU/RAM to the on-device profile only, "
+             "with no registration, heartbeat, or upload).",
+    )
     parser.add_argument("--once", action="store_true", help="Run at most one job then exit")
     parser.add_argument("--idle-threshold", type=float, default=60.0, help="Input idle seconds before work")
     parser.add_argument(
@@ -272,21 +281,25 @@ def main() -> None:
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
-    try:
-        client = build_client(
-            args.url,
-            ca_cert=args.tls_ca,
-            client_cert=args.client_cert,
-            client_key=args.client_key,
-        )
-    except ValueError as exc:
-        parser.error(str(exc))
-    if args.url.startswith("http://") and (args.tls_ca or args.client_cert or args.client_key):
-        logging.warning(
-            "TLS material was provided but --url is http://; TLS options apply only to an https:// URL"
-        )
+    if not args.url and not args.measure_only:
+        parser.error("--url is required (it is optional only with --measure-only, for a local run)")
+    client = None
+    if args.url:
+        try:
+            client = build_client(
+                args.url,
+                ca_cert=args.tls_ca,
+                client_cert=args.client_cert,
+                client_key=args.client_key,
+            )
+        except ValueError as exc:
+            parser.error(str(exc))
+        if args.url.startswith("http://") and (args.tls_ca or args.client_cert or args.client_key):
+            logging.warning(
+                "TLS material was provided but --url is http://; TLS options apply only to an https:// URL"
+            )
     agent = WorkerAgent(
-        args.url,
+        args.url or "http://localhost",
         detect_capability(),
         client=client,
         isolated=args.isolated,
@@ -298,28 +311,37 @@ def main() -> None:
     usage_stop: threading.Event | None = None
     try:
         if args.measure_only:
-            # Low-risk pilot: ONLY track CPU/GPU/RAM, never pull or run a job. Join the fleet so
-            # the device appears in the dashboard, stream live usage for the fleet view, then loop
-            # taking measurements. No admission/yield decision is ever made here: measurement
-            # imposes no compute load, so it needs no AC power and never admits work.
-            if not agent.registered:
-                agent.register()
-            if agent.registered and not agent.approved:
-                # Block (heartbeating) until approved so the device shows up in the dashboard, but
-                # with --once send a single heartbeat and exit rather than hang.
-                if not agent.wait_for_approval(once=args.once):
-                    return
-            # Stream live usage so the dashboard shows this device + its graph, exactly as the
-            # work loop does. Pure telemetry -- it never leases or runs anything.
-            usage_stop = _start_usage_heartbeat(agent, args.usage_interval)
+            # Low-risk pilot: ONLY track CPU/GPU/RAM, never pull or run a job. With a --url it joins
+            # the fleet so the device appears in the dashboard and streams live usage; WITHOUT a
+            # --url it runs fully local (no network at all), recording only to the on-device profile.
+            # No admission/yield decision is ever made here: measurement imposes no compute load, so
+            # it needs no AC power and never admits work.
+            local_only = not args.url
+            if not local_only:
+                if not agent.registered:
+                    agent.register()
+                if agent.registered and not agent.approved:
+                    # Block (heartbeating) until approved so the device shows up in the dashboard, but
+                    # with --once send a single heartbeat and exit rather than hang.
+                    if not agent.wait_for_approval(once=args.once):
+                        return
+                # Stream live usage so the dashboard shows this device + its graph, exactly as the
+                # work loop does. Pure telemetry -- it never leases or runs anything.
+                usage_stop = _start_usage_heartbeat(agent, args.usage_interval)
+            else:
+                print("measure-only: LOCAL mode (no --url). Recording CPU/GPU/RAM to the on-device "
+                      "profile only; no registration, heartbeat, or upload.")
             # The governor is used ONLY to own + persist the on-device UsageProfiler; its
             # should_run()/active_now() admission+yield paths are intentionally never called.
             gate = AdaptiveGovernor(idle_gate=IdleGate(input_idle_threshold_s=args.idle_threshold))
             telem = PilotTelemetry(agent.capability.worker_id, enabled=args.telemetry)
             if args.telemetry:
                 print(f"pilot telemetry -> {telem.path}")
-            print("measure-only: tracking CPU/GPU/RAM, no jobs will run")
-            run_measure_loop(agent, gate, telem, args.measure_interval, once=args.once)
+            print(f"measure-only: tracking CPU/GPU/RAM, no jobs will run "
+                  f"(profile: {gate.profiler.path})")
+            run_measure_loop(
+                agent, gate, telem, args.measure_interval, once=args.once, upload=not local_only
+            )
             return
 
         if args.once:
