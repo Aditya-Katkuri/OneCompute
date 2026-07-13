@@ -123,8 +123,13 @@ binding already prototyped in `docs/device-identity.md` and with **Phase 3 (Inte
 `docs/Azure_Integration_Plan.md`. Org-configurable classification/tier ladders and per-workload policy
 are also roadmap.
 
+## Example workloads and the demo (PoC scope)
+
+The example/synthetic workloads (fractal, optimize, the AI kinds) carry no sensitive data, so the demo and dev scripts classify them `public` and they route onto any admitted device: `scripts/submit_jobs.py` and `scripts/smoke.py` submit with `classification="public"`, and `scripts/demo_fleet.py` also elevates its three managed corporate machines to the `managed` tier after approval (showcasing the out-of-band IT tiering step). A real, unlabelled workload stays the conservative `internal` default and therefore needs a `managed`-or-higher device, so the fail-closed posture holds for anything that is not explicitly known-public.
+
 ## Related
 
+- `docs/azure-routing.md` - the harvest-phase safe-routing architecture spec this control implements (classification model, device tiers, egress, confidential-compute roadmap).
 - `docs/pitch/OneCompute-Threat-Model.md` - trust boundaries (notably B4 Submitter/Orchestrator and
   the §3 data inventory + classification) and the Information-Disclosure threat this control mitigates.
 - `docs/Azure_Integration_Plan.md` - the Intune/Entra device-identity and intelligent-routing phases

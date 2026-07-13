@@ -25,13 +25,29 @@ def _post_job(client: Any, job: dict) -> str:
     return job_id
 
 
-def submit_all(base_url: str, jobs: list[dict], client=None, token: str | None = None) -> list[str]:
+def submit_all(
+    base_url: str,
+    jobs: list[dict],
+    client=None,
+    token: str | None = None,
+    classification: str | None = None,
+) -> list[str]:
     """POST each job to `/jobs` and return the assigned job IDs.
 
     When ``token`` is given (and no explicit ``client`` is passed), it is sent as an
     ``Authorization: Bearer`` header so an orchestrator started with ``--submit-token`` accepts
     the submission. With an explicit ``client`` the caller manages auth headers.
+
+    ``classification`` stamps a ``data_classification`` onto each dict job that does not already
+    declare one. The example/demo workloads are synthetic and non-sensitive, so callers pass
+    ``"public"`` to let them route onto any admitted device (an unmarked real job stays the
+    conservative ``internal`` default and needs a managed-or-higher device; see routing-policy.md).
     """
+    if classification is not None:
+        jobs = [
+            {"data_classification": classification, **job} if isinstance(job, dict) else job
+            for job in jobs
+        ]
     if client is not None:
         return [_post_job(client, job) for job in jobs]
 

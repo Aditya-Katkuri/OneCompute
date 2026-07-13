@@ -174,6 +174,13 @@ def _approve_fleet(base: str, fleet: list[WorkerAgent]) -> None:
             w.approved = True
             w.device_code = None
         print(f"   [+] Access granted, {w.capability.worker_id} joined the fleet")
+    # Assign each managed corporate device its trust tier so it is cleared for internal-classified
+    # work. This is the IT/admin step POST /workers/{id}/tier performs out-of-band: the harvest-phase
+    # routing gate leaves a freshly-joined device 'untrusted' (public data only) until it is tiered.
+    for w in fleet:
+        httpx.post(f"{base}/workers/{w.capability.worker_id}/tier",
+                   json={"trust_tier": "managed"}, timeout=5).raise_for_status()
+    print("   [+] Devices assigned trust tier: managed (cleared for internal-classified work)")
     print()
 
 
