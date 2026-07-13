@@ -7,7 +7,7 @@ dev boxes, SAWs, and break-room Xboxes, and runs real distributed and AI workloa
 securely, while staying invisible to the person at the keyboard.
 
 This repo is a **working proof-of-concept**: a real multi-machine fleet, a live dashboard, a
-dozen example workloads (CPU/GPU/AI), and 356 passing tests. We are ready to begin integration
+dozen example workloads (CPU/GPU/AI), and 370 passing tests. We are ready to begin integration
 into Azure AI Foundry.
 
 ---
@@ -118,7 +118,7 @@ OneCompute/
 │   ├── workloads/      Example jobs (fractal, montecarlo, hashcrack, ai.*, …) + fleet split
 │   └── dashboard/      Self-contained live console (polls the orchestrator API)
 ├── scripts/            submit_jobs.py (feed the fleet) · demo_fleet.py (one-box demo)
-├── tests/              356 tests across orchestrator, worker, jobkit, isolation, trust
+├── tests/              370 tests across orchestrator, worker, jobkit, isolation, trust
 ├── docs/               architecture · contracts · workloads · dashboard API · runbook · Azure integration plan · financial impact
 └── pyproject.toml      uv project (Python 3.13); entry points: python -m orchestrator | worker
 ```
@@ -184,7 +184,7 @@ Market case and roadmap: [`docs/idea.md`](docs/idea.md).
 ## Tests
 
 ```bash
-uv run pytest -q   # 356 passed, 2 skipped (358 collected; 2 Docker-only skips)
+uv run pytest -q   # 370 passed, 2 skipped (372 collected; 2 Docker-only skips)
 ```
 
 Covers capability matching, approval/auth, leases/requeue, verification + crediting, the governor &

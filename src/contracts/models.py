@@ -34,7 +34,7 @@ def _utcnow() -> datetime:
 
 class Capability(BaseModel):
     """What a worker advertises at registration. benchmarked_tops is a DISPLAY value;
-    credit is metered on the server-assigned class_weight, never on this number.
+    credit is metered server-side on the JOB's actual GPU requirement, never on this number.
     free_ram_gb is an optional snapshot of currently-available RAM at registration."""
 
     worker_id: str
@@ -49,7 +49,7 @@ class Capability(BaseModel):
     # NPU harvesting (roadmap: docs/npu-harvesting.md). Detection + advertisement only today; a
     # Copilot+ PC NPU / DirectML provider is surfaced here so the fleet picture can include it.
     # npu_tops is NAMEPLATE INT8 peak (spec sheet), never delivered throughput -- credit is still
-    # metered on the server-assigned class_weight, never on this number.
+    # metered on the job's actual GPU requirement server-side, never on this number.
     has_npu: bool = False
     npu_tops: float | None = None
     labels: list[str] = Field(default_factory=list)

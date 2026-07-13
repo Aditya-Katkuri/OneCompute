@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from contracts import Capability, SubmitRequest
+from contracts import Capability, Requires, SubmitRequest
 from orchestrator.app import create_app
 from worker.agent import WorkerAgent
 
@@ -46,9 +46,17 @@ def test_submit_run_credit_cpu() -> None:
 def test_gpu_worker_earns_more() -> None:
     app = create_app(":memory:")
     client = _client(app)
+    # Credit follows the JOB's GPU requirement, not the worker's self-claim: a GPU job pays 5x.
+    # (A GPU worker running a plain CPU job would earn only the CPU rate; advertising a GPU alone
+    # never inflates credit.)
     client.post(
         "/jobs",
-        json=SubmitRequest(kind="data.transform", input={"items": [2, 3], "op": "square"}, units=2).model_dump(),
+        json=SubmitRequest(
+            kind="data.transform",
+            input={"items": [2, 3], "op": "square"},
+            requires=Requires(needs_gpu=True),
+            units=2,
+        ).model_dump(),
     )
     cap = Capability(worker_id="w-int-gpu", cpus=8, ram_gb=16.0, has_gpu=True, accel=["cuda"], gpu_vram_gb=8)
     agent = WorkerAgent("http://test", cap, client=client)
@@ -56,7 +64,7 @@ def test_gpu_worker_earns_more() -> None:
 
     assert rr is not None and rr.status == "completed"
     state = client.get("/state").json()
-    assert state["total_credits"] == 10.0  # GPU weight 5 * 2 units
+    assert state["total_credits"] == 10.0  # GPU-job weight 5 * 2 units
 
 
 def test_no_work_returns_none() -> None:

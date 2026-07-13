@@ -169,7 +169,7 @@ Workers **phone home**: no inbound listener, traverses corporate proxies:
 | `POST /register` | Worker announces capability dict; gets a worker token (+ a `device_code` and `approved=false` when the fleet is gated). |
 | `GET /jobs/next?worker_id=…` | **Long-poll** (~60s). Returns a signed manifest when a matching job exists, else 204. **Gated:** returns 204 while the worker is unapproved (or blacklisted). |
 | `POST /heartbeat` | ~5s liveness + current idle/util state (+ live cpu/gpu/free-RAM usage); renews lease; reports current `approved` state. |
-| `POST /workers/{id}/approve` | **Dashboard admits a pending worker** (clears its device code): the credential/onboarding gate. |
+| `POST /workers/{id}/approve` | **Dashboard admits a pending worker** (clears its device code): the credential/onboarding gate. Requires the operator token (`--submit-token`) when one is configured, so a pending worker cannot self-approve. |
 | `POST /results/{job_id}` | Result artifact + proof hash. |
 | `POST /workloads` | **Dashboard launch:** `{kind, n_tiles, params}` → builds the hardcoded fleet split and enqueues every tile under a shared `workload_id` → `{workload_id, job_ids}`. |
 | `GET /workloads/{id}` | A launched workload's per-tile status + outputs (the results panel). |
@@ -286,7 +286,7 @@ sequenceDiagram
 | **Transport** | optional **TLS** (`--tls-cert/--tls-key`) and **mutual TLS** (`--tls-client-ca` server; `--client-cert/--client-key` worker, pinning the CA via `--tls-ca`); per-client **rate limiting** (`--rate-limit`, default 600/min, 429 + Retry-After) | TLS on by default; automated cert issuance/rotation; WAF; network segmentation |
 | **Result trust** | challenge tasks + adaptive replication + fuzzy comparators | formal verifiable compute |
 | **Confidentiality** | data minimization, no-persistence | **TEE / confidential compute** (needs datacenter GPUs: consumer RTX/NPU have no GPU TEE) |
-| **Onboarding / admission** | **device-code dashboard-approval gate** (`--require-approval`): a joining worker is PENDING with a short code until an admin approves it; gets no work until then | Intune/SSO-driven enrollment + per-worker certs |
+| **Onboarding / admission** | **device-code dashboard-approval gate** (`--require-approval`): a joining worker is PENDING with a short code until an admin approves it; gets no work until then. The approve/disconnect endpoints require the operator token (`--submit-token`), so only an admin, not the pending worker, can admit or evict. | Intune/SSO-driven enrollment + per-worker certs |
 | **Submission auth** | optional operator **`--submit-token`** gates job/workload submission (`Authorization: Bearer`, constant-time, audited); the PoC form of submitter SSO | submitter SSO/OIDC + per-team scopes/quotas |
 | **Device identity** | optional **`--bind-device-identity`** ties the worker token to its TLS client-cert SHA-256 fingerprint (`X-Client-Cert-SHA256`), so a token replayed from another host fails closed (audited `device_fingerprint_mismatch`); see [`device-identity.md`](./device-identity.md) | Intune/Entra-managed device certs; the mTLS terminator injects the verified fingerprint |
 | **Supply chain** | dependency pinning (`uv.lock` + pinned `cryptography` trust root); a generated **CycloneDX SBOM** (`scripts/generate_sbom.py`) for CVE scanning; a **signed SLSA v1 provenance attestation** (`scripts/generate_provenance.py`, Ed25519 over the SBOM + source tree); a **Sigstore cosign integration** (`src/trust/cosign.py`, inert when cosign is absent); Ed25519 manifest signing (see [`supply-chain.md`](./supply-chain.md), [`cosign.md`](./cosign.md)) | transparency-logged keyless cosign/OIDC/Rekor + full SLSA build levels; signed update channel |
@@ -298,7 +298,7 @@ sequenceDiagram
 
 ## 10. PoC build plan (suggested order)
 
-> **Current status (branch `main`):** steps 2–9 are implemented and green (356 tests pass, 2 skipped), plus the additive dashboard-readiness layer (device-code approval gate, the ~10-kind fanned example workload catalog, `POST /workloads` launch + read API, live per-device usage stream). The dashboard **front-end UI is owned by the dashboard team**; the backend is integration-ready (see [`dashboard-api.md`](./dashboard-api.md)); we don't ship a finished UI.
+> **Current status (branch `main`):** steps 2–9 are implemented and green (370 tests pass, 2 skipped), plus the additive dashboard-readiness layer (device-code approval gate, the ~10-kind fanned example workload catalog, `POST /workloads` launch + read API, live per-device usage stream). The dashboard **front-end UI is owned by the dashboard team**; the backend is integration-ready (see [`dashboard-api.md`](./dashboard-api.md)); we don't ship a finished UI.
 
 1. **Spike the two unknowns first** *(de-risk day 1)*: (a) GPU passthrough into Windows Sandbox on the real demo SKU; (b) plain-HTTPS long-poll reachable across the corporate LAN.
 2. **Orchestrator skeleton**: FastAPI: `register`, `jobs/next` (long-poll), `heartbeat`, `results`; SQLite state; in-process scheduler.
@@ -361,7 +361,7 @@ sequenceDiagram
 9. **Guard pynvml; run the agent as a foreground user process (MEDIUM).** Wrap pynvml in try/except → `has_gpu=false` (it crashes with no NVIDIA driver). Foreground user session avoids the session-0 "always idle" bug. One bootstrap script, run identically on every worker.
 
 ### Cut / defer list
-True checkpoint/resume → hard-kill + requeue · GPU-in-Sandbox → host Job Object · per-job disposable `.wsb` → one pre-warmed sandbox · cosign/OIDC/Rekor → Ed25519 · vLLM → deleted, local serving → SDK · 60s long-poll → 1–2s short poll · adaptive replication / N-way quorum / fuzzy comparators → **one hardcoded challenge task** with a known answer on a deterministic job · CreditNew/scarcity/uptime → `credits = accepted_units × class_weight` (GPU=5, CPU=1), **server-assigned, never the agent's claimed TOPS** · "tamper-evident" log → **now built** as a prev-hash chain with a verify endpoint (`GET /events/verify`) · NPU / sharding / NATS / multi-orchestrator / TEE → roadmap slides · real GPU fleet → multiple worker processes on 1–2 laptops + one real second PC.
+True checkpoint/resume → hard-kill + requeue · GPU-in-Sandbox → host Job Object · per-job disposable `.wsb` → one pre-warmed sandbox · cosign/OIDC/Rekor → Ed25519 · vLLM → deleted, local serving → SDK · 60s long-poll → 1–2s short poll · adaptive replication / N-way quorum / fuzzy comparators → **one hardcoded challenge task** with a known answer on a deterministic job · CreditNew/scarcity/uptime → `credits = accepted_units × job GPU weight` (GPU job=5, else 1), **derived from the signed manifest server-side, never the worker's self-claimed capability or TOPS** · "tamper-evident" log → **now built** as a prev-hash chain with a verify endpoint (`GET /events/verify`) · NPU / sharding / NATS / multi-orchestrator / TEE → roadmap slides · real GPU fleet → multiple worker processes on 1–2 laptops + one real second PC.
 
 ### Recommended minimal demo (4–5 min, pre-warmed)
 1. **Idle fleet (10s):** dashboard shows 2–3 idle tiles, points at 0.
@@ -387,7 +387,7 @@ True checkpoint/resume → hard-kill + requeue · GPU-in-Sandbox → host Job Ob
 5. Isolation beat: one CPU job in a pre-warmed Sandbox (or Docker); denied `C:\Users` read + wipe.
 6. Ed25519 sign/verify + the tamper-refusal demo.
 7. AI job via SDK (prompt-slice fan-out); add llama.cpp only if time remains.
-8. One challenge task + `--cheat` worker: blacklist + points-forfeit; `credits = accepted_units × class_weight`.
+8. One challenge task + `--cheat` worker: blacklist + points-forfeit; `credits = accepted_units × job GPU weight` (5 if the job requires a GPU, else 1).
 9. GPU job host-side under a Job Object: pure upside; last so it can't block the slice.
 
 ---

@@ -584,6 +584,27 @@ def create_app(
         _emit(conn, "auth_failed", detail=f"submit: {detail}")
         raise HTTPException(status_code=401, detail=detail)
 
+    def _require_admin_token(authorization: str | None) -> None:
+        """Gate device-admin mutations (approve / disconnect) behind the operator token so the
+        approval gate that ``--require-approval`` sets up can only be operated by an authenticated
+        admin, never by the very worker it is meant to gate. Open when no operator token is
+        configured (the local demo); when set, a failure is audited and returns 401. This closes
+        the self-admit bypass (B3) where a pending worker could call its own approve endpoint and
+        lease real job input + accrue credit with no admin involved."""
+        if not submit_token:
+            return
+        detail = "missing bearer token"
+        scheme = "Bearer "
+        if authorization and authorization.startswith(scheme):
+            provided = authorization.removeprefix(scheme).strip()
+            if provided and compare_digest(provided, submit_token):
+                return
+            detail = "invalid admin token"
+        elif authorization:
+            detail = "invalid authorization scheme"
+        _emit(conn, "auth_failed", detail=f"admin: {detail}")
+        raise HTTPException(status_code=401, detail=detail)
+
     # Per-client request rate limiting (DoS backstop). Added before the security-headers
     # middleware below so that headers middleware stays outermost and still decorates a 429.
     if rate_limit_per_min and rate_limit_per_min > 0:
@@ -790,7 +811,8 @@ def create_app(
         return HeartbeatResponse(ack=True, preempt=False, approved=approved)
 
     @app.post("/workers/{worker_id}/approve")
-    def approve(worker_id: str) -> dict:
+    def approve(worker_id: str, authorization: str | None = Header(default=None)) -> dict:
+        _require_admin_token(authorization)
         _worker_or_404(conn, worker_id)
         with write_lock:
             conn.execute(
@@ -802,11 +824,12 @@ def create_app(
         return {"ok": True, "worker_id": worker_id}
 
     @app.delete("/workers/{worker_id}")
-    def disconnect_worker(worker_id: str) -> dict:
-        """Disconnect a device from the fleet (admin action from the dashboard, same gate as
-        approve). Any job it currently holds is re-queued immediately so work isn't stuck until
-        the lease expires, then the worker is dropped. A still-running agent simply fails auth on
-        its next call; restarting it rejoins as a fresh pending device."""
+    def disconnect_worker(worker_id: str, authorization: str | None = Header(default=None)) -> dict:
+        """Disconnect a device from the fleet (admin action from the dashboard, same operator-token
+        gate as approve). Any job it currently holds is re-queued immediately so work isn't stuck
+        until the lease expires, then the worker is dropped. A still-running agent simply fails auth
+        on its next call; restarting it rejoins as a fresh pending device."""
+        _require_admin_token(authorization)
         _worker_or_404(conn, worker_id)
         now = _now()
         with write_lock:
@@ -898,7 +921,13 @@ def create_app(
                         return ResultResponse(
                             accepted=False, credited=0.0, reason="cheater_blacklisted"
                         )
-                credits = float(job["units"]) * float(worker["class_weight"])
+                # Credit the JOB's actual GPU requirement (server-known, from the signed manifest),
+                # NOT the worker's self-reported has_gpu: a worker cannot inflate credit 5x by
+                # claiming a GPU it does not have and running ordinary CPU jobs. The worker's
+                # class_weight still drives scheduling (tile sizing), never credit.
+                job_requires = manifest.get("requires") or {}
+                job_weight = 5.0 if job_requires.get("needs_gpu") else 1.0
+                credits = float(job["units"]) * job_weight
                 conn.execute(
                     """
                     UPDATE jobs
