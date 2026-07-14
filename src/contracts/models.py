@@ -128,6 +128,20 @@ class SandboxPolicy(BaseModel):
     mapped_ro: list[str] = Field(default_factory=lambda: ["in/"])
 
 
+class RoutingProvenance(BaseModel):
+    """Where a routed job came from, stamped into the SIGNED manifest by the Foundry routing
+    gateway (flow F9 / boundary B6, docs/foundry-gateway.md).
+
+    Because it lives INSIDE the signed manifest it is tamper-evident: a compromised relay or a
+    worker cannot rewrite which tenant/region a job was routed for without breaking the Ed25519
+    signature. It is optional and defaults to None, so every job submitted through the ordinary
+    ``/jobs`` path serializes and signs exactly as before.
+    """
+
+    tenant_id: str
+    region: str = ""
+
+
 class JobManifest(BaseModel):
     """The signed trust contract. `code_sha256`/`input_sha256` are verified before a run."""
 
@@ -142,6 +156,10 @@ class JobManifest(BaseModel):
     # Data sensitivity of this job's input. Signed as part of the manifest, so a worker cannot
     # downgrade it to receive data it is not cleared for. Defaults to the conservative "internal".
     data_classification: DataClassification = "internal"
+    # Routing provenance stamped by the Foundry gateway (F9): the tenant/region this job was routed
+    # for. Signed as part of the manifest, so it is tamper-evident. Default None keeps every
+    # ordinary submission unchanged. See src/orchestrator/app.py POST /foundry/jobs.
+    provenance: RoutingProvenance | None = None
     issued_at: datetime = Field(default_factory=_utcnow)
     expires_at: datetime | None = None
 
@@ -217,6 +235,42 @@ class SubmitRequest(BaseModel):
 
 class SubmitResponse(BaseModel):
     job_id: str
+
+
+# --- Foundry routing gateway (flow F9 / boundary B6, docs/foundry-gateway.md) -------------------
+
+class FoundryTenant(BaseModel):
+    """A tenant registered with the Foundry routing gateway (F9).
+
+    PoC in-memory registry entry: a real deployment backs this with Entra tenants rather than a
+    static config dict. ``max_classification`` is the HIGHEST data classification this tenant may
+    route (compared by ``routing_policy.CLASSIFICATIONS`` rank, fail-closed) and ``allowed_regions``
+    is its region allow-list (EMPTY = deny all, fail-closed). ``token`` is the shared secret the
+    caller presents as a Bearer credential; the gateway compares it in constant time.
+    """
+
+    tenant_id: str
+    token: str
+    max_classification: DataClassification = "internal"
+    allowed_regions: list[str] = Field(default_factory=list)
+
+
+class FoundryRoutingRequest(BaseModel):
+    """POST /foundry/jobs body: an Azure AI Foundry / tenant request to route one job onto the fleet.
+
+    The gateway authenticates the tenant, enforces its per-tenant classification + region policy,
+    stamps ``{tenant_id, region}`` provenance into the signed manifest, and enqueues through the
+    same signed-submit path as ``/jobs``. ``data_classification`` is set AUTHORITATIVELY from this
+    request (bounded by the tenant's clearance), never inferred from a worker's self-report.
+    """
+
+    tenant_id: str
+    region: str
+    kind: JobKind
+    input: dict[str, Any] = Field(default_factory=dict)
+    requires: Requires | None = None
+    units: int = 1
+    data_classification: DataClassification
 
 
 class TierAssignmentRequest(BaseModel):

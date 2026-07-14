@@ -61,13 +61,27 @@ def required_tier_for(classification: str) -> str | None:
     return _MIN_TIER_FOR_CLASSIFICATION.get(classification)
 
 
+def classification_cleared(requested: str, ceiling: str) -> bool:
+    """Return True only if a job classified ``requested`` may be routed by a caller cleared up to
+    ``ceiling`` (used by the Foundry gateway to bound a tenant to its ``max_classification``).
+
+    Comparison is by ``CLASSIFICATIONS`` rank, so ``public`` clears an ``internal`` ceiling but
+    ``confidential`` does not. FAIL CLOSED: a non-string, unknown, or misspelled classification on
+    either side returns False (deny). Pure and total, it never raises. See docs/foundry-gateway.md.
+    """
+    if not isinstance(requested, str) or not isinstance(ceiling, str):
+        return False
+    if requested not in CLASSIFICATIONS or ceiling not in CLASSIFICATIONS:
+        return False
+    return CLASSIFICATIONS.index(requested) <= CLASSIFICATIONS.index(ceiling)
+
+
 def may_route(classification: str, trust_tier: str) -> bool:
     """Return True only if a device at ``trust_tier`` may run a job classified ``classification``.
 
     FAIL CLOSED: an unknown/misspelled classification OR an unknown tier returns False (deny). This
     is a pure function and never raises, so it is safe on the scheduler hot path.
     """
-    # Non-string (or otherwise unhashable) input is never a known key -> deny, without raising.
     if not isinstance(classification, str) or not isinstance(trust_tier, str):
         return False
     required = _MIN_TIER_FOR_CLASSIFICATION.get(classification)
