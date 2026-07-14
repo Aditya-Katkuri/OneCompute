@@ -425,7 +425,7 @@ New flow, layered on the section 2.2 diagram:
 [Azure AI Foundry] --(F9 routed workload + data classification, per-tenant)--> [Routing gateway] --> [Orchestrator]
         (gateway authenticates the tenant, stamps a signed classification into the manifest, enforces residency)
 ```
-F9 control: the routing gateway is the only submitter of routed workloads; it authenticates via the operator/submitter credential (B4), sets `data_classification` inside the **Ed25519-signed manifest** (so it is tamper-evident downstream), and the orchestrator gates assignment on classification vs the target device's server-assigned trust tier (24.4).
+F9 control: the routing gateway is the only submitter of routed workloads; it authenticates via the operator/submitter credential (B4), sets `data_classification` inside the **Ed25519-signed manifest** (so it is tamper-evident downstream), and the orchestrator gates assignment on classification vs the target device's server-assigned trust tier (24.4). This gateway is now shipped as an enforceable scaffold (`POST /foundry/jobs`, `docs/foundry-gateway.md`): it authenticates each tenant against a per-tenant secret, enforces a per-tenant classification ceiling and region allow-list (fail-closed), and stamps `{tenant_id, region}` provenance into the signed manifest; the live Foundry adapter and an Entra-backed tenant registry remain roadmap.
 
 ### 24.3 STRIDE for the harvest phase (delta over section 6)
 
