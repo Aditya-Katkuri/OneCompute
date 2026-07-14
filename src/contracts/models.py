@@ -39,6 +39,35 @@ def _utcnow() -> datetime:
 
 # --- worker capability (architecture.md §3.1) --------------------------------
 
+class DeviceAttestation(BaseModel):
+    """A signed device-posture claim a worker presents at registration.
+
+    The posture flags stand in for Intune/Entra device-compliance signals and an Azure Attestation
+    (MAA) TEE claim; Ed25519 is the PoC placeholder for the real attestation authority. The
+    orchestrator derives a routing ``trust_tier`` from these claims ONLY after
+    ``src/trust/attestation.py:verify_attestation`` confirms the signature was produced by the
+    trusted attestation AUTHORITY key it was configured with (``create_app(attestation_pubkey=...)``)
+    -- never from ``signer_pubkey`` (advisory, carried for diagnostics) and never from the worker's
+    own say-so. It is fail-closed and INERT until an authority key is configured. See
+    docs/device-attestation.md.
+
+    ``signature`` is a hex Ed25519 signature over ``canonical_claims_bytes(att)`` (the posture flags
+    bound to ``worker_id`` and the issued/expiry window, EXCLUDING ``signature``/``signer_pubkey``),
+    so the claim is bound to one device and time-boxed: another device's attestation cannot be
+    replayed and an expired one is refused.
+    """
+
+    worker_id: str
+    compliant: bool = False
+    managed: bool = False
+    sanctioned: bool = False
+    tee: bool = False
+    issued_at: datetime
+    expires_at: datetime | None = None
+    signature: str = ""        # hex Ed25519 sig over canonical_claims_bytes(att)
+    signer_pubkey: str = ""    # hex; ADVISORY ONLY, NEVER trusted for the tier decision
+
+
 class Capability(BaseModel):
     """What a worker advertises at registration. benchmarked_tops is a DISPLAY value;
     credit is metered server-side on the JOB's actual GPU requirement, never on this number.
@@ -67,6 +96,13 @@ class Capability(BaseModel):
     # tooling / diagnostics; treating a self-report as authoritative would let a rogue worker claim
     # a high tier to receive confidential data (see docs/routing-policy.md).
     attested_tier: str | None = None
+    # OPTIONAL signed device-posture attestation the worker presents at registration. It is a
+    # VERIFIABLE claim (not a self-report): the orchestrator derives a trust tier from it ONLY after
+    # checking its Ed25519 signature against the trusted attestation-authority key it was configured
+    # with (create_app attestation_pubkey). With no authority key configured the attestation is
+    # INERT (ignored), so default behavior is unchanged. See src/trust/attestation.py and
+    # docs/device-attestation.md.
+    attestation: DeviceAttestation | None = None
 
 
 # --- job / manifest (architecture.md §5) -------------------------------------

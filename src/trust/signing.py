@@ -39,6 +39,31 @@ class Signer:
             public_key=self.public_key_hex,
         )
 
+    def sign_bytes(self, data: bytes) -> str:
+        """Ed25519-sign arbitrary canonical bytes, returning a hex signature.
+
+        The low-level primitive behind manifest signing, reused for signing device-attestation
+        claims (see src/trust/attestation.py) so both share one audited signing path.
+        """
+        return self._private_key.sign(data).hex()
+
+
+def verify_signature(signature_hex: str, data: bytes, public_key_hex: str) -> bool:
+    """Verify a hex Ed25519 ``signature_hex`` over ``data`` against ``public_key_hex``.
+
+    Pure and total: any malformed input, empty signature, or verification failure returns False
+    (fail closed) and this never raises. Used by attestation verification, which must decide a
+    trust tier without ever throwing on a hostile payload.
+    """
+    try:
+        if not signature_hex or not public_key_hex:
+            return False
+        public_key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_key_hex))
+        public_key.verify(bytes.fromhex(signature_hex), data)
+    except Exception:
+        return False
+    return True
+
 
 def verify_manifest(sm: SignedManifest, trusted_public_key_hex: str | None = None) -> bool:
     """Verify a signed manifest's Ed25519 signature.

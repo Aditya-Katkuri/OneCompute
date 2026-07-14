@@ -108,6 +108,17 @@ def init_db(db_path: str = ":memory:") -> sqlite3.Connection:
         )
     except sqlite3.OperationalError:
         pass
+    # Backward-compat: a persistent DB created before attestation-derived tiering lacks the
+    # workers.tier_pinned column. Add it idempotently, defaulting to 0 (not pinned) so existing rows
+    # remain eligible for attestation-derived tiering; an admin POST /workers/{id}/tier sets it to 1
+    # so a later attestation cannot override the admin's explicit decision (see
+    # src/trust/attestation.py and docs/device-attestation.md).
+    try:
+        conn.execute(
+            "ALTER TABLE workers ADD COLUMN tier_pinned INTEGER NOT NULL DEFAULT 0"
+        )
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     return conn
 
