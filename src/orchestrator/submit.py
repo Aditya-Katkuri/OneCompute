@@ -5,7 +5,7 @@ import sqlite3
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from contracts import JobManifest, SubmitRequest, sha256_hex
+from contracts import JobManifest, RoutingProvenance, SubmitRequest, sha256_hex
 from orchestrator.db import write_lock
 
 
@@ -14,7 +14,10 @@ def _now() -> str:
 
 
 def submit_job(
-    conn: sqlite3.Connection, req: SubmitRequest, workload_id: str | None = None
+    conn: sqlite3.Connection,
+    req: SubmitRequest,
+    workload_id: str | None = None,
+    provenance: RoutingProvenance | None = None,
 ) -> str:
     if req.units <= 0:
         raise ValueError("units must be positive")
@@ -26,6 +29,7 @@ def submit_job(
         requires=req.requires,
         limits=req.limits,
         data_classification=req.data_classification,
+        provenance=provenance,
     )
     now = _now()
     with write_lock:

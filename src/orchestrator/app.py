@@ -13,6 +13,8 @@ from contracts import (
     LAUNCHABLE_KINDS,
     Capability,
     FleetState,
+    FoundryRoutingRequest,
+    FoundryTenant,
     HeartbeatRequest,
     HeartbeatResponse,
     JobAssignment,
@@ -24,8 +26,10 @@ from contracts import (
     ProfileIngestResponse,
     ProfileReport,
     RegisterResponse,
+    Requires,
     ResultRequest,
     ResultResponse,
+    RoutingProvenance,
     SignedManifest,
     SubmitRequest,
     SubmitResponse,
@@ -50,7 +54,7 @@ from measurement.headroom import (
 )
 from orchestrator.db import open_serialized_db, write_lock
 from orchestrator.ratelimit import RateLimiter, client_key
-from orchestrator.routing_policy import TIERS, is_valid_tier
+from orchestrator.routing_policy import TIERS, classification_cleared, is_valid_tier
 from orchestrator.scheduler import class_weight_for, pick_job_for
 from orchestrator.submit import submit_job
 from trust import Signer, check_challenge, derive_tier, verify_attestation
@@ -561,6 +565,7 @@ def create_app(
     admin_token: str | None = None,
     bind_device_identity: bool = False,
     attestation_pubkey: str | None = None,
+    foundry_tenants: dict[str, FoundryTenant] | None = None,
 ) -> FastAPI:
     conn = open_serialized_db(db_path)
     if signer is None:
@@ -613,6 +618,38 @@ def create_app(
         elif authorization:
             detail = "invalid authorization scheme"
         _emit(conn, "auth_failed", detail=f"admin: {detail}")
+        raise HTTPException(status_code=401, detail=detail)
+
+    def _authenticate_foundry_tenant(
+        tenant_id: str, authorization: str | None
+    ) -> FoundryTenant:
+        """Authenticate a Foundry routing caller against the in-memory tenant registry (F9/B6).
+
+        INERT BY DEFAULT: with no ``foundry_tenants`` configured the whole feature is off, so every
+        request is refused (401) and nothing is enqueued. Otherwise the claimed ``tenant_id`` is
+        looked up and the caller must present ``Authorization: <scheme> <tenant.token>`` (constant-
+        time ``compare_digest``). An unknown tenant, a missing/bad token, or a wrong scheme all fail
+        closed with a 401 and an audited ``auth_failed`` (detail prefixed ``foundry:``), so a caller
+        that can merely reach the control plane cannot inject tenant-attributed work. Binding the
+        claimed tenant to its own secret is what makes the manifest provenance trustworthy.
+        """
+        scheme = "Bearer "
+        if not foundry_tenants:
+            _emit(conn, "auth_failed", detail="foundry: ingestion disabled")
+            raise HTTPException(status_code=401, detail="foundry ingestion disabled")
+        tenant = foundry_tenants.get(tenant_id)
+        if tenant is None:
+            _emit(conn, "auth_failed", detail="foundry: unknown tenant")
+            raise HTTPException(status_code=401, detail="unknown tenant")
+        detail = "missing bearer token"
+        if authorization and authorization.startswith(scheme):
+            provided = authorization.removeprefix(scheme).strip()
+            if provided and compare_digest(provided, tenant.token):
+                return tenant
+            detail = "invalid tenant token"
+        elif authorization:
+            detail = "invalid authorization scheme"
+        _emit(conn, "auth_failed", detail=f"foundry: {detail}")
         raise HTTPException(status_code=401, detail=detail)
 
     # Per-client request rate limiting (DoS backstop). Added before the security-headers
@@ -742,6 +779,69 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         _emit(conn, "submitted", job_id=job_id, detail=req.kind)
+        return SubmitResponse(job_id=job_id)
+
+    @app.post("/foundry/jobs", response_model=SubmitResponse)
+    def foundry_route(
+        req: FoundryRoutingRequest, authorization: str | None = Header(default=None)
+    ) -> SubmitResponse:
+        """Foundry routing gateway (flow F9 / boundary B6): the single ingestion point where an
+        Azure AI Foundry / tenant request becomes a signed, classified OneCompute job.
+
+        It authenticates the calling tenant, enforces that tenant's per-tenant classification +
+        region policy (fail-closed), stamps tenant/region PROVENANCE into the SIGNED manifest, and
+        enqueues through the exact same signed-submit path as ``/jobs`` (``submit_job``). It does
+        NOT change ``/jobs`` and does NOT touch the scheduler's tier gate: it only sets the job's
+        classification AUTHORITATIVELY from the tenant request, which the existing routing policy
+        then enforces against each device's server-assigned trust tier. INERT by default: with no
+        ``foundry_tenants`` configured, every call is refused and nothing is enqueued. See
+        docs/foundry-gateway.md. The live Foundry adapter + an Entra-backed registry are roadmap.
+        """
+        tenant = _authenticate_foundry_tenant(req.tenant_id, authorization)
+        # Policy 1: a tenant may not route data above its clearance (fail-closed rank compare).
+        if not classification_cleared(req.data_classification, tenant.max_classification):
+            _emit(
+                conn,
+                "foundry_denied",
+                detail=(
+                    f"tenant={tenant.tenant_id} class={req.data_classification} "
+                    f"exceeds max={tenant.max_classification}"
+                ),
+            )
+            raise HTTPException(
+                status_code=403, detail="data_classification exceeds tenant clearance"
+            )
+        # Policy 2: the region must be in the tenant's allow-list (empty allow-list = deny all).
+        if req.region not in tenant.allowed_regions:
+            _emit(
+                conn,
+                "foundry_denied",
+                detail=f"tenant={tenant.tenant_id} region={req.region} not permitted",
+            )
+            raise HTTPException(status_code=403, detail="region not permitted for tenant")
+        # Enqueue via the SAME signed path as /jobs, stamping tamper-evident provenance into the
+        # manifest and setting the classification authoritatively from the (bounded) tenant request.
+        provenance = RoutingProvenance(tenant_id=tenant.tenant_id, region=req.region)
+        submit_req = SubmitRequest(
+            kind=req.kind,
+            input=req.input,
+            requires=req.requires or Requires(),
+            data_classification=req.data_classification,
+            units=req.units,
+        )
+        try:
+            job_id = submit_job(conn, submit_req, provenance=provenance)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _emit(
+            conn,
+            "foundry_routed",
+            job_id=job_id,
+            detail=(
+                f"tenant={tenant.tenant_id} region={req.region} "
+                f"class={req.data_classification}"
+            ),
+        )
         return SubmitResponse(job_id=job_id)
 
     @app.get("/jobs/next", response_model=JobAssignment)
