@@ -98,20 +98,21 @@ This mirrors how the MXC OS-sandbox backend is fail-closed and inert until a rea
 
 ## 9. Foundry integration
 
-Foundry stays responsible for model management, governance, and orchestration (`Azure_Integration_Plan.md` End State). OneCompute is the elastic execution layer for eligible, delay-tolerant workloads (evaluation, batch inference, agent runs), selected by the `compute: onecompute` / `compute: auto` target. The gateway authenticates the calling tenant, carries the tenant/region context as routing constraints alongside classification, and returns results through Foundry's existing result and governance paths so developer workflow and compliance are preserved.
+Foundry stays responsible for model management, governance, and orchestration (`Azure_Integration_Plan.md` End State). OneCompute is the elastic execution layer for eligible, delay-tolerant workloads (evaluation, batch inference, agent runs), selected by the `compute: onecompute` / `compute: auto` target. The gateway authenticates the calling tenant, carries the tenant/region context as routing constraints alongside classification, and returns results through Foundry's existing result and governance paths so developer workflow and compliance are preserved. The gateway is shipped as an enforceable scaffold (`POST /foundry/jobs`, §10, `docs/foundry-gateway.md`); the live Foundry adapter and an Entra-backed tenant registry are the roadmap step behind it.
 
 ## 10. What is shipped now vs roadmap
 
 **Shipped (this design's enforceable core):**
 - `data_classification` in the signed manifest; server-assigned `trust_tier` per worker (default `untrusted`, IT-elevated via an operator-token-gated endpoint); fail-closed `routing_policy.may_route`; scheduler enforcement so sensitive data cannot land on a low-trust device; per-decision audit; no-egress-by-default sandboxing (`routing-policy.md`).
 - **Attestation-derived tiering** (`src/trust/attestation.py`, `docs/device-attestation.md`): a device's tier can be derived automatically from a device-posture attestation (compliant/managed/sanctioned/TEE) that is verified against a configured authority key, fail-closed and inert until that key is set (Ed25519 stands in for Azure Attestation / Intune). Admin-pinned tiers stay authoritative over attestation.
+- **Foundry routing gateway** (`POST /foundry/jobs`, `docs/foundry-gateway.md`): the F9/B6 ingestion point where a tenant request becomes a signed, classified job. Authenticates the tenant, enforces a per-tenant classification ceiling and region allow-list (fail-closed), stamps `{tenant_id, region}` provenance into the signed manifest, and enqueues through the same signed-submit path. Inert until tenants are configured.
 
 **Roadmap (named, not built here):**
 - Wiring the REAL attestation authority (Azure Attestation / Intune-Entra device compliance + Conditional Access) into the shipped attestation-derived tiering scaffold, so posture claims come from live compliance/MAA signals rather than a PoC Ed25519 authority.
 - Purview label propagation so `data_classification` is inherited automatically from the data.
 - The confidential-compute tier's real TEE + Azure Attestation backing (§8).
 - Region/residency as a first-class routing constraint next to classification.
-- The Foundry-facing routing gateway itself (F9), including per-tenant provenance and DLP.
+- The live Foundry adapter and an Entra-backed tenant registry behind the shipped gateway scaffold, plus DLP at the boundary.
 
 These are honest scope choices: the enforceable fail-closed gate ships first so the harvest phase can start with low-sensitivity workloads on ordinary machines, and the envelope only widens as the higher-assurance pieces land.
 
@@ -130,6 +131,7 @@ The harvest phase does not ship until Azure Compute (functionality) and the CISO
 | Enforcement | `pick_job_for` in `src/orchestrator/scheduler.py` |
 | Egress containment | `--network none` container sandbox (`src/isolation/`) |
 | Audit of decisions | hash-chained event stream (`GET /events/verify`) |
+| Foundry ingestion (F9/B6) | `POST /foundry/jobs` + `_authenticate_foundry_tenant` (`src/orchestrator/app.py`); `classification_cleared` (`routing_policy.py`); signed `JobManifest.provenance` via `submit_job(..., provenance=...)` (`src/orchestrator/submit.py`) |
 
 ## 13. References
 
