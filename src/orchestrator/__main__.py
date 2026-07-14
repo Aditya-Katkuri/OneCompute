@@ -122,19 +122,23 @@ def _serve(host: str, port: int, db_path: str, log_level: str,
            require_approval: bool = False,
            rate_limit_per_min: int | None = None,
            submit_token: str | None = None,
+           admin_token: str | None = None,
            bind_device_identity: bool = False) -> None:
     """Start uvicorn against a persistent file-backed app. Serves HTTPS when a TLS cert+key are
     given (the doctrine's 'plain HTTPS' transport for a cloud/multi-site pilot), and requires
     **mutual TLS** (each worker presents a client cert) when ``tls_client_ca`` is also given.
     ``rate_limit_per_min`` caps control-plane requests per client; ``submit_token`` gates job
-    submission. When ``require_approval`` is set, joining workers are gated behind a dashboard
-    device-code approval. When ``bind_device_identity`` is set, a worker's bearer token is bound to
-    its TLS client-cert fingerprint (STRIDE Spoofing / B3). Blocks until shutdown."""
+    submission and ``admin_token`` gates the device-admin endpoints (approve/disconnect/tier),
+    separately when set (else the device-admin gate falls back to the submit token). When
+    ``require_approval`` is set, joining workers are gated behind a dashboard device-code approval.
+    When ``bind_device_identity`` is set, a worker's bearer token is bound to its TLS client-cert
+    fingerprint (STRIDE Spoofing / B3). Blocks until shutdown."""
     app = create_app(
         db_path,
         require_approval=require_approval,
         rate_limit_per_min=rate_limit_per_min,
         submit_token=submit_token,
+        admin_token=admin_token,
         bind_device_identity=bind_device_identity,
     )
     ssl_kwargs: dict = {}
@@ -180,6 +184,14 @@ def main(argv: list[str] | None = None) -> int:
              "defaults to $ONECOMPUTE_SUBMIT_TOKEN. Unset leaves submission open (local demo). "
              "The PoC form of submitter SSO: stops an unauthorized party who can reach the control "
              "plane from queuing work onto the fleet.",
+    )
+    parser.add_argument(
+        "--admin-token",
+        default=os.environ.get("ONECOMPUTE_ADMIN_TOKEN"),
+        help="Operator/IT token required for the device-admin endpoints (approve, disconnect, and "
+             "set trust tier); defaults to $ONECOMPUTE_ADMIN_TOKEN. When set, device administration "
+             "is SEPARATED from job submission (a mere submitter can no longer approve a device or "
+             "raise its trust tier). Unset falls back to --submit-token for the device-admin gate.",
     )
     parser.add_argument(
         "--require-approval",
@@ -228,12 +240,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  Rate limit: {rate_limit_per_min} requests/min per client (token or IP).")
     if args.submit_token:
         print("  Submit gate: ON. Job/workload submission requires the operator token.")
+    if args.admin_token:
+        print("  Admin gate: ON. Device admin (approve/disconnect/tier) requires a SEPARATE admin "
+              "token (separation of duties from submission).")
     if args.require_approval:
         print("  Credential gate: ON. Workers join PENDING and need dashboard approval (device code).")
-        if not args.submit_token:
-            print("  WARNING: --require-approval is set but no --submit-token: the approve and "
-                  "disconnect admin endpoints are UNAUTHENTICATED, so a pending worker could "
-                  "self-approve. Set --submit-token (or $ONECOMPUTE_SUBMIT_TOKEN) for a real pilot.")
+        if not (args.submit_token or args.admin_token):
+            print("  WARNING: --require-approval is set but no --submit-token/--admin-token: the "
+                  "approve, disconnect, and tier admin endpoints are UNAUTHENTICATED, so a pending "
+                  "worker could self-approve or self-elevate. Set --admin-token (or --submit-token) "
+                  "for a real pilot.")
     if args.bind_device_identity:
         print("  Device identity: ON. Worker tokens are bound to the TLS client-cert fingerprint (B3).")
     sys.stdout.flush()
@@ -246,6 +262,7 @@ def main(argv: list[str] | None = None) -> int:
             require_approval=args.require_approval,
             rate_limit_per_min=rate_limit_per_min,
             submit_token=args.submit_token,
+            admin_token=args.admin_token,
             bind_device_identity=args.bind_device_identity,
         )
     except KeyboardInterrupt:

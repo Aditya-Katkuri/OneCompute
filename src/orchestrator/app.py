@@ -558,6 +558,7 @@ def create_app(
     require_approval: bool = False,
     rate_limit_per_min: int | None = None,
     submit_token: str | None = None,
+    admin_token: str | None = None,
     bind_device_identity: bool = False,
 ) -> FastAPI:
     conn = open_serialized_db(db_path)
@@ -589,19 +590,23 @@ def create_app(
         raise HTTPException(status_code=401, detail=detail)
 
     def _require_admin_token(authorization: str | None) -> None:
-        """Gate device-admin mutations (approve / disconnect) behind the operator token so the
-        approval gate that ``--require-approval`` sets up can only be operated by an authenticated
-        admin, never by the very worker it is meant to gate. Open when no operator token is
-        configured (the local demo); when set, a failure is audited and returns 401. This closes
-        the self-admit bypass (B3) where a pending worker could call its own approve endpoint and
-        lease real job input + accrue credit with no admin involved."""
-        if not submit_token:
+        """Gate device-admin mutations (approve / disconnect / set-tier) behind an operator
+        credential so only an authenticated admin can admit a device or change its trust tier, never
+        the worker itself. Uses a DEDICATED ``admin_token`` when configured, so an IT operator's
+        device-admin authority is separable from a submitter's ``submit_token`` (separation of
+        duties); when no admin token is set it falls back to the submit token, so existing
+        single-token deployments are unchanged. Open only when neither is configured (the local
+        demo). A failure is audited and returns 401. This closes the B3 self-admit bypass and, with
+        a distinct admin token, stops a mere submitter from elevating a device to receive
+        higher-classification data (threat-model B3/B4/§24)."""
+        effective = admin_token if admin_token is not None else submit_token
+        if not effective:
             return
         detail = "missing bearer token"
         scheme = "Bearer "
         if authorization and authorization.startswith(scheme):
             provided = authorization.removeprefix(scheme).strip()
-            if provided and compare_digest(provided, submit_token):
+            if provided and compare_digest(provided, effective):
                 return
             detail = "invalid admin token"
         elif authorization:
