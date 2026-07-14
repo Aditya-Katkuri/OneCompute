@@ -62,7 +62,7 @@ Four ordered tiers describing what a device is trusted to protect:
 
 **The tier is assigned server-side and is never read from the worker's self-report.** This mirrors the reward-integrity fix (credit is metered on the job, not the worker's claim): a device that could self-declare `confidential_compute` would simply request Confidential data. A new device defaults to `untrusted`; IT elevates a specific device out of band via the operator-token-gated `POST /workers/{id}/tier`. Fail-closed by construction.
 
-This maps directly onto Microsoft Zero Trust, which already tiers devices (compliant-managed > known-registered > unmanaged) and gates sensitive access on that tier via Entra Conditional Access ("require device to be marked as compliant"). The roadmap derives `managed`/`sanctioned` from **Intune device-compliance + Entra device state** and hardware **device attestation** (TPM/VBS via Azure Attestation), so the tier a device carries is earned from verifiable posture, not asserted, exactly the control a CISO already recognizes.
+This maps directly onto Microsoft Zero Trust, which already tiers devices (compliant-managed > known-registered > unmanaged) and gates sensitive access on that tier via Entra Conditional Access ("require device to be marked as compliant"). OneCompute ships the mechanism for this: a device's tier can be **derived from a verified device-posture attestation** (`src/trust/attestation.py`, §10), fail-closed and inert until an attestation authority is configured. Wiring the real authority, **Intune device-compliance + Entra device state** and hardware **device attestation** (TPM/VBS via Azure Attestation), is the remaining roadmap step, so the tier a device carries is earned from verifiable posture, not asserted, exactly the control a CISO already recognizes.
 
 ## 6. The routing decision
 
@@ -104,9 +104,10 @@ Foundry stays responsible for model management, governance, and orchestration (`
 
 **Shipped (this design's enforceable core):**
 - `data_classification` in the signed manifest; server-assigned `trust_tier` per worker (default `untrusted`, IT-elevated via an operator-token-gated endpoint); fail-closed `routing_policy.may_route`; scheduler enforcement so sensitive data cannot land on a low-trust device; per-decision audit; no-egress-by-default sandboxing (`routing-policy.md`).
+- **Attestation-derived tiering** (`src/trust/attestation.py`, `docs/device-attestation.md`): a device's tier can be derived automatically from a device-posture attestation (compliant/managed/sanctioned/TEE) that is verified against a configured authority key, fail-closed and inert until that key is set (Ed25519 stands in for Azure Attestation / Intune). Admin-pinned tiers stay authoritative over attestation.
 
 **Roadmap (named, not built here):**
-- Intune/Entra-attested tier derivation (compliance/Conditional-Access-driven, rather than manual IT assignment).
+- Wiring the REAL attestation authority (Azure Attestation / Intune-Entra device compliance + Conditional Access) into the shipped attestation-derived tiering scaffold, so posture claims come from live compliance/MAA signals rather than a PoC Ed25519 authority.
 - Purview label propagation so `data_classification` is inherited automatically from the data.
 - The confidential-compute tier's real TEE + Azure Attestation backing (§8).
 - Region/residency as a first-class routing constraint next to classification.
@@ -124,6 +125,7 @@ The harvest phase does not ship until Azure Compute (functionality) and the CISO
 |---|---|
 | Data classification (signed) | `data_classification` on `JobManifest` (`src/contracts/models.py`) |
 | Device trust tier (server-assigned) | `trust_tier` column on `workers` (`src/contracts/schema.sql`); set at `/register`, elevated by `POST /workers/{id}/tier` (`src/orchestrator/app.py`) |
+| Attestation-derived tiering | `src/trust/attestation.py` (verify + derive); `create_app(attestation_pubkey=...)` and the `/register` derivation (`src/orchestrator/app.py`); `--attestation-key` CLI; `tier_pinned` admin precedence |
 | Routing decision (fail-closed) | `routing_policy.may_route` (`src/orchestrator/routing_policy.py`) |
 | Enforcement | `pick_job_for` in `src/orchestrator/scheduler.py` |
 | Egress containment | `--network none` container sandbox (`src/isolation/`) |
