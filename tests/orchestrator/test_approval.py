@@ -144,3 +144,47 @@ def test_admin_endpoints_require_the_operator_token_when_set():
     # The same operator token gates disconnect.
     assert client.delete("/workers/cpu-1", headers=admin).status_code == 200
 
+
+def test_admin_token_separates_device_admin_from_submission():
+    # A dedicated admin token gates device admin (approve/disconnect/tier) SEPARATELY from the
+    # submit token, so a mere submitter cannot approve a device or raise its trust tier.
+    scheme = "Bearer"
+    submit_tok = "submit-secret-1"
+    admin_tok = "admin-secret-1"
+    client = TestClient(create_app(
+        ":memory:", require_approval=True, submit_token=submit_tok, admin_token=admin_tok
+    ))
+    client.post("/register", json=CPU_CAP)
+    submit_hdr = {"Authorization": f"{scheme} {submit_tok}"}
+    admin_hdr = {"Authorization": f"{scheme} {admin_tok}"}
+
+    # The submit token does NOT authorize device admin (approve or tier elevation).
+    assert client.post("/workers/cpu-1/approve", headers=submit_hdr).status_code == 401
+    assert client.post(
+        "/workers/cpu-1/tier", headers=submit_hdr, json={"trust_tier": "managed"}
+    ).status_code == 401
+    # The admin token does.
+    assert client.post("/workers/cpu-1/approve", headers=admin_hdr).status_code == 200
+    assert client.post(
+        "/workers/cpu-1/tier", headers=admin_hdr, json={"trust_tier": "managed"}
+    ).status_code == 200
+    # Job submission still uses the submit token; the admin token is not needed for it.
+    r = client.post(
+        "/jobs",
+        json={"kind": "data.transform", "input": {"items": ["a"], "op": "upper"}, "units": 1},
+        headers=submit_hdr,
+    )
+    assert r.status_code == 200
+
+
+def test_admin_gate_falls_back_to_submit_token_when_no_admin_token():
+    # Backward compatible: with only a submit token configured, it still gates device admin.
+    scheme = "Bearer"
+    tok = "op-secret-2"
+    client = TestClient(create_app(":memory:", require_approval=True, submit_token=tok))
+    client.post("/register", json=CPU_CAP)
+    assert client.post("/workers/cpu-1/approve").status_code == 401
+    assert client.post(
+        "/workers/cpu-1/approve", headers={"Authorization": f"{scheme} {tok}"}
+    ).status_code == 200
+
