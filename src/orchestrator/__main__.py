@@ -123,7 +123,8 @@ def _serve(host: str, port: int, db_path: str, log_level: str,
            rate_limit_per_min: int | None = None,
            submit_token: str | None = None,
            admin_token: str | None = None,
-           bind_device_identity: bool = False) -> None:
+           bind_device_identity: bool = False,
+           attestation_pubkey: str | None = None) -> None:
     """Start uvicorn against a persistent file-backed app. Serves HTTPS when a TLS cert+key are
     given (the doctrine's 'plain HTTPS' transport for a cloud/multi-site pilot), and requires
     **mutual TLS** (each worker presents a client cert) when ``tls_client_ca`` is also given.
@@ -132,7 +133,9 @@ def _serve(host: str, port: int, db_path: str, log_level: str,
     separately when set (else the device-admin gate falls back to the submit token). When
     ``require_approval`` is set, joining workers are gated behind a dashboard device-code approval.
     When ``bind_device_identity`` is set, a worker's bearer token is bound to its TLS client-cert
-    fingerprint (STRIDE Spoofing / B3). Blocks until shutdown."""
+    fingerprint (STRIDE Spoofing / B3). When ``attestation_pubkey`` is set, a worker's tier is
+    derived from a device-posture attestation it verifies against that authority key (else the
+    feature is inert). Blocks until shutdown."""
     app = create_app(
         db_path,
         require_approval=require_approval,
@@ -140,6 +143,7 @@ def _serve(host: str, port: int, db_path: str, log_level: str,
         submit_token=submit_token,
         admin_token=admin_token,
         bind_device_identity=bind_device_identity,
+        attestation_pubkey=attestation_pubkey,
     )
     ssl_kwargs: dict = {}
     if tls_cert and tls_key:
@@ -208,6 +212,16 @@ def main(argv: list[str] | None = None) -> int:
              "production the mTLS-terminating front end injects this header after verifying the "
              "client cert. Off by default.",
     )
+    parser.add_argument(
+        "--attestation-key",
+        default=os.environ.get("ONECOMPUTE_ATTESTATION_KEY"),
+        help="Hex Ed25519 PUBLIC key of the trusted attestation authority. When set, a worker's "
+             "trust tier is DERIVED from a signed device-posture attestation it presents at "
+             "registration, verified against THIS key (never the worker's self-report); an "
+             "un-pinned worker's tier is set to the derived value. Defaults to "
+             "$ONECOMPUTE_ATTESTATION_KEY. Unset leaves attestation-derived tiering INERT (ignored), "
+             "so behavior is unchanged and tiers are set only by the admin endpoint.",
+    )
     args = parser.parse_args(argv)
 
     host = args.host if args.host is not None else env_host
@@ -252,6 +266,10 @@ def main(argv: list[str] | None = None) -> int:
                   "for a real pilot.")
     if args.bind_device_identity:
         print("  Device identity: ON. Worker tokens are bound to the TLS client-cert fingerprint (B3).")
+    if args.attestation_key:
+        print("  Attestation tiering: ON. Worker tiers are DERIVED from a device-posture "
+              "attestation verified against the trusted authority key (never the worker's "
+              "self-report). Admin-pinned tiers are preserved.")
     sys.stdout.flush()
 
     try:
@@ -264,6 +282,7 @@ def main(argv: list[str] | None = None) -> int:
             submit_token=args.submit_token,
             admin_token=args.admin_token,
             bind_device_identity=args.bind_device_identity,
+            attestation_pubkey=args.attestation_key,
         )
     except KeyboardInterrupt:
         print("\nshutting down (Ctrl-C)")

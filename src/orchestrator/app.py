@@ -53,7 +53,7 @@ from orchestrator.ratelimit import RateLimiter, client_key
 from orchestrator.routing_policy import TIERS, is_valid_tier
 from orchestrator.scheduler import class_weight_for, pick_job_for
 from orchestrator.submit import submit_job
-from trust import Signer, check_challenge
+from trust import Signer, check_challenge, derive_tier, verify_attestation
 
 # Cap on a single job's result payload. Must comfortably fit a Mandelbrot image tile: the
 # fractal result carries the pixel rows the dashboard reassembles into one image, so a default
@@ -560,6 +560,7 @@ def create_app(
     submit_token: str | None = None,
     admin_token: str | None = None,
     bind_device_identity: bool = False,
+    attestation_pubkey: str | None = None,
 ) -> FastAPI:
     conn = open_serialized_db(db_path)
     if signer is None:
@@ -697,6 +698,34 @@ def create_app(
         is_approved = bool(row["approved"])
         _emit(conn, "registered", worker_id=cap.worker_id,
               detail="gpu" if cap.has_gpu else "cpu")
+        # Attestation-derived tiering (fail-closed, INERT until an authority key is configured). When
+        # an attestation authority is configured AND the worker presented an attestation that
+        # verifies against THAT trusted authority key (never att.signer_pubkey, never the worker's
+        # self-report), derive the tier from the VERIFIED posture and store it, so tiers can come
+        # from verifiable device posture instead of only manual admin assignment. A re-register
+        # re-derives. An admin-pinned tier (tier_pinned = 1) is authoritative and is never
+        # overridden. If verification fails or nothing is configured, the tier is left untouched
+        # (a new worker keeps the fail-closed 'untrusted' default). Never raises. See
+        # src/trust/attestation.py and docs/device-attestation.md.
+        if attestation_pubkey and cap.attestation is not None and verify_attestation(
+            cap.attestation, attestation_pubkey, cap.worker_id, datetime.now(UTC)
+        ):
+            derived = derive_tier(cap.attestation)
+            applied = False
+            with write_lock:
+                pin_row = conn.execute(
+                    "SELECT tier_pinned FROM workers WHERE worker_id = ?",
+                    (cap.worker_id,),
+                ).fetchone()
+                if pin_row is not None and not pin_row["tier_pinned"]:
+                    conn.execute(
+                        "UPDATE workers SET trust_tier = ? WHERE worker_id = ? AND tier_pinned = 0",
+                        (derived, cap.worker_id),
+                    )
+                    conn.commit()
+                    applied = True
+            if applied:
+                _emit(conn, "tier_derived", worker_id=cap.worker_id, detail=derived)
         return RegisterResponse(
             worker_token=token,
             device_code=None if is_approved else row["device_code"],
@@ -859,8 +888,11 @@ def create_app(
                 detail=f"unknown trust tier: {req.trust_tier!r}; valid: {list(TIERS)}",
             )
         with write_lock:
+            # PIN the tier: an explicit admin assignment is authoritative, so mark tier_pinned = 1 so
+            # a later re-register with an attestation cannot override IT's decision (attestation-
+            # derived tiering only touches un-pinned workers). See docs/device-attestation.md.
             conn.execute(
-                "UPDATE workers SET trust_tier = ? WHERE worker_id = ?",
+                "UPDATE workers SET trust_tier = ?, tier_pinned = 1 WHERE worker_id = ?",
                 (req.trust_tier, worker_id),
             )
             conn.commit()
