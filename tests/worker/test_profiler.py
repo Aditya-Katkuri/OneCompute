@@ -39,6 +39,21 @@ def test_persistence_roundtrip(tmp_path):
     assert abs(p2.profile_now(when).cpu_mean - p1.profile_now(when).cpu_mean) < 1e-6
 
 
+def test_availability_persistence_roundtrip_tracks_restart_gap(tmp_path):
+    path = tmp_path / "prof.json"
+    p1 = UsageProfiler(path=path)
+    p1.record_availability(1_000.0, 30.0)
+    p1.record_availability(1_030.0, 30.0)
+    p1.save()
+
+    p2 = UsageProfiler(path=path)
+    p2.record_availability(4_630.0, 30.0)
+
+    assert p2.availability.observed_seconds == 60.0
+    assert p2.availability.unavailable_seconds == 3_570.0
+    assert p2.availability.gap_count == 1
+
+
 def test_record_folds_ac_and_idle_indicators(tmp_path):
     # on_ac/idle are 0/1 indicators folded as percentages, so their bucket means become the % of
     # time on AC and the % of time idle (the harvestable-window signals).
@@ -73,6 +88,7 @@ def test_load_tolerates_old_profile_missing_new_fields(tmp_path):
     b = p.buckets[0]
     assert b.n == 3 and b.cpu_mean == 20.0
     assert b.ac_mean == 0.0 and b.idle_mean == 0.0
+    assert p.availability.span_seconds == 0.0
 
 
 def test_save_is_atomic_and_leaves_no_temp_file(tmp_path):
@@ -90,6 +106,7 @@ def test_save_is_atomic_and_leaves_no_temp_file(tmp_path):
     assert not (tmp_path / "prof.json.tmp").exists()
     data = json.loads(path.read_text(encoding="utf-8"))  # complete, valid JSON
     assert isinstance(data["buckets"], list)
+    assert isinstance(data["availability"], dict)
 
 
 def test_save_replaces_a_prior_corrupt_profile_cleanly(tmp_path):

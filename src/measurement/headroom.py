@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from statistics import fmean
 
+from measurement.availability import aggregate_availability, summarize_availability
+
 # worker.profiler.BUCKETS: hour-of-week buckets (weekday*24 + hour), 0 = Mon 00:00 ... 167 = Sun.
 BUCKETS_PER_WEEK = 168
 # worker.governor.AdaptiveGovernor.margin_pct: comfort headroom reserved above measured demand.
@@ -106,6 +108,7 @@ def summarize_profile(
     zeroed summary.
     """
     populated = profile.get("populated", [])
+    availability = summarize_availability(profile.get("availability"))
     coverage = len(populated)
     device = profile.get("device", "device")
     path = profile.get("path", "")
@@ -120,6 +123,7 @@ def summarize_profile(
             "ram": {"avg": 0.0, "peak": 0.0, "headroom": 0.0},
             "ac_avg": 0.0,
             "idle_avg": 0.0,
+            "availability": availability,
         }
 
     cpu_means = [b["cpu_mean"] for b in populated]
@@ -160,6 +164,7 @@ def summarize_profile(
         # Harvestable-window signals: % of measured time on AC power and % with the human idle/away.
         "ac_avg": fmean([b.get("ac_mean", 0.0) for b in populated]),
         "idle_avg": fmean([b.get("idle_mean", 0.0) for b in populated]),
+        "availability": availability,
     }
 
 
@@ -188,6 +193,7 @@ def aggregate(
             "ram": {"avg": 0.0, "headroom": 0.0},
             "ac_avg": 0.0,
             "idle_avg": 0.0,
+            "availability": aggregate_availability([]),
         }
 
     mean_cpu_spare = fmean([s["cpu"]["mean_spare"] for s in contributing])
@@ -216,4 +222,7 @@ def aggregate(
         "ram": {"avg": avg_ram, "headroom": max(0.0, 100.0 - avg_ram)},
         "ac_avg": fmean([s.get("ac_avg", 0.0) for s in contributing]),
         "idle_avg": fmean([s.get("idle_avg", 0.0) for s in contributing]),
+        "availability": aggregate_availability(
+            [s.get("availability", {}) for s in contributing]
+        ),
     }

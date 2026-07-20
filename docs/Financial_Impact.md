@@ -72,19 +72,24 @@ The projection assumes that net recoverable compute value grows by approximately
 
 ## Measured reconciliation (from the measurement pilot)
 
-The figures above are **modeled**: in particular the "recoverable hours per day" per device class is an assumption. The measurement pilot exists to replace those assumptions with data. A measurement-only worker records each device's real CPU/GPU/RAM envelope, plus the **fraction of time on AC power** and the **fraction of time the user is idle/away**, entirely on-device (see [`measurement-pilot.md`](./measurement-pilot.md)).
+The figures above are **modeled**: in particular the "recoverable hours per day" per device class is an assumption. The measurement pilot exists to replace those assumptions with data. A measurement-only worker records each device's real CPU/GPU/RAM envelope, the **fraction of time on AC power**, the **fraction of time the user is idle/away**, and a compact availability summary derived from successful-sample timing, entirely on-device (see [`measurement-pilot.md`](./measurement-pilot.md)).
 
-`scripts/business_case.py` turns a pilot profile into the same shape of projection as the table above, but with the modeled inputs swapped for measured ones:
+`scripts/business_case.py` turns a pilot profile into two deliberately separate projections:
 
 - **recoverable %** is the governor-consistent recoverable headroom actually measured on the device (still the conservative 20-40% harvest of measured spare), not an assumed number of hours.
-- **awake hours/day** is derived from bucket coverage (a measurement-only worker samples only while the machine is on, so the distinct hour-of-week slots it populated over a week are a measured proxy for daily uptime).
+- **observed hours/day** comes from persistent sample timing. Older profiles without timing data fall back to the hour-of-week coverage proxy.
+- **unavailable hours/day** comes from long intervals with no successful sample. These gaps can be sleep, shutdown, reboot, or observer downtime; timing alone does not prove which.
 - **AC fraction** discounts a laptop to only the hours it was actually plugged in (never harvested on battery). Always-on classes (dev boxes, desktops) keep the 24h/day, on-AC assumption.
+- **currently executable awake-only value** uses measured recoverable CPU only during observed, AC-powered time.
+- **wake-enabled modeled potential** additionally counts all inferred unavailable gaps at a default 75% CPU allocation. This assumes the organization can wake or prevent sleep and provide power during every gap. The current worker cannot do that, so this is potential capacity, not shipped capacity.
+- **RAM is not inflated during sleep gaps.** Modern Standby preserves application memory, so wake-modeled RAM remains capped at measured headroom.
 
 Fleet size, vCPU-equivalent cores, and Azure-equivalent price stay labelled assumptions (the defaults in `src/measurement/business_case.py` mirror this document), so the measured run reconciles directly against the modeled case:
 
 ```
 uv run python scripts/business_case.py "%LOCALAPPDATA%\OneCompute\usage_profile.json"
+uv run python scripts/business_case.py "%LOCALAPPDATA%\OneCompute\usage_profile.json" --awake-only
 uv run python scripts/business_case.py <dir-of-collected-profiles> --device-class laptop_assigned
 ```
 
-Early in a pilot the measured projection is lower than the $125.6M modeled headline (coverage is thin, so measured awake-hours are small); as a week of coverage accumulates it converges toward a defensible measured range. That convergence, from modeled to measured, is the entire point of the pilot and the number to bring to Azure Compute and the CISO office.
+The report prints its timing span and marks any result covering less than a full 168-hour week as preliminary. The awake-only value is the current technical baseline. The wake-enabled value is an explicit co-development scenario for Azure Compute and the CISO office, not a claim that OneCompute can already harvest a sleeping or powered-off endpoint.

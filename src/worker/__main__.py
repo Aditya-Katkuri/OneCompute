@@ -9,6 +9,7 @@ import threading
 import time
 
 from isolation import active_boundary
+from measurement.availability import availability_tracker_from_telemetry
 from trust import build_client
 from worker.agent import WorkerAgent
 from worker.capability import detect_capability
@@ -168,6 +169,9 @@ def run_measure_loop(
                 on_ac = gate.on_ac() if gate is not None else None      # plugged in? harvest window
                 idle = gate.user_idle() if gate is not None else None   # human away? harvest window
                 governor.profiler.record(cpu, gpu, ram, on_ac=on_ac, idle=idle)  # learn the envelope
+                record_availability = getattr(governor.profiler, "record_availability", None)
+                if callable(record_availability):
+                    record_availability(time.time(), interval or 30.0)
                 telem.log("measure", cpu=round(cpu, 1), gpu=round(gpu, 1), ram=round(ram, 1),
                           ac=on_ac, idle=idle)
                 samples += 1
@@ -361,6 +365,22 @@ def main() -> None:
             # should_run()/active_now() admission+yield paths are intentionally never called.
             gate = _adaptive_governor(args.idle_threshold, args.profile)
             telem = PilotTelemetry(agent.capability.worker_id, enabled=args.telemetry)
+            if (
+                args.telemetry
+                and not args.profile
+                and gate.profiler.availability.span_seconds <= 0.0
+            ):
+                historic = availability_tracker_from_telemetry(
+                    telem.path,
+                    expected_interval_seconds=args.measure_interval,
+                )
+                if historic.span_seconds > 0.0:
+                    gate.profiler.availability = historic
+                    _persist(gate.profiler)
+                    print(
+                        "measure-only: restored availability timing from "
+                        f"{historic.sample_count} local telemetry samples"
+                    )
             if args.telemetry:
                 print(f"pilot telemetry -> {telem.path}")
             print(f"measure-only: tracking CPU/GPU/RAM, no jobs will run "
