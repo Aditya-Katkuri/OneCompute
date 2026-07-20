@@ -63,12 +63,21 @@ def _empty_bucket() -> dict:
     }
 
 
-def _write_profile(path: Path, populated: list[dict], *, pad_to: int = 168) -> Path:
+def _write_profile(
+    path: Path,
+    populated: list[dict],
+    *,
+    pad_to: int = 168,
+    availability: dict | None = None,
+) -> Path:
     """Write a full 168-bucket profile with ``populated`` at the front, rest empty."""
     buckets = list(populated)
     while len(buckets) < pad_to:
         buckets.append(_empty_bucket())
-    path.write_text(json.dumps({"buckets": buckets}), encoding="utf-8")
+    payload = {"buckets": buckets}
+    if availability is not None:
+        payload["availability"] = availability
+    path.write_text(json.dumps(payload), encoding="utf-8")
     return path
 
 
@@ -102,6 +111,26 @@ def test_summarize_computes_expected_stats_and_recoverable_range(tmp_path):
     # RAM: means [40,50,60] -> avg 50; headroom 100 - 50 = 50
     assert summary["ram"]["avg"] == pytest.approx(50.0)
     assert summary["ram"]["headroom"] == pytest.approx(50.0)
+
+
+def test_report_loads_and_displays_persistent_availability(tmp_path, capsys):
+    availability = {
+        "observed_seconds": 8 * 3_600,
+        "unavailable_seconds": 16 * 3_600,
+        "gap_count": 3,
+    }
+    path = _write_profile(
+        tmp_path / "dev.json",
+        [_bucket(20.0, 0.0, 40.0)],
+        availability=availability,
+    )
+
+    rc = mr.main([str(path)])
+    text = capsys.readouterr().out
+
+    assert rc == 0
+    assert "Availability: observed 8.0 h/day, inferred unavailable 16.0 h/day" in text
+    assert "require an explicit wake and power policy" in text
 
 
 def test_margin_and_harvest_are_tunable(tmp_path):
@@ -311,4 +340,3 @@ def test_reversed_or_negative_harvest_bounds_are_normalized(tmp_path, capsys):
     assert report["assumptions"]["margin_pct"] == 0.0
     cpu = report["devices"][0]["cpu"]
     assert cpu["recoverable_low"] <= cpu["recoverable_high"]  # never printed backwards
-

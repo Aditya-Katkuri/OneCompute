@@ -72,8 +72,8 @@ powershell -ExecutionPolicy Bypass -File scripts\observe_me.ps1 -Uninstall
 ```
 
 - **Findable:** the observer runs in a console window titled **`OneCompute Observer`** (Task Manager > Processes, under Apps), and `-Status` prints its PID(s) for the Details tab. The `.venv` launcher re-execs the interpreter, so `-Status` may list two PIDs for the one observer (a parent launcher and its interpreter child).
-- **Same resilience as §3.1:** resumes on wake, relaunches at logon after a reboot, saves locally on the upload cadence, and never runs while the machine is asleep.
-- **Report at the end:** `uv run python scripts/measure_report.py "%LOCALAPPDATA%\OneCompute\usage_profile.json"` prints the measured idle-headroom readout (same governor-consistent math as the central rollup). `scripts/business_case.py` on the same profile turns it into the Azure-equivalent dollar range (see §5).
+- **Same resilience as §3.1:** resumes on wake, relaunches at logon after a reboot, saves locally on the upload cadence, and never runs while the machine is asleep. Successful-sample timing is also persisted, so each resume or restart records the preceding interval as an unavailable gap without retaining a detailed activity timeline.
+- **Report at the end:** `uv run python scripts/measure_report.py "%LOCALAPPDATA%\OneCompute\usage_profile.json"` prints the measured idle-headroom readout (same governor-consistent math as the central rollup). `scripts/business_case.py` on the same profile prints both the currently executable awake-only value and a separately labelled wake-enabled potential (see §5).
 
 ## 3.3 Multi-person pilot (collect several devices, no orchestrator)
 
@@ -105,7 +105,9 @@ uv run python scripts/business_case.py   <dir-of-collected-profiles>   # Azure-e
   ```
   Output is a per-device and aggregate summary of average/peak CPU/GPU/RAM plus an **estimated conservatively-recoverable headroom** range (measured spare capacity, with the governor's 25 percent comfort margin, harvested at a conservative 20-40 percent). Both paths share identical math (`measurement.headroom`), so the CLI and the dashboard always agree. Use `--json` for a machine-readable version.
 - This aggregate is the honest, measured number that replaces the estimates in `Financial_Impact.md`.
-- **Dollar projection:** `uv run python scripts/business_case.py <profile-or-dir>` extrapolates the measured headroom to an Azure-equivalent annual savings range, using the measured recoverable %, measured awake-hours (bucket coverage), and measured AC fraction, with fleet size and price as labelled assumptions (defaults mirror `Financial_Impact.md`). This is the number for the Azure Compute + CISO hand-off.
+- **Dollar projection:** `uv run python scripts/business_case.py <profile-or-dir>` uses persistent sample timing when available, or automatically reconstructs historical gaps from a sibling `pilot-telemetry.jsonl` for an existing local pilot. It prints the current awake-on-AC value and, by default, a wake-enabled potential that assumes every inferred unavailable gap can be powered and used at 75% CPU. Use `--awake-only` to exclude gaps. The worker does not currently wake or power on devices, and the report says so explicitly.
+- **Gap interpretation:** a missing-sample interval proves only that the observer was unavailable. It may be sleep, shutdown, reboot, or a stopped observer. Windows event logs can classify a specific machine after the fact, but the portable profile intentionally stores only aggregate timing.
+- **RAM interpretation:** sleep does not make application memory free. The wake scenario therefore keeps RAM bounded by measured headroom rather than assuming the whole machine is empty.
 
 ## 6. Interpret and hand off
 - The measured recoverable-headroom figure, plus the utilization profiles, are exactly what Azure Compute (functionality) and the CISO office (safety) need to co-design safe routing of Azure/Foundry requests into the pool (Azure_Integration_Plan.md, Phase 0). Nothing is routed onto a device until that co-development is done.

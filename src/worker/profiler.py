@@ -23,6 +23,8 @@ from dataclasses import asdict, dataclass, fields
 from datetime import datetime
 from pathlib import Path
 
+from measurement.availability import AvailabilityTracker
+
 BUCKETS = 168  # hours in a week: day-of-week (0=Mon) * 24 + hour-of-day
 # EWMA weight per update. Buckets only update during their own hour-of-week slot, so at a
 # ~30 s cadence a bucket sees a few hundred samples per occurrence; 0.05 gives a rolling feel
@@ -133,6 +135,7 @@ class UsageProfiler:
     def __init__(self, path: str | os.PathLike[str] | None = None) -> None:
         self.path = Path(path) if path is not None else _default_profile_path()
         self.buckets: list[BucketStat] = [BucketStat() for _ in range(BUCKETS)]
+        self.availability = AvailabilityTracker()
         self._load()
 
     def _load(self) -> None:
@@ -145,14 +148,19 @@ class UsageProfiler:
                         # Tolerate schema drift: unknown keys are dropped and missing new fields
                         # (e.g. ac_mean/idle_mean in a pre-upgrade profile) fall back to defaults.
                         self.buckets[i] = BucketStat(**{k: v for k, v in raw.items() if k in known})
+                self.availability = AvailabilityTracker.from_dict(data.get("availability"))
         except Exception:
             # Corrupt/unreadable profile -> start fresh; never raise.
             self.buckets = [BucketStat() for _ in range(BUCKETS)]
+            self.availability = AvailabilityTracker()
 
     def save(self) -> None:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            payload = {"buckets": [asdict(b) for b in self.buckets]}
+            payload = {
+                "buckets": [asdict(b) for b in self.buckets],
+                "availability": self.availability.to_dict(),
+            }
             # Atomic write: a hard power-loss mid-save must never truncate/corrupt the profile
             # (which _load would then discard, losing a week of learning). Write a temp file in the
             # same directory, then os.replace -- on the same volume that swap is atomic, so a crash
@@ -162,6 +170,14 @@ class UsageProfiler:
             os.replace(tmp, self.path)
         except Exception:
             pass  # best-effort persistence; never raise on the demo path
+
+    def record_availability(
+        self,
+        sampled_at: float,
+        expected_interval_seconds: float = 30.0,
+    ) -> None:
+        """Persist successful-sample timing so sleep/off/observer gaps survive restarts."""
+        self.availability.record(sampled_at, expected_interval_seconds)
 
     def record(
         self,

@@ -73,7 +73,12 @@ def load_profile(path: str | os.PathLike[str]) -> dict | None:
     raw_buckets = data.get("buckets")
     if not isinstance(raw_buckets, list):
         return None
-    return {"path": str(p), "device": p.stem, "populated": normalize_buckets(raw_buckets)}
+    return {
+        "path": str(p),
+        "device": p.stem,
+        "populated": normalize_buckets(raw_buckets),
+        "availability": data.get("availability"),
+    }
 
 
 def discover_paths(target: str | os.PathLike[str]) -> tuple[list[Path], list[dict]]:
@@ -200,6 +205,16 @@ def format_text(
             f"  Harvest window: on AC {_pct(agg['ac_avg'])} of the time, "
             f"user idle {_pct(agg['idle_avg'])}"
         )
+        availability = agg.get("availability", {})
+        if availability.get("span_seconds", 0.0) > 0.0:
+            lines.append(
+                f"  Availability: observed {availability['observed_hours_per_day']:.1f} h/day, "
+                f"inferred unavailable {availability['unavailable_hours_per_day']:.1f} h/day"
+            )
+            lines.append(
+                "  Unavailable gaps can be sleep, shutdown, reboot, or observer downtime; "
+                "they require an explicit wake and power policy before execution."
+            )
     lines.append("")
 
     if skipped:

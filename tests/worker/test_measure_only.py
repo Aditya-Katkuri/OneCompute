@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+from datetime import UTC, datetime
 
 import httpx
 from fastapi import FastAPI, Response
@@ -138,6 +139,7 @@ def test_measure_loop_records_logs_and_never_runs_a_job(tmp_path, monkeypatch) -
     assert bucket.cpu_mean == 20.0
     assert bucket.gpu_mean == 30.0
     assert bucket.ram_mean == 40.0
+    assert governor.profiler.availability.first_sample_at > 0.0
 
     # a local "measure" telemetry record captured the same live readings
     lines = (tmp_path / "telem.jsonl").read_text(encoding="utf-8").strip().splitlines()
@@ -308,6 +310,39 @@ def test_main_measure_only_once_engages_heartbeat_and_pulls_no_jobs(tmp_path, mo
     assert profile_path.exists()
     records = [json.loads(line) for line in telem_path.read_text(encoding="utf-8").splitlines()]
     assert any(rec["event"] == "measure" for rec in records)
+
+
+def test_main_local_measurement_bootstraps_profile_availability_from_telemetry(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        wm, "detect_capability", lambda: Capability(worker_id="measure-1", has_gpu=False)
+    )
+    monkeypatch.setattr(wm, "system_ram_load_pct", lambda: 42.0)
+    if wm.psutil is not None:
+        monkeypatch.setattr(wm.psutil, "cpu_percent", lambda interval=None: 5.0)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+
+    onecompute = tmp_path / "OneCompute"
+    onecompute.mkdir()
+    now = time.time()
+    historic = [
+        {"ts": datetime.fromtimestamp(now - 3_600, UTC).isoformat(), "event": "measure"},
+        {"ts": datetime.fromtimestamp(now - 3_570, UTC).isoformat(), "event": "measure"},
+        {"ts": datetime.fromtimestamp(now - 30, UTC).isoformat(), "event": "measure"},
+    ]
+    (onecompute / "pilot-telemetry.jsonl").write_text(
+        "\n".join(json.dumps(record) for record in historic) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("sys.argv", ["worker", "--measure-only", "--once"])
+
+    wm.main()
+
+    profile = UsageProfiler(path=onecompute / "usage_profile.json")
+    assert profile.availability.gap_count == 1
+    assert profile.availability.sample_count >= 4
+    assert profile.availability.unavailable_seconds > 3_000
 
 
 def test_main_measure_only_continuous_saves_profile_on_ctrl_c(tmp_path, monkeypatch) -> None:
