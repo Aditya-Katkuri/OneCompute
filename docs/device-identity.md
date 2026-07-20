@@ -1,81 +1,115 @@
-# Device-identity binding (worker token bound to TLS client-cert fingerprint)
+# Device-identity binding
 
-OneCompute already authenticates each worker with a per-worker bearer token (issued at
-`/register`, checked in `_require_worker_token` with a constant-time compare in
-`src/orchestrator/app.py`) and already supports mutual TLS (a worker presents a client cert). The
-residual gap this feature closes: a **stolen bearer token alone** lets an attacker impersonate a
-worker from any machine. Device-identity binding ties the token to the worker's TLS
-client-certificate fingerprint, so the token is useless without the device's key.
+OneCompute authenticates each worker with a per-worker bearer token and can require mutual TLS.
+Device-identity binding closes the remaining token-replay gap by tying that bearer token to the
+SHA-256 fingerprint of the worker's **TLS-verified peer certificate**. A stolen token is not enough;
+the caller must also complete TLS with the same device private key.
 
-Binding is **opt-in and default OFF**. With it off, behavior is exactly as before.
+Binding is opt-in for local/demo use and mandatory in the secure measurement-pilot preset.
 
-## What gets bound
+## How the fingerprint is established
 
-- The **device fingerprint** is the lowercase hex SHA-256 of the client certificate's DER bytes.
-- It is delivered in the request header `X-Client-Cert-SHA256`.
-- On `/register` (when binding is on and the header is present), the fingerprint is stored in the
-  new nullable `workers.cert_fingerprint` column (`src/contracts/schema.sql`; added to the guarded
-  `ALTER TABLE` loop in `src/orchestrator/db.py` so a pre-upgrade persistent DB gains it). The
-  change is additive and backward-compatible.
-- On every authenticated call, when binding is on **and** the worker has a stored fingerprint,
-  `_require_worker_token` requires the presented `X-Client-Cert-SHA256` to match the stored value
-  (constant-time compare). A mismatch or a missing header returns `401` and emits an audited
-  `auth_failed` event with detail `device_fingerprint_mismatch`.
+Uvicorn verifies the client certificate against `--tls-client-ca` during the TLS handshake.
+`orchestrator.mtls_protocol.VerifiedClientCertH11Protocol` then:
 
-A worker that registered **without** a fingerprint stays token-only even when binding is enabled
-globally (there is nothing to enforce against), so a mixed fleet keeps working during rollout.
+1. Reads the verified peer certificate from the connection's TLS object with
+   `getpeercert(binary_form=True)`.
+2. Computes the lowercase SHA-256 of the certificate DER bytes.
+3. Injects that value into the request's ASGI scope.
+
+The FastAPI application reads only that server-injected scope value. It does not trust
+`X-Client-Cert-SHA256` or any other client-supplied fingerprint header. The worker does not send a
+fingerprint header.
+
+The custom protocol is used whenever the orchestrator is configured with a client CA. The
+`--bind-device-identity` flag fails startup unless `--tls-cert`, `--tls-key`, and
+`--tls-client-ca` are all present.
+
+## Registration behavior
+
+When binding is enabled:
+
+- Registration without a verified peer fingerprint returns `401`.
+- A new worker ID is stored with the verified certificate fingerprint.
+- Re-registration from the same certificate may rotate the bearer token.
+- Re-registration from a different certificate is rejected before token rotation.
+- A legacy worker ID with no stored fingerprint is rejected with `409`; the operator must remove
+  and re-enroll it rather than silently claiming it.
+
+On every authenticated worker call, `_require_worker_token` checks both:
+
+1. The bearer token, using constant-time comparison.
+2. The verified peer-certificate fingerprint, also using constant-time comparison.
+
+A missing or mismatched peer certificate returns `401` and emits an audited
+`device_fingerprint_mismatch`.
 
 ## Enabling it
 
-- Orchestrator: `uv run python -m orchestrator --bind-device-identity` (threads
-  `bind_device_identity=True` into `create_app`).
-- Worker: pass `--client-cert` (paired with `--client-key`). The worker computes the cert's
-  SHA-256 DER fingerprint once at startup and sends it as `X-Client-Cert-SHA256` on register and
-  every authenticated request. It is best-effort: with no client cert (or an unreadable one) the
-  worker sends no fingerprint header and behaves exactly as before.
+```powershell
+uv run python -m orchestrator `
+  --tls-cert C:\OneCompute\pki\server.crt `
+  --tls-key C:\OneCompute\pki\server.key `
+  --tls-client-ca C:\OneCompute\pki\worker-ca.crt `
+  --bind-device-identity
+```
 
-## Honest header-trust framing
+The worker presents its certificate through the TLS client:
 
-**The worker-supplied `X-Client-Cert-SHA256` header is a PoC / proxy-shape stand-in, not a full
-cryptographic binding on its own.** In production this header is injected by the
-**mTLS-terminating front end / reverse proxy after it verifies the client certificate**, and is
-**not** trusted from the open internet: the proxy strips any client-supplied copy and sets it from
-the verified peer certificate. In this proof-of-concept (and behind such a proxy) the worker sends
-the header itself so a pilot can exercise the exact request shape. Do not read this control as
-proof that the caller holds the private key unless the header is set by a trusted mTLS front end.
-The real cryptographic guarantee comes from the mutual-TLS handshake terminating at that front
-end; this feature binds the application-layer identity (the bearer token) to the fingerprint that
-handshake produces.
+```powershell
+uv run python -m worker `
+  --url https://onecompute.contoso.com:8080 `
+  --tls-ca C:\ProgramData\OneCompute\pki\server-ca.crt `
+  --client-cert C:\ProgramData\OneCompute\pki\device.crt `
+  --client-key C:\ProgramData\OneCompute\pki\device.key
+```
 
-## STRIDE: Spoofing (B3)
+`--secure-measurement-pilot` enables binding and requires the complete TLS/mTLS configuration.
 
-This is the Spoofing control for trust boundary **B3** (worker to control plane). The threat: an
-attacker who exfiltrates a worker's bearer token replays it from another host to impersonate the
-worker, pull signed jobs, and claim credits. Binding the token to the device's client-cert
-fingerprint means a replayed token from a machine that cannot present the same verified
-certificate fails closed (`401`, audited), raising the bar from "possess a secret string" to
-"possess the device's private key". Because every rejection emits an `auth_failed`
-(`device_fingerprint_mismatch`) event into the tamper-evident audit stream, token-replay attempts
-are detectable and exportable to a SIEM.
+## Reverse proxies and load balancers
 
-## Microsoft device identity (Intune/Entra)
+The shipped binding is cryptographic when Uvicorn terminates TLS through the custom protocol.
+If a reverse proxy or load balancer terminates TLS instead, it must provide an equivalent trusted
+peer-certificate signal to the application. Do not reintroduce a raw public header without a
+strictly trusted internal hop that strips every inbound copy. That proxy topology needs its own
+review and is not the default secure-pilot configuration.
 
-The posture mirrors Microsoft's device-identity model. In an Entra ID / Intune environment a
-managed device holds a certificate provisioned to its hardware (SCEP/PKCS or a TPM-backed key), is
-enrolled and attested by Intune, and gains access to resources through Conditional Access policies
-that require a **compliant, managed device** rather than a credential alone. Device-identity
-binding here is the OneCompute analogue: the worker's client certificate is the device identity,
-the fingerprint is the stable handle for it, and the orchestrator enforces "this token only from
-this device" the way Conditional Access enforces "this identity only from a compliant device". A
-production deployment would source the certificate from the Intune-managed device store and
-terminate mutual TLS at an Entra-integrated front end that injects the verified fingerprint.
+## Certificate lifecycle
 
-## Scope and roadmap
+- Issue a unique client certificate and private key per device.
+- Prefer a TPM-backed key provisioned through Intune SCEP/PKCS.
+- Restrict private-key ACLs to the observer identity and administrators.
+- Revoke the certificate immediately on device loss, compromise, or pilot withdrawal.
+- Certificate rotation changes the fingerprint. The safe current process is operator disconnect,
+  certificate replacement, and fresh device-code enrollment.
 
-- **Real here:** the additive schema column, opt-in binding in `create_app` /
-  `_require_worker_token`, the `--bind-device-identity` orchestrator flag, the worker-side
-  fingerprint computation and header, constant-time matching, and audited `auth_failed` on
-  mismatch or absence.
-- **Roadmap:** enforcing that the fingerprint is set only by a trusted mTLS front end (not the
-  worker), full Entra Conditional Access / Intune compliance integration, and certificate rotation
-  / revocation handling.
+## STRIDE: Spoofing at boundary B3
+
+The threat is a bearer token copied from one device and replayed from another. Mutual TLS alone
+proves only that the caller has some CA-approved certificate. Binding ensures that the token is
+accepted only with the exact certificate originally enrolled for that worker ID. An enrolled
+attacker using a different valid fleet certificate cannot spoof the victim fingerprint with an
+HTTP header.
+
+## Microsoft device identity
+
+The posture mirrors an Intune/Entra managed-device model:
+
+- Intune provisions the device certificate and preferably a hardware-backed key.
+- The private key proves device possession during mutual TLS.
+- The orchestrator binds the application token to that verified certificate.
+- Device compliance and attestation can separately derive the routing trust tier.
+
+Full Entra Conditional Access integration, automated certificate rotation/revocation, and a
+managed front-door topology remain production work.
+
+## Verification
+
+The test suite includes:
+
+- Missing and mismatched certificate rejection.
+- Collision rejection before token rotation.
+- Legacy unbound-ID migration failure.
+- Direct rejection of a spoofed client fingerprint header.
+- A real Uvicorn mutual-TLS integration test proving that the enrolled certificate succeeds and a
+  second CA-valid certificate cannot reuse the token even when it spoofs the victim header.

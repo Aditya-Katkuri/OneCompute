@@ -24,7 +24,7 @@ def test_dashboard_html_wires_the_measurement_beat() -> None:
     assert 'id="measurementCpuRange"' in html
     assert 'id="measurementEmpty"' in html
     # ...and the poll cycle actually fetches the endpoint that feeds them.
-    assert 'fetch("/measurement"' in html
+    assert 'operatorFetch("/measurement"' in html
     # An empty fleet stays calm instead of rendering a hollow "0-0%".
     assert "Awaiting measurement profiles" in html
 

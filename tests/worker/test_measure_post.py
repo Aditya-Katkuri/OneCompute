@@ -1,10 +1,8 @@
 """Tests for the worker's opt-in measurement upload: WorkerAgent.report_profile and the
 run_measure_loop wiring that calls it.
 
-report_profile must send ONLY populated (n>0) hour-of-week buckets with their derived stats, be
-offline-safe (never raise; return False when unregistered or when the POST fails), and the measure
-loop must invoke it (first sample + on exit) so the central fleet view populates without ever
-running a job. Hermetic: fake httpx transport, stub profiler, no real network or sleeps.
+report_profile must send only one compact derived summary, never per-hour buckets or idle/presence
+data. It remains offline-safe, and the measurement loop invokes it without ever running a job.
 """
 from __future__ import annotations
 
@@ -17,6 +15,7 @@ from contracts import (
     ProfileReport,
     RegisterResponse,
 )
+from measurement.availability import AvailabilityTracker
 from worker import __main__ as wm
 from worker.agent import WorkerAgent
 from worker.profiler import BUCKETS, BucketStat
@@ -30,6 +29,7 @@ class _StubProfiler:
     def __init__(self, buckets: list[BucketStat] | None = None) -> None:
         self.buckets = buckets if buckets is not None else []
         self.records: list[tuple[float, float, float]] = []
+        self.availability = AvailabilityTracker()
 
     def record(self, cpu: float, gpu: float, ram: float, when=None, on_ac=None, idle=None) -> None:
         self.records.append((cpu, gpu, ram))
@@ -46,7 +46,11 @@ def _capture_app() -> tuple[FastAPI, dict]:
     @app.post("/profile")
     def profile(req: ProfileReport) -> dict:
         captured["report"] = req.model_dump()
-        return ProfileIngestResponse(accepted=True, buckets_stored=len(req.buckets)).model_dump()
+        return ProfileIngestResponse(
+            accepted=True,
+            coverage_buckets=req.coverage_buckets,
+            buckets_stored=0,
+        ).model_dump()
 
     return app, captured
 
@@ -56,7 +60,7 @@ def _agent(app: FastAPI) -> WorkerAgent:
     return WorkerAgent("http://test", Capability(worker_id="w1"), client=client)
 
 
-def test_report_profile_posts_only_populated_buckets() -> None:
+def test_report_profile_posts_only_compact_summary() -> None:
     app, captured = _capture_app()
     agent = _agent(app)
     try:
@@ -68,16 +72,24 @@ def test_report_profile_posts_only_populated_buckets() -> None:
         buckets[100] = BucketStat(
             n=3, cpu_mean=30, cpu_max=38, gpu_mean=0, gpu_max=0, ram_mean=50, ram_max=55
         )
-        ok = agent.report_profile(_StubProfiler(buckets))
+        profiler = _StubProfiler(buckets)
+        profiler.availability.observed_seconds = 3600
+        profiler.availability.unavailable_seconds = 3600
+        profiler.availability.sample_count = 120
+        ok = agent.report_profile(profiler, device_class="devbox")
     finally:
         agent.close()
 
     assert ok is True
     assert captured["report"]["worker_id"] == "w1"
-    sent = {b["index"]: b for b in captured["report"]["buckets"]}
-    assert set(sent) == {5, 100}  # only the populated buckets, carrying their hour-of-week index
-    assert sent[5]["cpu_mean"] == 20 and sent[5]["ram_max"] == 50
-    assert sent[100]["cpu_mean"] == 30
+    assert captured["report"]["device_class"] == "devbox"
+    assert captured["report"]["coverage_buckets"] == 2
+    assert captured["report"]["cpu"]["avg"] == 25
+    assert captured["report"]["cpu"]["peak"] == 38
+    assert captured["report"]["ram_avg"] == 45
+    assert captured["report"]["availability"]["sample_count"] == 120
+    assert "buckets" not in captured["report"]
+    assert "idle" not in str(captured["report"]).lower()
 
 
 def test_report_profile_unregistered_returns_false_without_posting() -> None:
@@ -115,8 +127,9 @@ class _MeasureSpy:
         self.capability = Capability(worker_id="w1", has_gpu=False)
         self.reports = 0
 
-    def report_profile(self, profiler) -> bool:
+    def report_profile(self, profiler, *, device_class: str = "unknown") -> bool:
         self.reports += 1
+        assert device_class == "laptop"
         return True
 
 
@@ -138,7 +151,14 @@ def test_run_measure_loop_uploads_the_profile(monkeypatch, tmp_path) -> None:
     governor = _StubGovernor()
     telem = PilotTelemetry("w1", path=tmp_path / "t.jsonl", enabled=False)
 
-    samples = wm.run_measure_loop(agent, governor, telem, interval=0.0, once=True)
+    samples = wm.run_measure_loop(
+        agent,
+        governor,
+        telem,
+        interval=0.0,
+        once=True,
+        device_class="laptop",
+    )
 
     assert samples == 1
     # the live reading was folded into the (stub) profiler and the envelope was uploaded

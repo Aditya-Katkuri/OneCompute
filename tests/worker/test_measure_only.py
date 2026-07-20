@@ -1,21 +1,16 @@
 """Tests for the measurement-only worker mode (--measure-only).
 
-The whole point of measure-only is a zero-risk "measure first, run workloads later" pilot: the
-worker must fold this machine's live CPU/GPU/RAM into the on-device profile and stream usage for
-the dashboard, but it must NEVER pull or run a job. These tests prove exactly that -- no
-poll_once/run_once/run_guarded/run_job (and no admission/yield decision) is ever called, the
-orchestrator's /jobs/next is never hit, the profile learns + persists (including on Ctrl-C), a
-"measure" telemetry record is written, and the loop terminates cleanly on both --once and Ctrl-C.
-Hermetic: fake httpx transport, no real network, no real sleeps.
+The worker folds live CPU/GPU/RAM into the on-device profile, but it never pulls a job, streams live
+utilization, or writes a timestamped sample timeline. The compact profile upload remains allowed.
 """
 from __future__ import annotations
 
 import json
-import threading
 import time
 from datetime import UTC, datetime
 
 import httpx
+import pytest
 from fastapi import FastAPI, Response
 
 from contracts import (
@@ -58,7 +53,7 @@ class _SpyAgent:
         self.job_calls: list[str] = []
         self.profile_reports = 0
 
-    def report_profile(self, profiler) -> bool:
+    def report_profile(self, profiler, *, device_class: str = "unknown") -> bool:
         # Uploading the on-device envelope is an ALLOWED measure-only action (no job runs), so
         # this records the call rather than failing like the job paths below.
         self.profile_reports += 1
@@ -103,18 +98,26 @@ def _pin_samples(tmp_path, monkeypatch, *, cpu: float, gpu: float, ram: float) -
 def _fake_orchestrator(approved: bool = True) -> tuple[FastAPI, dict]:
     """A minimal in-process orchestrator. /jobs/next flips a flag so a pull can be detected."""
     app = FastAPI()
-    state = {"registered": 0, "heartbeats": 0, "pulled": False}
+    state = {
+        "registered": 0,
+        "registrations": [],
+        "heartbeats": 0,
+        "heartbeat_payloads": [],
+        "pulled": False,
+    }
 
     @app.post("/register")
-    def register(_: Capability) -> dict:
+    def register(capability: Capability) -> dict:
         state["registered"] += 1
+        state["registrations"].append(capability.model_dump())
         return RegisterResponse(
             worker_token="t", approved=approved, device_code="AB-12"
         ).model_dump()
 
     @app.post("/heartbeat")
-    def heartbeat(_: HeartbeatRequest) -> dict:
+    def heartbeat(request: HeartbeatRequest) -> dict:
         state["heartbeats"] += 1
+        state["heartbeat_payloads"].append(request.model_dump())
         return HeartbeatResponse(approved=approved).model_dump()
 
     @app.get("/jobs/next", response_model=None)
@@ -125,7 +128,7 @@ def _fake_orchestrator(approved: bool = True) -> tuple[FastAPI, dict]:
     return app, state
 
 
-def test_measure_loop_records_logs_and_never_runs_a_job(tmp_path, monkeypatch) -> None:
+def test_measure_loop_records_without_timeline_and_never_runs_a_job(tmp_path, monkeypatch) -> None:
     agent = _SpyAgent(has_gpu=True)
     governor = _pin_samples(tmp_path, monkeypatch, cpu=20.0, gpu=30.0, ram=40.0)
     telem = PilotTelemetry("measure-1", path=tmp_path / "telem.jsonl")
@@ -141,14 +144,8 @@ def test_measure_loop_records_logs_and_never_runs_a_job(tmp_path, monkeypatch) -
     assert bucket.ram_mean == 40.0
     assert governor.profiler.availability.first_sample_at > 0.0
 
-    # a local "measure" telemetry record captured the same live readings
-    lines = (tmp_path / "telem.jsonl").read_text(encoding="utf-8").strip().splitlines()
-    assert len(lines) == 1
-    record = json.loads(lines[0])
-    assert record["event"] == "measure"
-    assert record["cpu"] == 20.0
-    assert record["gpu"] == 30.0
-    assert record["ram"] == 40.0
+    # Measurement mode never creates a timestamped per-sample telemetry file.
+    assert not (tmp_path / "telem.jsonl").exists()
 
     # the whole point of measure-only: no job was ever pulled or executed
     assert agent.job_calls == []
@@ -269,54 +266,73 @@ def test_measure_loop_survives_transient_sample_errors(tmp_path, monkeypatch) ->
     assert agent.job_calls == []
 
 
-def test_main_measure_only_once_engages_heartbeat_and_pulls_no_jobs(tmp_path, monkeypatch) -> None:
+def test_main_measure_only_once_avoids_live_heartbeat_and_pulls_no_jobs(
+    tmp_path, monkeypatch
+) -> None:
     app, state = _fake_orchestrator()
 
-    def _make_agent(url, capability, isolated=False, **_):
+    def _make_agent(url, capability, isolated=False, **kwargs):
         client = httpx.Client(transport=httpx.ASGITransport(app=app), base_url=url)
-        return WorkerAgent(url, capability, client=client, isolated=isolated)
+        return WorkerAgent(
+            url,
+            capability,
+            client=client,
+            isolated=isolated,
+            measurement_only=kwargs.get("measurement_only", False),
+        )
 
     monkeypatch.setattr(wm, "WorkerAgent", _make_agent)
-    monkeypatch.setattr(
-        wm, "detect_capability", lambda: Capability(worker_id="measure-1", has_gpu=False)
-    )
+    observed_ids: list[str | None] = []
+
+    def detect(worker_id=None):
+        observed_ids.append(worker_id)
+        return Capability(worker_id=worker_id or "measure-1", has_gpu=False)
+
+    monkeypatch.setattr(wm, "detect_capability", detect)
     monkeypatch.setattr(wm, "system_ram_load_pct", lambda: 42.0)
     if wm.psutil is not None:
         monkeypatch.setattr(wm.psutil, "cpu_percent", lambda interval=None: 5.0)
 
     started = {"n": 0}
 
-    def spy_start_heartbeat(agent, period_s: float = 1.0) -> threading.Event:
+    def spy_start_heartbeat(agent, period_s: float = 1.0):
         started["n"] += 1
-        return threading.Event()
+        raise AssertionError("measurement mode must not stream live usage")
 
     monkeypatch.setattr(wm, "_start_usage_heartbeat", spy_start_heartbeat)
 
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))  # redirect profile + telemetry to tmp
-    monkeypatch.setattr("sys.argv", ["worker", "--url", "http://test", "--measure-only", "--once"])
+    monkeypatch.setattr("sys.argv", ["worker", "--url", "https://test", "--measure-only", "--once"])
 
     wm.main()
 
-    # the live usage-heartbeat path is engaged in measure-only mode
-    assert started["n"] == 1
+    assert started["n"] == 0
     # the device joined the fleet so it appears in the dashboard
     assert state["registered"] == 1
+    registration = state["registrations"][0]
+    assert registration["measurement_only"] is True
+    assert registration["free_ram_gb"] is None
+    assert registration["has_gpu"] is False
     # the whole point: no job was ever pulled
     assert state["pulled"] is False
 
-    # the profile persisted on exit and a "measure" telemetry record was written locally
+    # The profile and pseudonymous identity persist, but no measurement timeline is created.
     profile_path = tmp_path / "OneCompute" / "usage_profile.json"
     telem_path = tmp_path / "OneCompute" / "pilot-telemetry.jsonl"
     assert profile_path.exists()
-    records = [json.loads(line) for line in telem_path.read_text(encoding="utf-8").splitlines()]
-    assert any(rec["event"] == "measure" for rec in records)
+    assert not telem_path.exists()
+    identity = (tmp_path / "OneCompute" / "observer-id").read_text(encoding="utf-8").strip()
+    assert identity.startswith("observer-")
+    assert observed_ids == [identity]
 
 
 def test_main_local_measurement_bootstraps_profile_availability_from_telemetry(
     tmp_path, monkeypatch
 ) -> None:
     monkeypatch.setattr(
-        wm, "detect_capability", lambda: Capability(worker_id="measure-1", has_gpu=False)
+        wm,
+        "detect_capability",
+        lambda worker_id=None: Capability(worker_id=worker_id or "measure-1", has_gpu=False),
     )
     monkeypatch.setattr(wm, "system_ram_load_pct", lambda: 42.0)
     if wm.psutil is not None:
@@ -350,18 +366,25 @@ def test_main_measure_only_continuous_saves_profile_on_ctrl_c(tmp_path, monkeypa
     # must still be persisted by main()'s finally block and no job may ever be pulled.
     app, state = _fake_orchestrator()
 
-    def _make_agent(url, capability, isolated=False, **_):
+    def _make_agent(url, capability, isolated=False, **kwargs):
         client = httpx.Client(transport=httpx.ASGITransport(app=app), base_url=url)
-        return WorkerAgent(url, capability, client=client, isolated=isolated)
+        return WorkerAgent(
+            url,
+            capability,
+            client=client,
+            isolated=isolated,
+            measurement_only=kwargs.get("measurement_only", False),
+        )
 
     monkeypatch.setattr(wm, "WorkerAgent", _make_agent)
     monkeypatch.setattr(
-        wm, "detect_capability", lambda: Capability(worker_id="measure-1", has_gpu=False)
+        wm,
+        "detect_capability",
+        lambda worker_id=None: Capability(worker_id=worker_id or "measure-1", has_gpu=False),
     )
     monkeypatch.setattr(wm, "system_ram_load_pct", lambda: 55.0)
     if wm.psutil is not None:
         monkeypatch.setattr(wm.psutil, "cpu_percent", lambda interval=None: 7.0)
-    monkeypatch.setattr(wm, "_start_usage_heartbeat", lambda agent, period_s=1.0: threading.Event())
 
     def raise_ctrl_c(_seconds: float) -> None:
         raise KeyboardInterrupt  # end the continuous loop after its first sample
@@ -369,7 +392,7 @@ def test_main_measure_only_continuous_saves_profile_on_ctrl_c(tmp_path, monkeypa
     monkeypatch.setattr(time, "sleep", raise_ctrl_c)
 
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    monkeypatch.setattr("sys.argv", ["worker", "--url", "http://test", "--measure-only"])
+    monkeypatch.setattr("sys.argv", ["worker", "--url", "https://test", "--measure-only"])
 
     wm.main()  # must return (not hang) after Ctrl-C
 
@@ -382,28 +405,37 @@ def test_main_measure_only_once_does_not_hang_when_fleet_gated(tmp_path, monkeyp
     # A gated fleet (approval required) must not hang under --once: a single heartbeat, then exit.
     app, state = _fake_orchestrator(approved=False)
 
-    def _make_agent(url, capability, isolated=False, **_):
+    def _make_agent(url, capability, isolated=False, **kwargs):
         client = httpx.Client(transport=httpx.ASGITransport(app=app), base_url=url)
-        return WorkerAgent(url, capability, client=client, isolated=isolated)
+        return WorkerAgent(
+            url,
+            capability,
+            client=client,
+            isolated=isolated,
+            measurement_only=kwargs.get("measurement_only", False),
+        )
 
     monkeypatch.setattr(wm, "WorkerAgent", _make_agent)
     monkeypatch.setattr(
-        wm, "detect_capability", lambda: Capability(worker_id="measure-1", has_gpu=False)
+        wm,
+        "detect_capability",
+        lambda worker_id=None: Capability(worker_id=worker_id or "measure-1", has_gpu=False),
     )
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    monkeypatch.setattr("sys.argv", ["worker", "--url", "http://test", "--measure-only", "--once"])
+    monkeypatch.setattr("sys.argv", ["worker", "--url", "https://test", "--measure-only", "--once"])
 
     wm.main()  # must return promptly, not block on approval
 
     assert state["registered"] == 1
     assert state["heartbeats"] >= 1  # sent the single approval heartbeat
+    assert all(payload["free_ram_gb"] is None for payload in state["heartbeat_payloads"])
+    assert all(payload["cpu_pct"] == 0.0 for payload in state["heartbeat_payloads"])
     assert state["pulled"] is False  # still never pulls a job
     # never reached the measurement loop, so no local telemetry file was written
     assert not (tmp_path / "OneCompute" / "pilot-telemetry.jsonl").exists()
 
 
-def test_usage_heartbeat_streams_live_usage_to_orchestrator() -> None:
-    # The exact call the measure-only usage loop makes each tick must be reachable + never pull.
+def test_job_mode_usage_heartbeat_call_remains_available() -> None:
     app, state = _fake_orchestrator()
     client = httpx.Client(transport=httpx.ASGITransport(app=app), base_url="http://test")
     agent = WorkerAgent("http://test", Capability(worker_id="measure-1"), client=client)
@@ -435,27 +467,72 @@ def test_main_measure_only_writes_to_the_custom_profile_path(tmp_path, monkeypat
     # into one folder for a single aggregate readout (multi-person pilot).
     app, _state = _fake_orchestrator()
 
-    def _make_agent(url, capability, isolated=False, **_):
+    def _make_agent(url, capability, isolated=False, **kwargs):
         client = httpx.Client(transport=httpx.ASGITransport(app=app), base_url=url)
-        return WorkerAgent(url, capability, client=client, isolated=isolated)
+        return WorkerAgent(
+            url,
+            capability,
+            client=client,
+            isolated=isolated,
+            measurement_only=kwargs.get("measurement_only", False),
+        )
 
     monkeypatch.setattr(wm, "WorkerAgent", _make_agent)
     monkeypatch.setattr(
-        wm, "detect_capability", lambda: Capability(worker_id="measure-1", has_gpu=False)
+        wm,
+        "detect_capability",
+        lambda worker_id=None: Capability(worker_id=worker_id or "measure-1", has_gpu=False),
     )
     monkeypatch.setattr(wm, "system_ram_load_pct", lambda: 42.0)
     if wm.psutil is not None:
         monkeypatch.setattr(wm.psutil, "cpu_percent", lambda interval=None: 5.0)
-    monkeypatch.setattr(wm, "_start_usage_heartbeat", lambda agent, period_s=1.0: threading.Event())
 
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))  # where the DEFAULT profile would land
     custom = tmp_path / "alice.json"
     monkeypatch.setattr(
         "sys.argv",
-        ["worker", "--url", "http://test", "--measure-only", "--once", "--profile", str(custom)],
+        ["worker", "--url", "https://test", "--measure-only", "--once", "--profile", str(custom)],
     )
 
     wm.main()
 
     assert custom.exists()  # wrote to the named profile
     assert not (tmp_path / "OneCompute" / "usage_profile.json").exists()  # not the default location
+
+
+def test_remote_measurement_http_is_rejected(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        ["worker", "--url", "http://pilot.example", "--measure-only", "--once"],
+    )
+
+    with pytest.raises(SystemExit):
+        wm.main()
+
+
+def test_remote_measurement_http_is_rejected_case_insensitively(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        ["worker", "--url", "HTTP://pilot.example", "--measure-only", "--once"],
+    )
+
+    with pytest.raises(SystemExit):
+        wm.main()
+
+
+def test_tls_material_on_http_is_rejected(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "worker",
+            "--url",
+            "http://127.0.0.1:8080",
+            "--measure-only",
+            "--once",
+            "--tls-ca",
+            "ca.pem",
+        ],
+    )
+
+    with pytest.raises(SystemExit):
+        wm.main()

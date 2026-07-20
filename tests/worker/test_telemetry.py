@@ -29,3 +29,15 @@ def test_disabled_is_noop(tmp_path):
 def test_never_raises_on_unwritable_path():
     # A bad drive/path must not raise: it degrades to a silent no-op.
     PilotTelemetry("w1", path="Z:/no/such/dir/t.jsonl").log("tick", x=1)
+
+
+def test_rotates_bounded_debug_telemetry(tmp_path):
+    path = tmp_path / "t.jsonl"
+    telemetry = PilotTelemetry("w1", path=path, max_bytes=1024, backups=1)
+
+    for index in range(40):
+        telemetry.log("tick", index=index, payload="x" * 80)
+
+    assert path.exists()
+    assert path.with_name("t.jsonl.1").exists()
+    assert not path.with_name("t.jsonl.2").exists()

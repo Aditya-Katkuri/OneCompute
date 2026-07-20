@@ -7,7 +7,6 @@ import logging
 import threading
 import time
 from datetime import UTC, datetime
-from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
@@ -18,14 +17,17 @@ from contracts import (
     HeartbeatRequest,
     HeartbeatResponse,
     JobAssignment,
+    MetricSummary,
+    ProfileAvailability,
     ProfileReport,
     RegisterResponse,
     ResultRequest,
     ResultResponse,
-    UsageBucket,
     sha256_hex,
 )
 from isolation import IsolationUnavailableError, run_in_isolation
+from measurement.availability import summarize_availability
+from measurement.headroom import normalize_buckets, summarize_profile
 from trust import verify_manifest
 from worker.capability import free_ram_gb as _current_free_ram_gb
 from worker.runner import default_runner
@@ -34,33 +36,6 @@ if TYPE_CHECKING:
     from worker.idle import IdleGate
 
 logger = logging.getLogger(__name__)
-
-# Header name carrying the device's TLS client-certificate fingerprint. In production the
-# mTLS-terminating front end / reverse proxy injects this after verifying the client cert; in
-# this PoC (or behind such a proxy) the worker sends it so a pilot can bind token to device.
-CLIENT_CERT_HEADER = "X-Client-Cert-SHA256"
-
-
-def _client_cert_fingerprint(client_cert_path: str | None) -> str | None:
-    """Return the lowercase hex SHA-256 of the client certificate's DER bytes, or None.
-
-    Best-effort: returns None when no cert is configured or the file cannot be read/parsed, so a
-    worker with no client cert (or a malformed one) simply sends no fingerprint header and keeps
-    working exactly as before. The fingerprint binds this worker's identity to its device key.
-    """
-    if not client_cert_path:
-        return None
-    try:
-        from cryptography.hazmat.primitives.serialization import Encoding
-        from cryptography.x509 import load_pem_x509_certificate
-
-        pem = Path(client_cert_path).read_bytes()
-        der = load_pem_x509_certificate(pem).public_bytes(Encoding.DER)
-        return sha256_hex(der)
-    except Exception as exc:  # missing file, bad PEM, or cryptography absent -> unbound
-        logger.debug("could not compute client-cert fingerprint: %s", exc)
-        return None
-
 
 class WorkerAgent:
     def __init__(
@@ -73,7 +48,7 @@ class WorkerAgent:
         isolated: bool = False,
         require_isolation: bool = False,
         trusted_public_key_hex: str | None = None,
-        client_cert_path: str | None = None,
+        measurement_only: bool = False,
     ) -> None:
         self.base_url = base_url
         self.capability = capability
@@ -89,10 +64,7 @@ class WorkerAgent:
         # Out-of-band trusted signer key (hex). When set, only manifests signed by exactly this
         # key are accepted, so a compromised orchestrator cannot inject a self-signed job.
         self.trusted_public_key_hex = trusted_public_key_hex
-        # Device-identity binding: the SHA-256 DER fingerprint of our TLS client cert, sent on
-        # every authenticated call so a token stays useless without this device's key (STRIDE
-        # Spoofing / B3). None when no client cert is configured (behaves exactly as before).
-        self.client_cert_fingerprint = _client_cert_fingerprint(client_cert_path)
+        self.measurement_only = measurement_only
         self._yield = threading.Event()
         self._job_running = threading.Event()
         self._yield_watcher_stop = threading.Event()
@@ -109,10 +81,6 @@ class WorkerAgent:
         headers = dict(kwargs.get("headers") or {})
         if self.worker_token:
             headers["Authorization"] = f"Bearer {self.worker_token}"
-        # Present the device fingerprint on register AND every authenticated call so the
-        # orchestrator can bind (and later enforce) token-to-device when binding is on.
-        if self.client_cert_fingerprint:
-            headers[CLIENT_CERT_HEADER] = self.client_cert_fingerprint
         if headers:
             kwargs["headers"] = headers
         try:
@@ -145,7 +113,16 @@ class WorkerAgent:
 
     def register(self) -> None:
         try:
-            resp = self._request("POST", "/register", json=self.capability.model_dump())
+            registration_capability = (
+                Capability(worker_id=self.capability.worker_id, measurement_only=True)
+                if self.measurement_only
+                else self.capability
+            )
+            resp = self._request(
+                "POST",
+                "/register",
+                json=registration_capability.model_dump(),
+            )
             register_response = RegisterResponse(**resp.json())
             self.worker_token = register_response.worker_token
             self.poll_interval_s = register_response.poll_interval_s
@@ -313,11 +290,11 @@ class WorkerAgent:
             idle = not (bool(current_job_id) or self._job_running.is_set())
         request = HeartbeatRequest(
             worker_id=self.capability.worker_id,
-            idle=idle,
-            cpu_pct=cpu_pct,
-            gpu_pct=gpu_pct,
-            free_ram_gb=_current_free_ram_gb(),
-            current_job_id=current_job_id,
+            idle=True if self.measurement_only else idle,
+            cpu_pct=0.0 if self.measurement_only else cpu_pct,
+            gpu_pct=None if self.measurement_only else gpu_pct,
+            free_ram_gb=None if self.measurement_only else _current_free_ram_gb(),
+            current_job_id=None if self.measurement_only else current_job_id,
         )
         try:
             resp = self._request("POST", "/heartbeat", json=request.model_dump())
@@ -332,31 +309,42 @@ class WorkerAgent:
             logger.warning("worker heartbeat failed: %s", exc)
             return HeartbeatResponse(ack=False)
 
-    def report_profile(self, profiler: Any) -> bool:
-        """Upload this machine's on-device usage envelope to the orchestrator for the measurement
-        pilot (opt-in). Sends only populated (n>0) hour-of-week buckets carrying derived stats --
-        no raw activity, files, or wall-clock timestamps. Best-effort and offline-safe: returns
-        ``False`` (never raises) when the worker isn't registered or the POST fails, so the pilot
-        keeps learning locally even with no reachable orchestrator."""
+    def report_profile(self, profiler: Any, *, device_class: str = "unknown") -> bool:
+        """Upload one compact derived summary without a per-hour activity or presence pattern."""
         if not self.registered or not self.worker_token:
             return False
-        buckets = [
-            UsageBucket(
-                index=i,
-                n=b.n,
-                cpu_mean=b.cpu_mean,
-                cpu_max=b.cpu_max,
-                gpu_mean=b.gpu_mean,
-                gpu_max=b.gpu_max,
-                ram_mean=b.ram_mean,
-                ram_max=b.ram_max,
-                ac_mean=getattr(b, "ac_mean", 0.0),
-                idle_mean=getattr(b, "idle_mean", 0.0),
-            )
-            for i, b in enumerate(getattr(profiler, "buckets", []))
-            if getattr(b, "n", 0) > 0
-        ]
-        report = ProfileReport(worker_id=self.capability.worker_id, buckets=buckets)
+        local_buckets = normalize_buckets([
+            {
+                "n": int(bucket.n),
+                "cpu_mean": float(bucket.cpu_mean),
+                "cpu_max": float(bucket.cpu_max),
+                "gpu_mean": float(bucket.gpu_mean),
+                "gpu_max": float(bucket.gpu_max),
+                "ram_mean": float(bucket.ram_mean),
+                "ram_max": float(bucket.ram_max),
+                "ac_mean": float(getattr(bucket, "ac_mean", 0.0)),
+                "idle_mean": float(getattr(bucket, "idle_mean", 0.0)),
+            }
+            for bucket in getattr(profiler, "buckets", [])
+        ])
+        summary = summarize_profile({"populated": local_buckets})
+        availability = summarize_availability(profiler.availability)
+        report = ProfileReport(
+            worker_id=self.capability.worker_id,
+            device_class=device_class,
+            coverage_buckets=int(summary["coverage_buckets"]),
+            cpu=MetricSummary(**summary["cpu"]),
+            gpu=MetricSummary(**summary["gpu"]),
+            ram_avg=float(summary["ram"]["avg"]),
+            ram_headroom=float(summary["ram"]["headroom"]),
+            ac_avg=float(summary["ac_avg"]),
+            availability=ProfileAvailability(
+                span_hours=float(availability["span_seconds"]) / 3600.0,
+                observed_hours_per_day=float(availability["observed_hours_per_day"]),
+                unavailable_hours_per_day=float(availability["unavailable_hours_per_day"]),
+                sample_count=int(profiler.availability.sample_count),
+            ),
+        )
         try:
             self._request("POST", "/profile", json=report.model_dump())
             return True

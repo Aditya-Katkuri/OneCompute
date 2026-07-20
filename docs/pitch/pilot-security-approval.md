@@ -11,15 +11,17 @@
 | # | Gate | Owner | Evidence | Status |
 |---|---|---|---|---|
 | G1 | Threat model reviewed; residual risk accepted in writing | Risk-acceptance owner | `OneCompute-Threat-Model.md` section 0 sign-off | |
-| G2 | Pilot device set named and scoped (loaner/controlled first) | MSD | device inventory list | |
+| G2 | Staged 50-100 device set named and scoped; control ring first | MSD | device inventory and ring plan | |
 | G3 | Agent code-signed; publisher + post-sign SHA-256 recorded | Signing owner | signed artifact hash | |
 | G4 | Defender custom-indicator allow-list scoped to pilot devices | MSD / CISO | indicator id + scope | |
 | G5 | WDAC/AppLocker trust or scoped exception in place | MSD | policy entry | |
 | G6 | Purview DLP confirmed for the pilot data class | Privacy/Purview | policy confirmation | |
-| G7 | Legal read complete; consent copy approved | CELA / HR | approved `OneCompute-Pilot-Consent.md` | |
+| G7 | Legal read complete; measurement consent copy approved | CELA / HR | approved `OneCompute-Measurement-Pilot-Consent.md` | |
 | G8 | Orchestrator host hardened and access-controlled | CISO / Azure Security | host baseline | |
 | G9 | Secure worker configuration enforced (section 1) | Pilot lead | run command + env | |
 | G10 | Kill switch tested end to end on a controlled machine | Pilot lead | test log | |
+| G11 | Compact central data contract verified; no hourly/idle pattern or live resource stream | Privacy / CISO | tests plus sample captured request | |
+| G12 | Retention, disconnect erasure, certificate revocation, and local purge tested | Privacy / CISO / pilot lead | deletion evidence | |
 
 If any gate is NO, the pilot does not start.
 
@@ -27,32 +29,52 @@ If any gate is NO, the pilot does not start.
 
 The pilot must run the workers and orchestrator in their hardened modes. These map directly to controls in `soc2-alignment.md`.
 
-**Orchestrator (admission-gated, TLS + mutual TLS + rate limited + submit-gated):**
-```
-uv run python -m orchestrator --require-approval \
-  --tls-cert server.crt --tls-key server.key --tls-client-ca worker-ca.crt \
-  --rate-limit 600 --submit-token <operator-submit-token>
-```
-- `--require-approval` holds every new worker as `approved=0` behind a device code until an operator approves it (`src/orchestrator/app.py:562-571`; `src/contracts/schema.sql:15-16`). This is control CC6.1.
-- `--tls-cert/--tls-key` serve HTTPS; `--tls-client-ca` **requires mutual TLS** so only workers presenting a cert signed by that CA can reach the control plane (`src/orchestrator/__main__.py` via `src/trust/tls.py:server_ssl_kwargs`). This is control CC6.7 and threat-model R9.
-- `--rate-limit` caps requests per minute per client (worker token or IP), returning 429 + Retry-After (`src/orchestrator/ratelimit.py`). This is control A1.2 and threat-model B3 DoS.
-- `--submit-token` (or `$ONECOMPUTE_SUBMIT_TOKEN`) requires an operator bearer token to submit jobs/workloads, so only authorized submitters can queue work (`src/orchestrator/app.py:_require_submit_token`). This is control CC6.1 and threat-model B4.
+**Orchestrator for the measurement pilot:**
+```powershell
+$env:ONECOMPUTE_SUBMIT_TOKEN = Read-Host "Submit token"
+$env:ONECOMPUTE_ADMIN_TOKEN = Read-Host "Admin token"
 
-**Worker (fail-closed isolation + pinned signer + TLS client):**
+uv run python -m orchestrator `
+  --secure-measurement-pilot `
+  --tls-cert C:\OneCompute\pki\server.crt `
+  --tls-key C:\OneCompute\pki\server.key `
+  --tls-client-ca C:\OneCompute\pki\worker-ca.crt `
+  --db C:\OneCompute\data\measurement-pilot.db
 ```
+- The preset fails closed unless HTTPS server identity, a client CA, and distinct submit/admin tokens are present.
+- It enables device-code approval and certificate-fingerprint identity binding.
+- Missing, malformed, unbound, or mismatched device fingerprints are rejected before token rotation.
+- Operator reads and admin mutations require the admin token. Submission requires the separate submit token.
+- The default rate limit remains active.
+
+**Measurement-only worker:**
+```powershell
+uv run python -m worker `
+  --url https://onecompute-pilot.contoso.com:8080 `
+  --measure-only `
+  --no-telemetry `
+  --measurement-device-class laptop `
+  --tls-ca C:\ProgramData\OneCompute\pki\server-ca.crt `
+  --client-cert C:\ProgramData\OneCompute\pki\device.crt `
+  --client-key C:\ProgramData\OneCompute\pki\device.key
+```
+- Measurement mode never pulls or runs a job.
+- It writes the durable local profile but no per-sample measurement timeline.
+- It does not start the one-second live resource heartbeat.
+- It uploads one compact aggregate approximately every five minutes.
+- Each device uses a unique client certificate. No operator token is deployed to the endpoint.
+
+**Contained-execution worker, only after a separate Phase 2 approval:**
+```powershell
 setx ONECOMPUTE_TRUSTED_PUBKEY <hex-of-operator-signing-pubkey>
-uv run python -m worker --url https://<orchestrator-host>:8080 --require-isolation --trusted-key <hex> \
-  --tls-ca server-ca.crt --client-cert worker.crt --client-key worker.key
+uv run python -m worker `
+  --url https://onecompute-pilot.contoso.com:8080 `
+  --require-isolation `
+  --trusted-key <hex> `
+  --tls-ca C:\ProgramData\OneCompute\pki\server-ca.crt `
+  --client-cert C:\ProgramData\OneCompute\pki\device.crt `
+  --client-key C:\ProgramData\OneCompute\pki\device.key
 ```
-- `--require-isolation` makes the worker refuse any job when no OS-enforced sandbox (MXC or Docker) is available, instead of falling back to the unsandboxed subprocess or running host-side GPU/AI unsandboxed (`src/worker/__main__.py:184-190`; `src/isolation/runner.py:579-587`). This is the fail-closed control for threat-model R2/R3.
-- `--trusted-key` / `$ONECOMPUTE_TRUSTED_PUBKEY` pins the operator's out-of-band signer so a compromised control plane cannot inject a self-signed job (`src/worker/__main__.py:192-198`; `src/trust/signing.py:59-65`). This is the control for threat-model R6.
-- `--tls-ca` pins the orchestrator's CA and `--client-cert/--client-key` present the worker's mutual-TLS certificate (`src/trust/tls.py:client_ssl_params`). This is control CC6.7.
-
-**Measurement-only variant (phase 1 of the pilot, see `pilot-plan.md`):**
-```
-uv run python -m worker --url http://<orchestrator-host>:8080 --measure-only
-```
-- Tracks CPU/GPU/RAM only; never pulls or runs a job. Lowest-risk entry point.
 
 **Pre-flight verification (run on each pilot device before it joins):**
 ```
@@ -71,18 +93,18 @@ uv run python -c "from isolation.runner import active_boundary; print(active_bou
 | Signal | Source | Action on trigger |
 |---|---|---|
 | Any Defender / Purview alert on a pilot device | MDE / Purview console | Stop the affected worker; notify security contact; pause pilot; investigate; do not resume until cleared |
-| `auth_failed` spikes | `GET /events` (`app.py:330`) | Investigate token/enrollment; rotate token; check for a spoofed worker |
-| `blacklisted` events | `GET /events` (`app.py:661`) | Review the failed challenge; confirm anti-cheat working as intended |
+| `auth_failed` spikes | authenticated `GET /events` | Investigate token/enrollment; revoke certificate; check for spoofing |
+| Unexpected report values or class changes | `GET /measurement`, inventory, outlier review | Pause expansion; compare with approved endpoint-management data |
 | Perceived slowdown report | Employee channel | Stop worker; re-tune governor margin; re-test on a controlled machine before resuming |
 | Boundary downgrade to `subprocess+jobobject` while running jobs | worker logs (WARNING) | With `--require-isolation` the job is refused; otherwise stop the worker |
 
 ## 4. Kill switch (reversible by design)
 
-1. **Stop the orchestrator.** All workers idle within one poll (no new leases issued).
-2. **Operator disconnect** of any worker requeues its held job immediately (`app.py:577-593`).
-3. **Employee** stops with Ctrl-C or uninstalls the user-space agent (no admin, no kernel driver, no service).
-4. **Remove the Defender allow-list entry** at pilot end.
-5. The only residual artifact on the device is a **local profile file**, deletable on opt-out.
+1. **Stop the orchestrator** or block its listener.
+2. **Operator disconnect** deletes the device's latest central measurement summary.
+3. **Revoke the client certificate** for any affected observer.
+4. **Uninstall** to stop and retain the local profile, or **purge** to stop and delete the profile, legacy telemetry, rotations, and observer ID.
+5. **Remove the Defender allow-list entry** at pilot end.
 
 Tested end-to-end as gate G10 before the pilot starts.
 
@@ -100,5 +122,6 @@ Tested end-to-end as gate G10 before the pilot starts.
 ## 6. Exit criteria (when the pilot ends)
 
 - Time box reached (see `pilot-plan.md`), or any unresolved security/privacy trigger.
-- Kill switch executed; allow-list entry removed; devices returned to baseline.
+- Kill switch executed; certificates revoked; local purge and central deletion evidenced; allow-list entry removed; devices returned to baseline.
+- Pilot database and pseudonymous audit data deleted within the approved window, proposed as 30 days unless an incident hold applies.
 - Findings written up against the threat-model risk register; go/no-go recommendation for a next phase.

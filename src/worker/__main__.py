@@ -7,6 +7,7 @@ import logging
 import os
 import threading
 import time
+from urllib.parse import urlparse
 
 from isolation import active_boundary
 from measurement.availability import availability_tracker_from_telemetry
@@ -15,8 +16,9 @@ from worker.agent import WorkerAgent
 from worker.capability import detect_capability
 from worker.governor import AdaptiveGovernor, system_gpu_load_pct, system_ram_load_pct
 from worker.idle import IdleGate
+from worker.measurement_identity import load_or_create_measurement_id
 from worker.profiler import UsageProfiler
-from worker.telemetry import PilotTelemetry
+from worker.telemetry import PilotTelemetry, default_telemetry_path
 
 try:  # psutil is a declared dependency; guard so the worker still runs without it
     import psutil
@@ -120,13 +122,12 @@ def run_measure_loop(
     interval: float,
     once: bool = False,
     upload: bool = True,
+    device_class: str = "unknown",
 ) -> int:
     """Measurement-only loop for the low-risk pilot: fold this machine's live CPU/GPU/RAM into the
-    on-device usage profile and (if telemetry is on) append a local ``measure`` event each tick.
-    It also **saves the profile locally** and uploads the learned envelope to the orchestrator on
-    the first sample and about every five minutes after (opt-in, best-effort via
-    ``agent.report_profile``), so a reboot or power-loss costs at most one upload window of learning
-    and a failed upload is swallowed so the pilot keeps working with no reachable orchestrator.
+    on-device usage profile. It saves the profile locally and uploads one compact derived summary
+    on the first sample and about every five minutes after. It never writes a timestamped sample
+    timeline and never streams live utilization to the orchestrator.
 
     It **never** pulls or runs a job -- ``poll_once`` / ``run_once`` / ``run_guarded`` / ``run_job``
     are never called -- so an org can run a "measure first, run workloads later" pilot with zero
@@ -172,13 +173,14 @@ def run_measure_loop(
                 record_availability = getattr(governor.profiler, "record_availability", None)
                 if callable(record_availability):
                     record_availability(time.time(), interval or 30.0)
-                telem.log("measure", cpu=round(cpu, 1), gpu=round(gpu, 1), ram=round(ram, 1),
-                          ac=on_ac, idle=idle)
                 samples += 1
                 if samples == 1 or samples % post_every == 0:
                     _persist(governor.profiler)              # local durability: reboot loses <= one window
                     if upload:
-                        agent.report_profile(governor.profiler)  # opt-in, best-effort, offline-safe
+                        agent.report_profile(
+                            governor.profiler,
+                            device_class=device_class,
+                        )
                 print(f"measure: cpu={cpu:.1f}% gpu={gpu:.1f}% ram={ram:.1f}% "
                       f"ac={'Y' if on_ac else 'N'} idle={'Y' if idle else 'N'} (no jobs will run)")
             except KeyboardInterrupt:
@@ -195,7 +197,7 @@ def run_measure_loop(
         # full pilot window even on a clean stop.
         _persist(governor.profiler)
         if upload:
-            agent.report_profile(governor.profiler)
+            agent.report_profile(governor.profiler, device_class=device_class)
     return samples
 
 
@@ -210,6 +212,11 @@ def _adaptive_governor(idle_threshold: float, profile_path: str | None = None) -
     return AdaptiveGovernor(
         profiler=profiler, idle_gate=IdleGate(input_idle_threshold_s=idle_threshold)
     )
+
+
+def _is_loopback_url(url: str) -> bool:
+    host = (urlparse(url).hostname or "").lower()
+    return host in {"localhost", "127.0.0.1", "::1"}
 
 
 def main() -> None:
@@ -266,16 +273,28 @@ def main() -> None:
         "--measure-only",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="Measurement-only pilot: register + stream live CPU/GPU/RAM for the dashboard and "
-             "learn the on-device usage profile, but NEVER pull or run a job. For a low-risk "
-             "'measure first, run workloads later' voluntary pilot.",
+        help="Measurement-only pilot: learn the on-device usage profile and periodically upload "
+             "one compact summary, but NEVER pull jobs, stream live utilization, or write a raw "
+             "sample timeline.",
     )
     parser.add_argument(
         "--measure-interval",
         type=float,
         default=30.0,
         help="Seconds between usage samples folded into the on-device profile in --measure-only "
-             "mode (default 30.0; the live usage heartbeat still streams at --usage-interval)",
+             "mode (default 30.0)",
+    )
+    parser.add_argument(
+        "--measurement-device-class",
+        choices=("laptop", "desktop", "devbox", "xbox", "unknown"),
+        default="unknown",
+        help="Coarse device class included in the compact fleet summary (default unknown).",
+    )
+    parser.add_argument(
+        "--measurement-id",
+        default=None,
+        help="Optional 8-64 character fleet alias. Otherwise a stable random observer ID is "
+             "created locally and no hostname is used for measurement registration.",
     )
     parser.add_argument(
         "--require-isolation",
@@ -313,6 +332,15 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
     if not args.url and not args.measure_only:
         parser.error("--url is required (it is optional only with --measure-only, for a local run)")
+    url_scheme = urlparse(args.url).scheme.lower() if args.url else ""
+    if args.url and url_scheme not in {"http", "https"}:
+        parser.error("--url must use http:// or https://")
+    if args.measure_only and args.url and url_scheme == "http" and not _is_loopback_url(args.url):
+        parser.error("remote measurement uploads require an https:// --url")
+    if args.url and url_scheme != "https" and (
+        args.tls_ca or args.client_cert or args.client_key
+    ):
+        parser.error("TLS material requires an https:// --url")
     client = None
     if args.url:
         try:
@@ -324,25 +352,27 @@ def main() -> None:
             )
         except ValueError as exc:
             parser.error(str(exc))
-        if args.url.startswith("http://") and (args.tls_ca or args.client_cert or args.client_key):
-            logging.warning(
-                "TLS material was provided but --url is http://; TLS options apply only to an https:// URL"
-            )
+    measurement_id = None
+    if args.measure_only:
+        try:
+            measurement_id = load_or_create_measurement_id(requested=args.measurement_id)
+        except (OSError, ValueError) as exc:
+            parser.error(f"could not establish measurement identity: {exc}")
     agent = WorkerAgent(
         args.url or "http://localhost",
-        detect_capability(),
+        detect_capability(worker_id=measurement_id),
         client=client,
         isolated=args.isolated,
         require_isolation=args.require_isolation,
         trusted_public_key_hex=args.trusted_key,
-        client_cert_path=args.client_cert,
+        measurement_only=args.measure_only,
     )
     gate: IdleGate | AdaptiveGovernor | None = None
     usage_stop: threading.Event | None = None
     try:
         if args.measure_only:
             # Low-risk pilot: ONLY track CPU/GPU/RAM, never pull or run a job. With a --url it joins
-            # the fleet so the device appears in the dashboard and streams live usage; WITHOUT a
+            # the fleet so the device appears in the dashboard; WITHOUT a
             # --url it runs fully local (no network at all), recording only to the on-device profile.
             # No admission/yield decision is ever made here: measurement imposes no compute load, so
             # it needs no AC power and never admits work.
@@ -355,23 +385,19 @@ def main() -> None:
                     # with --once send a single heartbeat and exit rather than hang.
                     if not agent.wait_for_approval(once=args.once):
                         return
-                # Stream live usage so the dashboard shows this device + its graph, exactly as the
-                # work loop does. Pure telemetry -- it never leases or runs anything.
-                usage_stop = _start_usage_heartbeat(agent, args.usage_interval)
             else:
                 print("measure-only: LOCAL mode (no --url). Recording CPU/GPU/RAM to the on-device "
                       "profile only; no registration, heartbeat, or upload.")
             # The governor is used ONLY to own + persist the on-device UsageProfiler; its
             # should_run()/active_now() admission+yield paths are intentionally never called.
             gate = _adaptive_governor(args.idle_threshold, args.profile)
-            telem = PilotTelemetry(agent.capability.worker_id, enabled=args.telemetry)
+            telem = PilotTelemetry(agent.capability.worker_id, enabled=False)
             if (
-                args.telemetry
-                and not args.profile
+                not args.profile
                 and gate.profiler.availability.span_seconds <= 0.0
             ):
                 historic = availability_tracker_from_telemetry(
-                    telem.path,
+                    default_telemetry_path(),
                     expected_interval_seconds=args.measure_interval,
                 )
                 if historic.span_seconds > 0.0:
@@ -381,12 +407,18 @@ def main() -> None:
                         "measure-only: restored availability timing from "
                         f"{historic.sample_count} local telemetry samples"
                     )
-            if args.telemetry:
-                print(f"pilot telemetry -> {telem.path}")
-            print(f"measure-only: tracking CPU/GPU/RAM, no jobs will run "
-                  f"(profile: {gate.profiler.path})")
+            print(
+                "measure-only: tracking CPU/GPU/RAM locally, no jobs or sample timeline "
+                f"(profile: {gate.profiler.path}; observer: {agent.capability.worker_id})"
+            )
             run_measure_loop(
-                agent, gate, telem, args.measure_interval, once=args.once, upload=not local_only
+                agent,
+                gate,
+                telem,
+                args.measure_interval,
+                once=args.once,
+                upload=not local_only,
+                device_class=args.measurement_device_class,
             )
             return
 

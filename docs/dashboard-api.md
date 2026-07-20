@@ -2,8 +2,10 @@
 
 Everything a front-end needs to build the operator dashboard. The backend is complete and
 verified; a UI integrates by polling and calling these HTTP endpoints on the orchestrator
-(`python -m orchestrator`, default `http://<host>:8080`). All bodies are JSON. No auth header in
-the PoC; device onboarding is gated by the **approval** flow below.
+(`python -m orchestrator`, local default `http://<host>:8080`). All bodies are JSON. When an
+admin/operator token is configured, operator reads and admin mutations require it. The bundled
+dashboard prompts on the first 401 and keeps the credential only in page memory. Workload
+submission uses the separate submit token when configured.
 
 ## Live polling model
 
@@ -35,16 +37,23 @@ Poll these on a timer (the bundled dashboard uses 500 ms):
     "margin_pct": 25.0, "harvest_low": 0.2, "harvest_high": 0.4,   // the assumptions, echoed
     "cpu": { "avg": 21.9, "peak": 38.0, "recoverable_low": 6.7, "recoverable_high": 13.3 },
     "gpu": { "avg": 5.3,  "peak": 15.0, "recoverable_low": 1.9, "recoverable_high": 3.8 },
-    "ram_avg": 37.3, "ram_headroom": 62.7
+    "ram_avg": 37.3, "ram_headroom": 62.7, "ac_avg": 71.0,
+    "observed_hours_per_day": 9.1, "unavailable_hours_per_day": 14.9,
+    "timing_span_hours": 168.0,
+    "device_classes": { "laptop": 2, "devbox": 1 }
   }
   ```
   All values are percentages. `recoverable_low`/`recoverable_high` is an ESTIMATE (measured spare, with the governor comfort margin reserved and a conservative 20-40% harvest), never a promise; `device_count` counts only devices that have uploaded a profile. Empty fleet → every figure `0`. Render it as a "Measured idle headroom" beat (see `docs/measurement-pilot.md`).
 
-**Worker-ingest note (not a dashboard call):** `POST /profile` is how a `--measure-only` worker uploads its usage envelope. It requires the worker's bearer token (same auth as `/heartbeat`), carries only derived hour-of-week statistics (no raw activity), and the orchestrator sanitizes/clamps every value before storing one row per worker. A dashboard never calls it; it only reads the rolled-up `GET /measurement`.
+**Worker-ingest note (not a dashboard call):** `POST /profile` requires the worker bearer token and,
+in the sanctioned pilot, the matching verified client-certificate fingerprint. A current worker
+sends one compact pseudonymous summary. It sends no hour-of-week buckets, idle/away field, raw
+timestamps, hostname by default, or live resource stream. The orchestrator clamps every field and
+stores only the latest summary. Legacy bucket reports are collapsed in memory and discarded.
 
 ## 1. Connect / approve new devices
 
-A laptop/dev box joins with `python -m worker --url http://<host>:8080`. If the orchestrator was
+A laptop/dev box joins with `python -m worker --url https://<host>:8080`. If the orchestrator was
 started with `--require-approval`, the new worker shows up in `/state` with `approved=false` and a
 `device_code`. Approve it:
 
@@ -55,10 +64,12 @@ its `device_code` + an Approve button calling this endpoint.
 
 ## 2. Show connected devices + usage graphs
 
-Read the `workers` array from `GET /state`. Each worker carries live **`cpu_pct`**, **`gpu_pct`**
-(`null` on non-GPU machines), and **`free_ram_gb`**: the worker streams these every ~1 s
-(tunable via the worker's `--usage-interval`, floored at 0.25 s), so a UI that keeps a rolling
-per-`worker_id` history can draw a live usage sparkline/graph per device.
+Read the `workers` array from `GET /state`. A normal job-capable worker carries live
+**`cpu_pct`**, **`gpu_pct`** (`null` on non-GPU machines), and **`free_ram_gb`** and streams those
+approximately every second. A `--measure-only` worker deliberately does not start that live
+resource heartbeat. Its liveness comes from registration, approval heartbeats while pending, and
+periodic compact profile updates, so measurement mode does not create a central live-activity
+trace.
 `busy` (has a leased job) and `idle` drive the tile state; `credits` is the reward tally
 (GPU machines earn 5×).
 

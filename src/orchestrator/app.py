@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from hmac import compare_digest
 from uuid import uuid4
 
-from fastapi import FastAPI, Header, HTTPException, Response
+from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from contracts import (
@@ -48,11 +48,11 @@ from measurement.headroom import (
     DEFAULT_HARVEST_HIGH,
     DEFAULT_HARVEST_LOW,
     DEFAULT_MARGIN_PCT,
-    aggregate,
     normalize_buckets,
     summarize_profile,
 )
 from orchestrator.db import open_serialized_db, write_lock
+from orchestrator.mtls_protocol import CLIENT_CERT_SCOPE_KEY
 from orchestrator.ratelimit import RateLimiter, client_key
 from orchestrator.routing_policy import TIERS, classification_cleared, is_valid_tier
 from orchestrator.scheduler import class_weight_for, pick_job_for
@@ -380,6 +380,19 @@ def _worker_or_404(conn: sqlite3.Connection, worker_id: str) -> sqlite3.Row:
     return worker
 
 
+def _verified_client_fingerprint(request: Request) -> str | None:
+    """Read only the fingerprint injected from the verified TLS peer certificate."""
+    value = request.scope.get(CLIENT_CERT_SCOPE_KEY)
+    if not isinstance(value, str):
+        return None
+    fingerprint = value.strip().lower()
+    if len(fingerprint) != 64 or any(
+        character not in "0123456789abcdef" for character in fingerprint
+    ):
+        return None
+    return fingerprint
+
+
 def _require_worker_token(
     conn: sqlite3.Connection,
     worker_id: str,
@@ -390,10 +403,9 @@ def _require_worker_token(
     """Authenticate an authenticated worker call by its bearer token, and (when device-identity
     binding is on and the worker registered a fingerprint) also by its TLS client-cert fingerprint.
 
-    The device fingerprint is the lowercase hex SHA-256 of the client certificate's DER bytes,
-    presented in the ``X-Client-Cert-SHA256`` header. This is the STRIDE Spoofing (boundary B3)
-    control: it binds worker identity to the device key so a stolen bearer token alone cannot
-    impersonate the worker. When binding is off (the default) behavior is exactly as before.
+    The device fingerprint is the lowercase hex SHA-256 of the verified TLS peer certificate,
+    injected into the ASGI scope by ``VerifiedClientCertH11Protocol``. Client-supplied headers are
+    never trusted. This binds worker identity to possession of the device private key.
     """
     worker = conn.execute(
         "SELECT * FROM workers WHERE worker_id = ?",
@@ -556,6 +568,187 @@ def _sanitize_profile_buckets(buckets: list[UsageBucket]) -> list[dict]:
     return clean
 
 
+def _clamp_nonnegative(value: object, *, maximum: float) -> float:
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.0
+    if number != number:
+        return 0.0
+    return max(0.0, min(maximum, number))
+
+
+def _field(value: object, name: str, default: object = 0.0) -> object:
+    if isinstance(value, dict):
+        return value.get(name, default)
+    return getattr(value, name, default)
+
+
+def _sanitize_metric(value: object) -> dict[str, float]:
+    avg = _clamp_pct(_field(value, "avg"))
+    peak = max(avg, _clamp_pct(_field(value, "peak")))
+    low = _clamp_pct(_field(value, "recoverable_low"))
+    high = _clamp_pct(_field(value, "recoverable_high"))
+    return {
+        "avg": avg,
+        "peak": peak,
+        "recoverable_low": min(low, high),
+        "recoverable_high": max(low, high),
+    }
+
+
+def _sanitize_availability(value: object) -> dict[str, float | int]:
+    span_hours = _clamp_nonnegative(_field(value, "span_hours"), maximum=24.0 * 400.0)
+    observed = _clamp_nonnegative(
+        _field(value, "observed_hours_per_day"),
+        maximum=24.0,
+    )
+    unavailable = _clamp_nonnegative(
+        _field(value, "unavailable_hours_per_day"),
+        maximum=24.0,
+    )
+    if observed + unavailable > 24.0:
+        scale = 24.0 / (observed + unavailable)
+        observed *= scale
+        unavailable *= scale
+    try:
+        sample_count = max(0, min(10_000_000, int(_field(value, "sample_count", 0))))
+    except (TypeError, ValueError, OverflowError):
+        sample_count = 0
+    if span_hours <= 0.0:
+        observed = 0.0
+        unavailable = 0.0
+        sample_count = 0
+    return {
+        "span_hours": span_hours,
+        "observed_hours_per_day": observed,
+        "unavailable_hours_per_day": unavailable,
+        "sample_count": sample_count,
+    }
+
+
+def _compact_from_legacy_buckets(
+    buckets: list[dict],
+    *,
+    device_class: str = "unknown",
+) -> dict:
+    summary = summarize_profile({"populated": normalize_buckets(buckets)})
+    return {
+        "version": 2,
+        "device_class": device_class,
+        "coverage_buckets": int(summary["coverage_buckets"]),
+        "cpu": _sanitize_metric(summary["cpu"]),
+        "gpu": _sanitize_metric(summary["gpu"]),
+        "ram_avg": _clamp_pct(summary["ram"]["avg"]),
+        "ram_headroom": _clamp_pct(summary["ram"]["headroom"]),
+        "ac_avg": _clamp_pct(summary["ac_avg"]),
+        "availability": _sanitize_availability({}),
+    }
+
+
+def _sanitize_profile_report(report: ProfileReport) -> dict:
+    if report.buckets:
+        return _compact_from_legacy_buckets(
+            _sanitize_profile_buckets(report.buckets),
+            device_class=report.device_class,
+        )
+    coverage = max(0, min(BUCKETS_PER_WEEK, int(report.coverage_buckets)))
+    ram_avg = _clamp_pct(report.ram_avg)
+    return {
+        "version": 2,
+        "device_class": report.device_class,
+        "coverage_buckets": coverage,
+        "cpu": _sanitize_metric(report.cpu),
+        "gpu": _sanitize_metric(report.gpu),
+        "ram_avg": ram_avg,
+        "ram_headroom": max(0.0, 100.0 - ram_avg),
+        "ac_avg": _clamp_pct(report.ac_avg),
+        "availability": _sanitize_availability(report.availability),
+    }
+
+
+def _decode_stored_profile(value: object) -> dict | None:
+    if isinstance(value, list):
+        return _compact_from_legacy_buckets(value)
+    if not isinstance(value, dict):
+        return None
+    coverage = max(
+        0,
+        min(BUCKETS_PER_WEEK, int(_clamp_nonnegative(value.get("coverage_buckets"), maximum=168))),
+    )
+    ram_avg = _clamp_pct(value.get("ram_avg", 0.0))
+    device_class = value.get("device_class", "unknown")
+    if device_class not in {"laptop", "desktop", "devbox", "xbox", "unknown"}:
+        device_class = "unknown"
+    return {
+        "version": 2,
+        "device_class": device_class,
+        "coverage_buckets": coverage,
+        "cpu": _sanitize_metric(value.get("cpu", {})),
+        "gpu": _sanitize_metric(value.get("gpu", {})),
+        "ram_avg": ram_avg,
+        "ram_headroom": max(0.0, 100.0 - ram_avg),
+        "ac_avg": _clamp_pct(value.get("ac_avg", 0.0)),
+        "availability": _sanitize_availability(value.get("availability", {})),
+    }
+
+
+def _average(values: list[float]) -> float:
+    return sum(values) / len(values) if values else 0.0
+
+
+def _aggregate_compact_profiles(profiles: list[dict]) -> dict:
+    contributing = [p for p in profiles if p["coverage_buckets"] > 0]
+    total_coverage = sum(p["coverage_buckets"] for p in profiles)
+    device_classes: dict[str, int] = {}
+    for profile in contributing:
+        name = profile["device_class"]
+        device_classes[name] = device_classes.get(name, 0) + 1
+
+    def metric(name: str) -> dict[str, float]:
+        if not contributing:
+            return {
+                "avg": 0.0,
+                "peak": 0.0,
+                "recoverable_low": 0.0,
+                "recoverable_high": 0.0,
+            }
+        return {
+            "avg": _average([p[name]["avg"] for p in contributing]),
+            "peak": max(p[name]["peak"] for p in contributing),
+            "recoverable_low": _average(
+                [p[name]["recoverable_low"] for p in contributing]
+            ),
+            "recoverable_high": _average(
+                [p[name]["recoverable_high"] for p in contributing]
+            ),
+        }
+
+    timed = [
+        p["availability"]
+        for p in contributing
+        if p["availability"]["span_hours"] > 0.0
+    ]
+    ram_avg = _average([p["ram_avg"] for p in contributing])
+    return {
+        "device_count": len(contributing),
+        "total_coverage_buckets": total_coverage,
+        "cpu": metric("cpu"),
+        "gpu": metric("gpu"),
+        "ram_avg": ram_avg,
+        "ram_headroom": max(0.0, 100.0 - ram_avg) if contributing else 0.0,
+        "ac_avg": _average([p["ac_avg"] for p in contributing]),
+        "observed_hours_per_day": _average(
+            [p["observed_hours_per_day"] for p in timed]
+        ),
+        "unavailable_hours_per_day": _average(
+            [p["unavailable_hours_per_day"] for p in timed]
+        ),
+        "timing_span_hours": _average([p["span_hours"] for p in timed]),
+        "device_classes": device_classes,
+    }
+
+
 def create_app(
     db_path: str = ":memory:",
     signer=None,
@@ -620,6 +813,17 @@ def create_app(
         _emit(conn, "auth_failed", detail=f"admin: {detail}")
         raise HTTPException(status_code=401, detail=detail)
 
+    def _require_operator_read_token(authorization: str | None) -> None:
+        """Protect operator read surfaces when a dedicated admin credential is configured.
+
+        A deployment with only the legacy submit token keeps its historical read behavior. The
+        secure measurement preset requires a distinct admin token, so sanctioned fleet reads are
+        always authenticated.
+        """
+        if admin_token is None:
+            return
+        _require_admin_token(authorization)
+
     def _authenticate_foundry_tenant(
         tenant_id: str, authorization: str | None
     ) -> FoundryTenant:
@@ -677,9 +881,17 @@ def create_app(
 
     @app.post("/register", response_model=RegisterResponse)
     def register(
+        request: Request,
         cap: Capability,
-        x_client_cert_sha256: str | None = Header(default=None, alias="X-Client-Cert-SHA256"),
     ) -> RegisterResponse:
+        if cap.measurement_only:
+            cap = Capability(worker_id=cap.worker_id, measurement_only=True)
+        cert_fingerprint = _verified_client_fingerprint(request)
+        if bind_device_identity and not cert_fingerprint:
+            raise HTTPException(
+                status_code=401,
+                detail="verified client certificate fingerprint required",
+            )
         token = uuid4().hex
         now = _now()
         weight = class_weight_for(cap)
@@ -689,10 +901,25 @@ def create_app(
         # Device-identity binding (opt-in): when on and the mTLS front end / proxy (or this PoC
         # path) presents the client-cert fingerprint, bind it to the worker row so later calls
         # must prove the same device key. Stored lowercase; NULL leaves the worker unbound.
-        cert_fingerprint = None
-        if bind_device_identity and x_client_cert_sha256:
-            cert_fingerprint = x_client_cert_sha256.strip().lower()
+        if not bind_device_identity:
+            cert_fingerprint = None
         with write_lock:
+            existing = conn.execute(
+                "SELECT cert_fingerprint FROM workers WHERE worker_id = ?",
+                (cap.worker_id,),
+            ).fetchone()
+            if bind_device_identity and existing is not None:
+                bound = existing["cert_fingerprint"]
+                if not bound:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="existing worker ID is not device-bound; remove and re-enroll it",
+                    )
+                if not compare_digest(bound, cert_fingerprint):
+                    raise HTTPException(
+                        status_code=403,
+                        detail="worker ID is bound to a different device certificate",
+                    )
             # NOTE: workers.trust_tier is deliberately absent from this INSERT/UPDATE. A new row
             # takes the schema default 'untrusted' (the fail-closed server-assigned tier, NEVER read
             # from the incoming Capability), and a re-register leaves any admin-elevated tier
@@ -722,7 +949,11 @@ def create_app(
                 """,
                 (
                     cap.worker_id, token, cap.model_dump_json(), weight,
-                    cap.free_ram_gb if cap.free_ram_gb is not None else cap.ram_gb,
+                    (
+                        None
+                        if cap.measurement_only
+                        else cap.free_ram_gb if cap.free_ram_gb is not None else cap.ram_gb
+                    ),
                     approved, device_code,
                     now, now, cert_fingerprint,
                 ),
@@ -846,14 +1077,14 @@ def create_app(
 
     @app.get("/jobs/next", response_model=JobAssignment)
     def jobs_next(
+        request: Request,
         worker_id: str,
         authorization: str | None = Header(default=None),
-        x_client_cert_sha256: str | None = Header(default=None, alias="X-Client-Cert-SHA256"),
     ):
         worker = _require_worker_token(
             conn, worker_id, authorization,
             bind_device_identity=bind_device_identity,
-            presented_fingerprint=x_client_cert_sha256,
+            presented_fingerprint=_verified_client_fingerprint(request),
         )
         if worker["blacklisted"]:
             return Response(status_code=204)
@@ -861,6 +1092,8 @@ def create_app(
             return Response(status_code=204)
         reap_expired(conn)
         cap = Capability(**json.loads(worker["capability_json"]))
+        if cap.measurement_only:
+            return Response(status_code=204)
         with write_lock:
             busy = conn.execute(
                 "SELECT 1 FROM jobs WHERE assigned_worker = ? AND state = 'leased' LIMIT 1",
@@ -901,14 +1134,14 @@ def create_app(
 
     @app.post("/heartbeat", response_model=HeartbeatResponse)
     def heartbeat(
+        request: Request,
         req: HeartbeatRequest,
         authorization: str | None = Header(default=None),
-        x_client_cert_sha256: str | None = Header(default=None, alias="X-Client-Cert-SHA256"),
     ) -> HeartbeatResponse:
         _require_worker_token(
             conn, req.worker_id, authorization,
             bind_device_identity=bind_device_identity,
-            presented_fingerprint=x_client_cert_sha256,
+            presented_fingerprint=_verified_client_fingerprint(request),
         )
         worker = _worker_or_404(conn, req.worker_id)
         approved = bool(worker["approved"])
@@ -1017,6 +1250,7 @@ def create_app(
                 """,
                 (now, worker_id),
             )
+            conn.execute("DELETE FROM worker_profiles WHERE worker_id = ?", (worker_id,))
             conn.execute("DELETE FROM workers WHERE worker_id = ?", (worker_id,))
             conn.commit()
         _emit(conn, "removed", worker_id=worker_id, detail="disconnected via dashboard")
@@ -1024,17 +1258,17 @@ def create_app(
 
     @app.post("/results/{job_id}", response_model=ResultResponse)
     def results(
+        request: Request,
         job_id: str,
         req: ResultRequest,
         authorization: str | None = Header(default=None),
-        x_client_cert_sha256: str | None = Header(default=None, alias="X-Client-Cert-SHA256"),
     ) -> ResultResponse:
         if req.job_id != job_id:
             raise HTTPException(status_code=400, detail="job id mismatch")
         worker = _require_worker_token(
             conn, req.worker_id, authorization,
             bind_device_identity=bind_device_identity,
-            presented_fingerprint=x_client_cert_sha256,
+            presented_fingerprint=_verified_client_fingerprint(request),
         )
         if worker["blacklisted"]:
             return ResultResponse(accepted=False, reason="blacklisted")
@@ -1138,7 +1372,8 @@ def create_app(
         return ResultResponse(accepted=False, reason="unknown status")
 
     @app.get("/state", response_model=FleetState)
-    def state() -> FleetState:
+    def state(authorization: str | None = Header(default=None)) -> FleetState:
+        _require_operator_read_token(authorization)
         worker_rows = conn.execute("SELECT * FROM workers ORDER BY registered_at ASC").fetchall()
         workers: list[WorkerView] = []
         for worker in worker_rows:
@@ -1188,21 +1423,17 @@ def create_app(
 
     @app.post("/profile", response_model=ProfileIngestResponse)
     def ingest_profile(
+        request: Request,
         req: ProfileReport,
         authorization: str | None = Header(default=None),
-        x_client_cert_sha256: str | None = Header(default=None, alias="X-Client-Cert-SHA256"),
     ) -> ProfileIngestResponse:
-        """Opt-in measurement pilot: a worker uploads its on-device usage envelope (derived
-        hour-of-week stats only, never raw activity) so the control plane can roll up fleet-wide
-        MEASURED idle headroom without job execution. Same bearer-token auth as /heartbeat; the
-        report is sanitized and clamped before storage (the wire is never trusted). One row per
-        worker, replaced on each report."""
+        """Store one compact measurement summary after authenticating and clamping every field."""
         _require_worker_token(
             conn, req.worker_id, authorization,
             bind_device_identity=bind_device_identity,
-            presented_fingerprint=x_client_cert_sha256,
+            presented_fingerprint=_verified_client_fingerprint(request),
         )
-        clean = _sanitize_profile_buckets(req.buckets)
+        compact = _sanitize_profile_report(req)
         now = _now()
         with write_lock:
             conn.execute(
@@ -1214,30 +1445,40 @@ def create_app(
                     coverage = excluded.coverage,
                     updated_at = excluded.updated_at
                 """,
-                (req.worker_id, json.dumps(clean, separators=(",", ":")), len(clean), now),
+                (
+                    req.worker_id,
+                    json.dumps(compact, separators=(",", ":")),
+                    compact["coverage_buckets"],
+                    now,
+                ),
             )
             conn.commit()
-        return ProfileIngestResponse(accepted=True, buckets_stored=len(clean))
+        return ProfileIngestResponse(
+            accepted=True,
+            coverage_buckets=compact["coverage_buckets"],
+            buckets_stored=0,
+        )
 
     @app.get("/measurement", response_model=MeasurementSummary)
-    def measurement() -> MeasurementSummary:
+    def measurement(
+        authorization: str | None = Header(default=None),
+    ) -> MeasurementSummary:
+        _require_operator_read_token(authorization)
         """Fleet-wide MEASURED idle headroom, rolled up from every worker's uploaded profile with
         the same governor-consistent math (``measurement.headroom``) the offline CLI report uses.
         Read by the dashboard's measured-headroom beat and the pilot hand-off to Azure Compute +
         CISO. Empty fleet -> zeros. Everything is an ESTIMATE and the assumptions travel with it."""
         rows = conn.execute("SELECT worker_id, buckets_json FROM worker_profiles").fetchall()
-        summaries: list[dict] = []
+        profiles: list[dict] = []
         for row in rows:
             try:
-                raw = json.loads(row["buckets_json"])
+                stored = json.loads(row["buckets_json"])
             except (ValueError, TypeError):
                 continue  # a corrupt row never breaks the fleet rollup
-            summaries.append(
-                summarize_profile(
-                    {"device": row["worker_id"], "populated": normalize_buckets(raw)}
-                )
-            )
-        agg = aggregate(summaries)
+            compact = _decode_stored_profile(stored)
+            if compact is not None:
+                profiles.append(compact)
+        agg = _aggregate_compact_profiles(profiles)
         return MeasurementSummary(
             device_count=agg["device_count"],
             total_coverage_buckets=agg["total_coverage_buckets"],
@@ -1256,14 +1497,21 @@ def create_app(
                 recoverable_low=agg["gpu"]["recoverable_low"],
                 recoverable_high=agg["gpu"]["recoverable_high"],
             ),
-            ram_avg=agg["ram"]["avg"],
-            ram_headroom=agg["ram"]["headroom"],
+            ram_avg=agg["ram_avg"],
+            ram_headroom=agg["ram_headroom"],
             ac_avg=agg["ac_avg"],
-            idle_avg=agg["idle_avg"],
+            observed_hours_per_day=agg["observed_hours_per_day"],
+            unavailable_hours_per_day=agg["unavailable_hours_per_day"],
+            timing_span_hours=agg["timing_span_hours"],
+            device_classes=agg["device_classes"],
         )
 
     @app.get("/jobs/{job_id}", response_model=JobDetail)
-    def job_detail(job_id: str) -> JobDetail:
+    def job_detail(
+        job_id: str,
+        authorization: str | None = Header(default=None),
+    ) -> JobDetail:
+        _require_operator_read_token(authorization)
         """Full job record incl. its output: the dashboard reads this to show a job's result.
         Defined after /jobs/next so the literal route still wins for the long-poll."""
         row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
@@ -1310,7 +1558,11 @@ def create_app(
         return {"workloads": WORKLOAD_CATALOG}
 
     @app.get("/workloads/{workload_id}", response_model=WorkloadView)
-    def workload_detail(workload_id: str) -> WorkloadView:
+    def workload_detail(
+        workload_id: str,
+        authorization: str | None = Header(default=None),
+    ) -> WorkloadView:
+        _require_operator_read_token(authorization)
         """All jobs (with outputs) for a launched workload: the dashboard results panel."""
         rows = conn.execute(
             "SELECT * FROM jobs WHERE workload_id = ? ORDER BY created_at ASC, job_id ASC",
@@ -1335,7 +1587,11 @@ def create_app(
         )
 
     @app.get("/events")
-    def events(since: int = 0) -> dict:
+    def events(
+        since: int = 0,
+        authorization: str | None = Header(default=None),
+    ) -> dict:
+        _require_operator_read_token(authorization)
         rows = conn.execute(
             "SELECT id, ts, type, worker_id, job_id, detail FROM events "
             "WHERE id > ? ORDER BY id ASC LIMIT 200",
@@ -1346,17 +1602,23 @@ def create_app(
         return {"events": items, "last_id": last_id}
 
     @app.get("/events/verify")
-    def events_verify() -> dict:
+    def events_verify(
+        authorization: str | None = Header(default=None),
+    ) -> dict:
         """Read-only integrity check: re-derive the audit hash chain and report the first break."""
+        _require_operator_read_token(authorization)
         return verify_audit_chain(conn)
 
     @app.get("/events/export")
-    def events_export() -> Response:
+    def events_export(
+        authorization: str | None = Header(default=None),
+    ) -> Response:
         """Export the audit log as newline-delimited JSON (JSONL) for SIEM ingestion.
 
         One event object per line, each carrying id/ts/type/worker_id/job_id/detail/prev_hash/hash,
         ordered by id so the hash chain is reconstructable downstream (e.g. Microsoft Sentinel).
         """
+        _require_operator_read_token(authorization)
         rows = conn.execute(
             "SELECT id, ts, type, worker_id, job_id, detail, prev_hash, hash "
             "FROM events ORDER BY id ASC"
@@ -1376,5 +1638,3 @@ def create_app(
         return HTMLResponse(INDEX_HTML.read_text(encoding="utf-8"))
 
     return app
-
-

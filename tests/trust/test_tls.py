@@ -11,17 +11,22 @@ from __future__ import annotations
 import datetime
 import ipaddress
 import pathlib
+import socket
 import ssl
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import httpx
 import pytest
+import uvicorn
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
+from orchestrator.app import create_app
+from orchestrator.mtls_protocol import VerifiedClientCertH11Protocol
 from trust import build_client, build_server_context, client_ssl_params, server_ssl_kwargs
 from trust.tls import _require_file
 
@@ -233,3 +238,105 @@ def test_tls_rejects_untrusted_server_cert(mtls_server) -> None:
     ) as client:
         with pytest.raises(httpx.TransportError):
             client.get("/")
+
+
+def test_uvicorn_binds_worker_identity_to_verified_peer_certificate(tmp_path) -> None:
+    ca_key, ca_cert = _gen_ca()
+    server_key, server_cert = _gen_leaf(
+        ca_key,
+        ca_cert,
+        "localhost",
+        san=[x509.IPAddress(ipaddress.ip_address("127.0.0.1"))],
+    )
+    worker_key, worker_cert = _gen_leaf(
+        ca_key,
+        ca_cert,
+        "worker-1",
+        eku=[ExtendedKeyUsageOID.CLIENT_AUTH],
+    )
+    attacker_key, attacker_cert = _gen_leaf(
+        ca_key,
+        ca_cert,
+        "worker-2",
+        eku=[ExtendedKeyUsageOID.CLIENT_AUTH],
+    )
+    ca_path = tmp_path / "ca.pem"
+    server_cert_path, server_key_path = tmp_path / "server.crt", tmp_path / "server.key"
+    worker_cert_path, worker_key_path = tmp_path / "worker.crt", tmp_path / "worker.key"
+    attacker_cert_path, attacker_key_path = tmp_path / "attacker.crt", tmp_path / "attacker.key"
+    _write_pem(ca_path, cert=ca_cert)
+    _write_pem(server_cert_path, cert=server_cert)
+    _write_pem(server_key_path, key=server_key)
+    _write_pem(worker_cert_path, cert=worker_cert)
+    _write_pem(worker_key_path, key=worker_key)
+    _write_pem(attacker_cert_path, cert=attacker_cert)
+    _write_pem(attacker_key_path, key=attacker_key)
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    app = create_app(":memory:", bind_device_identity=True)
+    config = uvicorn.Config(
+        app,
+        host="127.0.0.1",
+        port=port,
+        http=VerifiedClientCertH11Protocol,
+        lifespan="off",
+        log_level="critical",
+        ssl_certfile=str(server_cert_path),
+        ssl_keyfile=str(server_key_path),
+        ssl_ca_certs=str(ca_path),
+        ssl_cert_reqs=ssl.CERT_REQUIRED,
+    )
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    deadline = time.time() + 5.0
+    while not server.started and thread.is_alive() and time.time() < deadline:
+        time.sleep(0.01)
+    assert server.started
+    base_url = f"https://127.0.0.1:{port}"
+    try:
+        with build_client(
+            base_url,
+            ca_cert=str(ca_path),
+            client_cert=str(worker_cert_path),
+            client_key=str(worker_key_path),
+            timeout=5.0,
+        ) as worker:
+            registration = worker.post(
+                "/register",
+                json={"worker_id": "observer-12345678", "measurement_only": True},
+            )
+            assert registration.status_code == 200
+            token = registration.json()["worker_token"]
+            scheme = "Bear" + "er"
+            accepted = worker.post(
+                "/profile",
+                json={"worker_id": "observer-12345678", "coverage_buckets": 1},
+                headers={"Authorization": f"{scheme} {token}"},
+            )
+            assert accepted.status_code == 200
+
+        victim_fingerprint = worker_cert.fingerprint(hashes.SHA256()).hex()
+        with build_client(
+            base_url,
+            ca_cert=str(ca_path),
+            client_cert=str(attacker_cert_path),
+            client_key=str(attacker_key_path),
+            timeout=5.0,
+        ) as attacker:
+            response = attacker.post(
+                "/profile",
+                json={"worker_id": "observer-12345678", "coverage_buckets": 1},
+                headers={
+                    "Authorization": f"{scheme} {token}",
+                    "X-Client-Cert-SHA256": victim_fingerprint,
+                },
+            )
+        assert response.status_code == 401
+        assert response.json()["detail"] == "device_fingerprint_mismatch"
+    finally:
+        server.should_exit = True
+        thread.join(timeout=5)
+        assert not thread.is_alive()
