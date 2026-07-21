@@ -208,6 +208,14 @@ def test_malformed_and_empty_files_are_skipped_without_raising(tmp_path, capsys)
     assert report["aggregate"]["device_count"] == 1
 
 
+def test_oversized_profile_is_skipped_without_loading(tmp_path):
+    path = tmp_path / "oversized.json"
+    with path.open("wb") as handle:
+        handle.truncate(mr.MAX_PROFILE_BYTES + 1)
+
+    assert mr.load_profile(path) is None
+
+
 def test_all_empty_profile_yields_zero_coverage_summary(tmp_path):
     path = _write_profile(tmp_path / "idle.json", [])  # valid file, all 168 buckets empty
     profile = mr.load_profile(path)

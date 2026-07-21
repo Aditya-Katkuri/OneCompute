@@ -22,6 +22,7 @@ from contracts import (
 from worker import __main__ as wm
 from worker.agent import WorkerAgent
 from worker.governor import AdaptiveGovernor
+from worker.profile_lock import ProfileLock
 from worker.profiler import UsageProfiler
 from worker.telemetry import PilotTelemetry
 
@@ -85,7 +86,7 @@ def _pin_samples(tmp_path, monkeypatch, *, cpu: float, gpu: float, ram: float) -
         monkeypatch.setattr(wm.psutil, "cpu_percent", lambda interval=None: cpu)
     profiler = UsageProfiler(path=tmp_path / "profile.json")
     governor = AdaptiveGovernor(profiler=profiler, idle_gate=_FakeGate())
-    monkeypatch.setattr(governor, "user_cpu", lambda: cpu)  # ctypes-fallback path, if ever taken
+    monkeypatch.setattr(governor, "system_cpu_sample", lambda: cpu)
 
     def _forbidden(*_args, **_kwargs):
         raise AssertionError("measure-only must never make an admission/yield decision")
@@ -186,7 +187,7 @@ def test_measure_loop_survives_keyboardinterrupt_and_profile_saves(tmp_path, mon
     monkeypatch.setattr(time, "sleep", fake_sleep)
 
     # once=False -> continuous loop; Ctrl-C on the 3rd sleep must return cleanly, not propagate.
-    samples = wm.run_measure_loop(agent, governor, telem, interval=1.0, once=False)
+    samples = wm.run_measure_loop(agent, governor, telem, interval=5.0, once=False)
 
     assert samples == 3
     assert governor.profiler.profile_now().n == 3
@@ -217,14 +218,13 @@ def test_measure_loop_persists_profile_during_the_run_not_only_on_exit(tmp_path,
 
     def fake_sleep(_seconds: float) -> None:
         ticks["n"] += 1
-        if ticks["n"] >= 3:
+        if ticks["n"] >= 13:
             raise KeyboardInterrupt
 
     monkeypatch.setattr(time, "sleep", fake_sleep)
 
-    # interval=0.0 -> post_every=1, so every sample saves. 3 in-loop saves happen BEFORE the
-    # finally block ever runs, proving persistence is periodic (survives a hard kill), not exit-only.
-    wm.run_measure_loop(agent, governor, telem, interval=0.0, once=False)
+    # At a 5-second cadence the loop saves immediately and about every minute, before its final save.
+    wm.run_measure_loop(agent, governor, telem, interval=5.0, once=False)
 
     assert saves["n"] >= 3
     assert (tmp_path / "profile.json").exists()
@@ -256,7 +256,7 @@ def test_measure_loop_survives_transient_sample_errors(tmp_path, monkeypatch) ->
 
     monkeypatch.setattr(time, "sleep", fake_sleep)
 
-    samples = wm.run_measure_loop(agent, governor, telem, interval=1.0, once=False)
+    samples = wm.run_measure_loop(agent, governor, telem, interval=5.0, once=False)
 
     # 4 iterations ran: the first 2 raised (recorded nothing, did NOT crash) and the last 2 folded
     # a sample. The loop survived to a clean Ctrl-C, and no job was ever touched.
@@ -324,6 +324,62 @@ def test_main_measure_only_once_avoids_live_heartbeat_and_pulls_no_jobs(
     identity = (tmp_path / "OneCompute" / "observer-id").read_text(encoding="utf-8").strip()
     assert identity.startswith("observer-")
     assert observed_ids == [identity]
+
+
+def test_main_duplicate_observer_does_not_save_after_profile_lock_failure(
+    tmp_path, monkeypatch
+) -> None:
+    saves = {"n": 0}
+    registrations = {"n": 0}
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text("{corrupt", encoding="utf-8")
+    blocker = ProfileLock(profile_path)
+    blocker.acquire()
+
+    class NoNetworkAgent:
+        def __init__(self, _url, capability, **_kwargs) -> None:
+            self.capability = capability
+            self.registered = False
+            self.approved = False
+
+        def register(self) -> bool:
+            registrations["n"] += 1
+            return True
+
+        def close(self) -> None:
+            pass
+
+    def count_save(_self) -> bool:
+        saves["n"] += 1
+        return True
+
+    monkeypatch.setattr(wm.UsageProfiler, "save", count_save)
+    monkeypatch.setattr(wm, "WorkerAgent", NoNetworkAgent)
+    monkeypatch.setattr(wm, "build_client", lambda *_args, **_kwargs: object())
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "worker",
+            "--url",
+            "http://localhost",
+            "--measure-only",
+            "--once",
+            "--profile",
+            str(profile_path),
+        ],
+    )
+
+    try:
+        with pytest.raises(SystemExit):
+            wm.main()
+    finally:
+        blocker.release()
+
+    assert saves["n"] == 0
+    assert registrations["n"] == 0
+    assert profile_path.read_text(encoding="utf-8") == "{corrupt"
+    assert not list(tmp_path.glob("profile.corrupt-*.json"))
 
 
 def test_main_local_measurement_bootstraps_profile_availability_from_telemetry(
@@ -402,7 +458,7 @@ def test_main_measure_only_continuous_saves_profile_on_ctrl_c(tmp_path, monkeypa
 
 
 def test_main_measure_only_once_does_not_hang_when_fleet_gated(tmp_path, monkeypatch) -> None:
-    # A gated fleet (approval required) must not hang under --once: a single heartbeat, then exit.
+    # A gated fleet must not block local collection while the central profile remains unapproved.
     app, state = _fake_orchestrator(approved=False)
 
     def _make_agent(url, capability, isolated=False, **kwargs):
@@ -421,6 +477,9 @@ def test_main_measure_only_once_does_not_hang_when_fleet_gated(tmp_path, monkeyp
         "detect_capability",
         lambda worker_id=None: Capability(worker_id=worker_id or "measure-1", has_gpu=False),
     )
+    monkeypatch.setattr(wm, "system_ram_load_pct", lambda: 42.0)
+    if wm.psutil is not None:
+        monkeypatch.setattr(wm.psutil, "cpu_percent", lambda interval=None: 5.0)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setattr("sys.argv", ["worker", "--url", "https://test", "--measure-only", "--once"])
 
@@ -431,8 +490,106 @@ def test_main_measure_only_once_does_not_hang_when_fleet_gated(tmp_path, monkeyp
     assert all(payload["free_ram_gb"] is None for payload in state["heartbeat_payloads"])
     assert all(payload["cpu_pct"] == 0.0 for payload in state["heartbeat_payloads"])
     assert state["pulled"] is False  # still never pulls a job
-    # never reached the measurement loop, so no local telemetry file was written
+    assert (tmp_path / "OneCompute" / "usage_profile.json").exists()
     assert not (tmp_path / "OneCompute" / "pilot-telemetry.jsonl").exists()
+
+
+def test_continuous_measurement_rejects_a_busy_loop_interval(tmp_path, monkeypatch) -> None:
+    agent = _SpyAgent()
+    governor = _pin_samples(tmp_path, monkeypatch, cpu=10.0, gpu=0.0, ram=20.0)
+    telem = PilotTelemetry("measure-1", path=tmp_path / "telem.jsonl", enabled=False)
+
+    with pytest.raises(ValueError, match="at least 5 seconds"):
+        wm.run_measure_loop(agent, governor, telem, interval=0.0, once=False)
+
+
+def test_continuous_measurement_rejects_an_impractically_slow_interval(
+    tmp_path, monkeypatch
+) -> None:
+    agent = _SpyAgent()
+    governor = _pin_samples(tmp_path, monkeypatch, cpu=10.0, gpu=0.0, ram=20.0)
+    telem = PilotTelemetry("measure-1", path=tmp_path / "telem.jsonl", enabled=False)
+
+    with pytest.raises(ValueError, match="at most 3600 seconds"):
+        wm.run_measure_loop(agent, governor, telem, interval=3601.0, once=False)
+
+
+@pytest.mark.parametrize("interval", [float("nan"), float("inf"), float("-inf")])
+def test_measurement_rejects_nonfinite_intervals(tmp_path, monkeypatch, interval) -> None:
+    agent = _SpyAgent()
+    governor = _pin_samples(tmp_path, monkeypatch, cpu=10.0, gpu=0.0, ram=20.0)
+    telem = PilotTelemetry("measure-1", path=tmp_path / "telem.jsonl", enabled=False)
+
+    with pytest.raises(ValueError, match="must be finite"):
+        wm.run_measure_loop(agent, governor, telem, interval=interval, once=False)
+
+
+def test_measurement_skips_a_sample_when_required_sensor_data_is_unavailable(
+    tmp_path, monkeypatch
+) -> None:
+    agent = _SpyAgent()
+    governor = _pin_samples(tmp_path, monkeypatch, cpu=10.0, gpu=0.0, ram=20.0)
+    telem = PilotTelemetry("measure-1", path=tmp_path / "telem.jsonl", enabled=False)
+    monkeypatch.setattr(wm, "system_ram_load_pct", lambda: None)
+
+    samples = wm.run_measure_loop(agent, governor, telem, interval=0.0, once=True)
+
+    assert samples == 0
+    assert governor.profiler.profile_now().n == 0
+
+
+def test_measurement_skips_a_sample_when_cpu_sensors_are_unavailable(
+    tmp_path, monkeypatch
+) -> None:
+    agent = _SpyAgent()
+    governor = _pin_samples(tmp_path, monkeypatch, cpu=10.0, gpu=0.0, ram=20.0)
+    telem = PilotTelemetry("measure-1", path=tmp_path / "telem.jsonl", enabled=False)
+    monkeypatch.setattr(governor, "system_cpu_sample", lambda: None)
+    if wm.psutil is not None:
+        def unavailable_cpu(interval=None):
+            raise RuntimeError("sensor unavailable")
+
+        monkeypatch.setattr(wm.psutil, "cpu_percent", unavailable_cpu)
+
+    samples = wm.run_measure_loop(agent, governor, telem, interval=0.0, once=True)
+
+    assert samples == 0
+    assert governor.profiler.profile_now().n == 0
+
+
+def test_transient_gpu_failure_retains_cpu_and_ram_coverage(tmp_path, monkeypatch) -> None:
+    agent = _SpyAgent(has_gpu=True)
+    governor = _pin_samples(tmp_path, monkeypatch, cpu=10.0, gpu=0.0, ram=20.0)
+    telem = PilotTelemetry("measure-1", path=tmp_path / "telem.jsonl", enabled=False)
+    monkeypatch.setattr(wm, "system_gpu_load_pct", lambda: None)
+
+    samples = wm.run_measure_loop(agent, governor, telem, interval=0.0, once=True)
+
+    bucket = governor.profiler.profile_now()
+    assert samples == 1
+    assert bucket.n == 1
+    assert bucket.cpu_mean == 10.0
+    assert bucket.ram_mean == 20.0
+    assert bucket.gpu_n == 0
+
+
+def test_measurement_keeps_unknown_power_and_idle_out_of_the_profile(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    agent = _SpyAgent()
+    governor = _pin_samples(tmp_path, monkeypatch, cpu=10.0, gpu=0.0, ram=20.0)
+    telem = PilotTelemetry("measure-1", path=tmp_path / "telem.jsonl", enabled=False)
+    governor.gate.on_ac_state = lambda: None
+    governor.gate.user_idle_state = lambda: None
+
+    samples = wm.run_measure_loop(agent, governor, telem, interval=0.0, once=True)
+
+    bucket = governor.profiler.profile_now()
+    assert samples == 1
+    assert bucket.n == 1
+    assert bucket.ac_mean == 0.0
+    assert bucket.idle_mean == 0.0
+    assert "ac=? idle=?" in capsys.readouterr().out
 
 
 def test_job_mode_usage_heartbeat_call_remains_available() -> None:

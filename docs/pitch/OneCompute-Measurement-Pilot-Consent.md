@@ -21,7 +21,8 @@ It does not send computing jobs to your device and does not run organization wor
 Approximately every 30 seconds, the observer reads device-level CPU, GPU, and memory utilization.
 It also records whether the device is on AC power and a local yes/no indication of whether the user
 is idle. Those readings are folded into rolling local aggregates. The observer also records compact
-totals for time successfully observed and time when the observer was unavailable.
+totals for time successfully observed and time when the observer was unavailable, plus the first and
+last successful sample times needed to continue those totals across restarts.
 
 The observer:
 
@@ -39,6 +40,11 @@ The local profile contains rolling hour-of-week aggregates for CPU, GPU, memory,
 idle/away state, plus compact observed/unavailable timing totals. It is stored under
 `%LOCALAPPDATA%\OneCompute\usage_profile.json`.
 
+The first successful sample is saved immediately and the profile is then saved about every minute.
+Only one observer may write a profile at a time. Writes publish a complete replacement file, and an
+invalid profile is preserved under a timestamped recovery name rather than silently overwritten. If
+it cannot be preserved, collection stops rather than replace the original.
+
 A stable random observer ID is stored under `%LOCALAPPDATA%\OneCompute\observer-id`. The random ID
 does not contain your hostname. IT may instead assign a pseudonymous fleet alias.
 
@@ -53,19 +59,22 @@ The central service receives only a compact derived summary:
 - Pseudonymous observer ID.
 - Coarse device class.
 - Measurement coverage count.
-- Aggregate CPU and GPU average, peak, and conservatively recoverable range.
+- Aggregate CPU average, peak, and conservatively recoverable range.
+- Whether GPU sampling was supported, plus GPU values only when a valid GPU sampler contributed.
 - Aggregate memory average and headroom.
 - Aggregate percentage of observed time on AC power.
 - Aggregate observed and unavailable hours per day, timing span, and sample count.
 
 The central service does not receive your per-hour profile, idle/away percentage, raw timestamps,
-hostname by default, or a per-sample activity log.
+hostname by default, or a per-sample activity log. It stores the latest report receipt time as
+operational metadata.
 
 Reports are encrypted in transit with HTTPS and mutual TLS. Each approved device uses its own
 certificate. The central service stores the verified certificate fingerprint, approval status, and
 a measurement-only marker for enrollment. It does not receive actual CPU count, GPU model, total
 RAM, or live free RAM from a current measurement observer. Operator views require an administrative
-credential.
+credential. If enrollment is temporarily unavailable or approval is still pending, measurement
+continues locally and no central profile is accepted until approval.
 
 ## How the data will be used
 
@@ -92,7 +101,7 @@ To stop collection but keep your local profile:
 powershell -ExecutionPolicy Bypass -File C:\OneCompute\scripts\install_observer.ps1 -Uninstall
 ```
 
-To stop collection and delete the local profile, legacy telemetry, and observer ID:
+To stop collection and delete all known local pilot artifacts:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File C:\OneCompute\scripts\install_observer.ps1 -Purge
@@ -100,9 +109,18 @@ powershell -ExecutionPolicy Bypass -File C:\OneCompute\scripts\install_observer.
 
 The personal observer uses the same options in `C:\OneCompute\scripts\observe_me.ps1`.
 
+Purge removes the profile, profile lock, temporary and recovery files, legacy telemetry and
+rotations, observer identity and configuration, and both Scheduled Task and Startup persistence.
+
 ## Known limitations
 
 - Measurements are reported by software on the device and are not hardware-attested measurements.
+- A device without a usable GPU sampler contributes no GPU estimate. It is not counted as an idle
+  GPU.
+- Current GPU utilization sampling uses NVIDIA NVML. Devices without it still contribute CPU and
+  memory measurements. A transient GPU read failure excludes only that GPU reading.
+- If Windows cannot determine AC-power or idle state, that unknown reading is not substituted with
+  an optimistic value.
 - An unavailable interval may mean sleep, shutdown, reboot, network loss, or that the observer was
   stopped. The pilot does not collect a more invasive timeline to distinguish those causes.
 - A pseudonymous observer may become identifiable to the small enrollment team if that team keeps a

@@ -58,8 +58,8 @@ class _MemoryStatusEx(ctypes.Structure):
     ]
 
 
-def system_ram_load_pct() -> float:
-    """Percent of physical RAM in use (0-100), or 0.0 if undetectable. Never raises."""
+def system_ram_load_pct() -> float | None:
+    """Percent of physical RAM in use (0-100), or None if undetectable. Never raises."""
     try:
         status = _MemoryStatusEx()
         status.dwLength = ctypes.sizeof(_MemoryStatusEx)
@@ -67,18 +67,18 @@ def system_ram_load_pct() -> float:
             return float(status.dwMemoryLoad)
     except Exception:
         pass
-    return 0.0
+    return None
 
 
-def system_gpu_load_pct() -> float:
-    """Current NVIDIA GPU utilization % (0-100), or 0.0 if no device/driver. Never raises."""
+def system_gpu_load_pct() -> float | None:
+    """Current NVIDIA GPU utilization % (0-100), or None if unavailable. Never raises."""
     try:
         import pynvml  # type: ignore[import-not-found]
 
         pynvml.nvmlInit()
         try:
             if pynvml.nvmlDeviceGetCount() < 1:
-                return 0.0
+                return None
             handle = pynvml.nvmlDeviceGetHandleByIndex(0)
             return float(getattr(pynvml.nvmlDeviceGetUtilizationRates(handle), "gpu", 0.0))
         finally:
@@ -87,7 +87,7 @@ def system_gpu_load_pct() -> float:
             except Exception:
                 pass
     except Exception:
-        return 0.0
+        return None
 
 
 class AdaptiveGovernor:
@@ -144,14 +144,18 @@ class AdaptiveGovernor:
 
     # --- live sampling + attribution ---------------------------------------
 
-    def _system_cpu(self) -> float:
-        """System-wide CPU% (0-100). psutil when available, else GetSystemTimes deltas."""
+    def system_cpu_sample(self) -> float | None:
+        """System-wide CPU% (0-100), or None when both sensors are unavailable."""
         if psutil is not None:
             try:
                 return float(psutil.cpu_percent(interval=None))
             except Exception:
                 pass
-        value = self._cpu.sample()
+        return self._cpu.sample()
+
+    def _system_cpu(self) -> float:
+        """System-wide CPU% for governor decisions, conservatively unavailable as 0."""
+        value = self.system_cpu_sample()
         return value if value is not None else 0.0
 
     def _our_cpu(self) -> float:
@@ -194,7 +198,8 @@ class AdaptiveGovernor:
         if self.our_job_uses_gpu:
             return 0.0
         try:
-            return float(system_gpu_load_pct())
+            value = system_gpu_load_pct()
+            return float(value) if value is not None else 0.0
         except Exception:
             return 0.0
 
@@ -221,7 +226,10 @@ class AdaptiveGovernor:
         """Fold the employee's current demand into the rolling profile. Call ONLY when our job
         is not running, so the envelope reflects the employee's usage and not the agent's."""
         self.profiler.record(
-            self.user_cpu(), system_gpu_load_pct(), system_ram_load_pct(), when=when,
+            self.user_cpu(),
+            system_gpu_load_pct() or 0.0,
+            system_ram_load_pct() or 0.0,
+            when=when,
             on_ac=self.gate.on_ac(), idle=self.gate.user_idle(),
         )
 

@@ -37,10 +37,11 @@ from measurement.headroom import (
     normalize_buckets,
     summarize_profile,
 )
+from worker.profiler import MAX_PROFILE_BYTES
 
 
 def default_profile_path() -> Path:
-    """Local profile path, matching ``worker.profiler._default_profile_path``."""
+    """Local profile path, matching ``worker.profiler.default_profile_path``."""
     base = os.environ.get("LOCALAPPDATA") or os.environ.get("TEMP") or "."
     return Path(base) / "OneCompute" / "usage_profile.json"
 
@@ -60,13 +61,15 @@ def load_profile(path: str | os.PathLike[str]) -> dict | None:
     """
     p = Path(path)
     try:
+        if p.stat().st_size > MAX_PROFILE_BYTES:
+            return None
         text = p.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         # Missing/unreadable file, or a binary/non-UTF-8 blob dropped into the pilot folder.
         return None
     try:
         data = json.loads(text)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, RecursionError):
         return None
     if not isinstance(data, dict):
         return None
@@ -77,6 +80,7 @@ def load_profile(path: str | os.PathLike[str]) -> dict | None:
         "path": str(p),
         "device": p.stem,
         "populated": normalize_buckets(raw_buckets),
+        "gpu_supported": data.get("gpu_supported"),
         "availability": data.get("availability"),
     }
 
@@ -166,14 +170,20 @@ def format_text(
         if s["coverage_buckets"] == 0:
             cells = [name, cover, "-", "-", "-", "-", "-", "-", "-", "-", "-"]
         else:
+            gpu_avg = _pct(s["gpu"]["avg"]) if s.get("gpu_sampled") else "-"
+            gpu_range = (
+                _rng(s["gpu"]["recoverable_low"], s["gpu"]["recoverable_high"])
+                if s.get("gpu_sampled")
+                else "-"
+            )
             cells = [
                 name,
                 cover,
                 _pct(s["cpu"]["avg"]),
                 _pct(s["cpu"]["peak"]),
                 _rng(s["cpu"]["recoverable_low"], s["cpu"]["recoverable_high"]),
-                _pct(s["gpu"]["avg"]),
-                _rng(s["gpu"]["recoverable_low"], s["gpu"]["recoverable_high"]),
+                gpu_avg,
+                gpu_range,
                 _pct(s["ram"]["avg"]),
                 _pct(s["ram"]["headroom"]),
                 _pct(s["ac_avg"]),
@@ -194,10 +204,15 @@ def format_text(
             f"  CPU  avg {_pct(agg['cpu']['avg'])}  peak {_pct(agg['cpu']['peak'])}  "
             f"est. recoverable {_rng(agg['cpu']['recoverable_low'], agg['cpu']['recoverable_high'])}"
         )
-        lines.append(
-            f"  GPU  avg {_pct(agg['gpu']['avg'])}  peak {_pct(agg['gpu']['peak'])}  "
-            f"est. recoverable {_rng(agg['gpu']['recoverable_low'], agg['gpu']['recoverable_high'])}"
-        )
+        if agg.get("gpu_device_count", 0):
+            lines.append(
+                f"  GPU  avg {_pct(agg['gpu']['avg'])}  peak {_pct(agg['gpu']['peak'])}  "
+                f"est. recoverable "
+                f"{_rng(agg['gpu']['recoverable_low'], agg['gpu']['recoverable_high'])} "
+                f"across {agg['gpu_device_count']} measured GPU device(s)"
+            )
+        else:
+            lines.append("  GPU  not measured on any contributing device")
         lines.append(
             f"  RAM  avg {_pct(agg['ram']['avg'])}  headroom {_pct(agg['ram']['headroom'])}"
         )

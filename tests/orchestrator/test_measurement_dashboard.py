@@ -23,6 +23,7 @@ def test_dashboard_html_wires_the_measurement_beat() -> None:
     assert 'id="measurement"' in html
     assert 'id="measurementCpuRange"' in html
     assert 'id="measurementEmpty"' in html
+    assert '"not measured"' in html
     # ...and the poll cycle actually fetches the endpoint that feeds them.
     assert 'operatorFetch("/measurement"' in html
     # An empty fleet stays calm instead of rendering a hollow "0-0%".
@@ -38,8 +39,16 @@ def test_measurement_endpoint_empty_shape_on_fresh_app() -> None:
     # Light shape assertion only (the rollup math is covered in test_profile_ingest.py).
     assert m["device_count"] == 0
     assert m["total_coverage_buckets"] == 0
-    for key in ("margin_pct", "harvest_low", "harvest_high", "ram_avg", "ram_headroom"):
+    for key in (
+        "margin_pct",
+        "harvest_low",
+        "harvest_high",
+        "gpu_device_count",
+        "ram_avg",
+        "ram_headroom",
+    ):
         assert key in m
+    assert m["gpu_device_count"] == 0
     for meter in ("cpu", "gpu"):
         assert set(m[meter]) == {"avg", "peak", "recoverable_low", "recoverable_high"}
         assert m[meter]["recoverable_low"] == 0.0

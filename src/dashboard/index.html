@@ -1641,7 +1641,9 @@
           `From the opt-in measurement pilot: MEASURED spare capacity across ${fmtInt(devices)} contributing ${unit} (${basis}).`;
         E.measurementCpuRange.textContent = `${fmt1(cpu.recoverable_low)}-${fmt1(cpu.recoverable_high)}%`;
         E.measurementCpuAvg.textContent = `${fmt1(cpu.avg)}%`;
-        E.measurementGpuRange.textContent = `${fmt1(gpu.recoverable_low)}-${fmt1(gpu.recoverable_high)}%`;
+        E.measurementGpuRange.textContent = Number(m.gpu_device_count) > 0
+          ? `${fmt1(gpu.recoverable_low)}-${fmt1(gpu.recoverable_high)}%`
+          : "not measured";
         E.measurementRam.textContent = `${fmt1(m.ram_headroom)}%`;
         E.measurementDevices.textContent = fmtInt(devices);
         E.measurementBody.hidden = false;

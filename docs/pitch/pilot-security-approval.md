@@ -22,6 +22,7 @@
 | G10 | Kill switch tested end to end on a controlled machine | Pilot lead | test log | |
 | G11 | Compact central data contract verified; no hourly/idle pattern or live resource stream | Privacy / CISO | tests plus sample captured request | |
 | G12 | Retention, disconnect erasure, certificate revocation, and local purge tested | Privacy / CISO / pilot lead | deletion evidence | |
+| G13 | Observer runs as the participant at limited privilege with a fixed signed executable or absolute interpreter path | MSD / pilot lead | task principal, Intune user-context setting, and dry-run evidence | |
 
 If any gate is NO, the pilot does not start.
 
@@ -59,10 +60,17 @@ uv run python -m worker `
   --client-key C:\ProgramData\OneCompute\pki\device.key
 ```
 - Measurement mode never pulls or runs a job.
-- It writes the durable local profile but no per-sample measurement timeline.
+- It saves the durable local profile immediately and about every minute, with an OS-backed
+  single-writer lock and atomic validated persistence, but no per-sample measurement timeline.
 - It does not start the one-second live resource heartbeat.
 - It uploads one compact aggregate approximately every five minutes.
+- It continues local collection during registration outages or pending approval; central profile
+  upload remains blocked until approval.
+- CPU-only devices do not contribute GPU headroom.
 - Each device uses a unique client certificate. No operator token is deployed to the endpoint.
+- The Windows installer runs in the participant's context at `RunLevel Limited`, rejects
+  SYSTEM, LOCAL SERVICE, and NETWORK SERVICE, and uses a fixed signed executable or absolute
+  virtual-environment interpreter. Intune must use the logged-on credentials.
 
 **Contained-execution worker, only after a separate Phase 2 approval:**
 ```powershell
@@ -95,6 +103,7 @@ uv run python -c "from isolation.runner import active_boundary; print(active_bou
 | Any Defender / Purview alert on a pilot device | MDE / Purview console | Stop the affected worker; notify security contact; pause pilot; investigate; do not resume until cleared |
 | `auth_failed` spikes | authenticated `GET /events` | Investigate token/enrollment; revoke certificate; check for spoofing |
 | Unexpected report values or class changes | `GET /measurement`, inventory, outlier review | Pause expansion; compare with approved endpoint-management data |
+| GPU contributor count is unexpected or profile freshness stalls | `GET /measurement`, observer `-Status` | Pause expansion; inspect sensor support, profile write errors, singleton lock, and enrollment state |
 | Perceived slowdown report | Employee channel | Stop worker; re-tune governor margin; re-test on a controlled machine before resuming |
 | Boundary downgrade to `subprocess+jobobject` while running jobs | worker logs (WARNING) | With `--require-isolation` the job is refused; otherwise stop the worker |
 
@@ -103,7 +112,9 @@ uv run python -c "from isolation.runner import active_boundary; print(active_bou
 1. **Stop the orchestrator** or block its listener.
 2. **Operator disconnect** deletes the device's latest central measurement summary.
 3. **Revoke the client certificate** for any affected observer.
-4. **Uninstall** to stop and retain the local profile, or **purge** to stop and delete the profile, legacy telemetry, rotations, and observer ID.
+4. **Uninstall** to stop both persistence mechanisms and retain the local profile, or **purge** to
+   also delete the profile, lock, temporary and recovery files, legacy telemetry and rotations,
+   observer ID, and configuration.
 5. **Remove the Defender allow-list entry** at pilot end.
 
 Tested end-to-end as gate G10 before the pilot starts.

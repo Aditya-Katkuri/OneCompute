@@ -66,7 +66,14 @@ def normalize_buckets(raw_buckets: object) -> list[dict]:
             continue
         if n <= 0:
             continue
-        bucket = {"n": n}
+        if "gpu_n" in raw:
+            try:
+                gpu_n = max(0, min(n, int(raw.get("gpu_n", 0))))
+            except (TypeError, ValueError, OverflowError):
+                gpu_n = 0
+        else:
+            gpu_n = -1  # legacy profile: support must be inferred from profile metadata/values
+        bucket = {"n": n, "gpu_n": gpu_n}
         for field in BUCKET_FIELDS:
             bucket[field] = finite(raw.get(field, 0.0))
         populated.append(bucket)
@@ -103,15 +110,42 @@ def summarize_profile(
     ever measured), and the recoverable range. For each bucket the spare CPU is
     ``max(0, 100 - cpu_mean - margin)`` (reserve the comfort margin, clamp at 0); the mean spare
     across buckets times ``[harvest_low, harvest_high]`` is the estimated recoverable CPU %. GPU is
-    the same with no extra margin (``max(0, 100 - gpu_mean)``). RAM headroom is simply
-    ``100 - ram_mean``; RAM is reported as headroom, not harvested. Zero populated buckets ->
-    zeroed summary.
+    the same with no extra margin (``max(0, 100 - gpu_mean)``), but only buckets with a valid GPU
+    sample contribute. RAM headroom is simply ``100 - ram_mean``; RAM is reported as headroom, not
+    harvested. Zero populated buckets -> zeroed summary.
     """
     populated = profile.get("populated", [])
     availability = summarize_availability(profile.get("availability"))
     coverage = len(populated)
     device = profile.get("device", "device")
     path = profile.get("path", "")
+    declared_gpu = profile.get("gpu_supported")
+    legacy_gpu_detected = declared_gpu is True or (
+        not isinstance(declared_gpu, bool)
+        and any(
+            bucket.get("gpu_n", -1) < 0
+            and (
+                bucket.get("gpu_mean", 0.0) > 0.0
+                or bucket.get("gpu_max", 0.0) > 0.0
+            )
+            for bucket in populated
+        )
+    )
+
+    def has_gpu_sample(bucket: dict) -> bool:
+        gpu_n = bucket.get("gpu_n", -1)
+        if gpu_n > 0:
+            return declared_gpu is not False
+        if gpu_n == 0:
+            return False
+        if declared_gpu is True:
+            return True
+        if declared_gpu is False:
+            return False
+        return legacy_gpu_detected
+
+    gpu_buckets = [bucket for bucket in populated if has_gpu_sample(bucket)]
+    gpu_sampled = bool(gpu_buckets)
     if coverage == 0:
         return {
             "device": device,
@@ -120,6 +154,7 @@ def summarize_profile(
             "coverage_pct": 0.0,
             "cpu": _empty_metric(),
             "gpu": _empty_metric(),
+            "gpu_sampled": bool(gpu_sampled),
             "ram": {"avg": 0.0, "peak": 0.0, "headroom": 0.0},
             "ac_avg": 0.0,
             "idle_avg": 0.0,
@@ -127,15 +162,24 @@ def summarize_profile(
         }
 
     cpu_means = [b["cpu_mean"] for b in populated]
-    gpu_means = [b["gpu_mean"] for b in populated]
     ram_means = [b["ram_mean"] for b in populated]
     cpu_spares = [max(0.0, 100.0 - m - margin) for m in cpu_means]
-    gpu_spares = [max(0.0, 100.0 - m) for m in gpu_means]
     mean_cpu_spare = fmean(cpu_spares)
-    mean_gpu_spare = fmean(gpu_spares)
     cpu_low, cpu_high = _recoverable(mean_cpu_spare, harvest_low, harvest_high)
-    gpu_low, gpu_high = _recoverable(mean_gpu_spare, harvest_low, harvest_high)
     avg_ram = fmean(ram_means)
+    if gpu_sampled:
+        gpu_means = [b["gpu_mean"] for b in gpu_buckets]
+        mean_gpu_spare = fmean([max(0.0, 100.0 - m) for m in gpu_means])
+        gpu_low, gpu_high = _recoverable(mean_gpu_spare, harvest_low, harvest_high)
+        gpu_metric = {
+            "avg": fmean(gpu_means),
+            "peak": max(b["gpu_max"] for b in gpu_buckets),
+            "mean_spare": mean_gpu_spare,
+            "recoverable_low": gpu_low,
+            "recoverable_high": gpu_high,
+        }
+    else:
+        gpu_metric = _empty_metric()
 
     return {
         "device": device,
@@ -149,13 +193,8 @@ def summarize_profile(
             "recoverable_low": cpu_low,
             "recoverable_high": cpu_high,
         },
-        "gpu": {
-            "avg": fmean(gpu_means),
-            "peak": max(b["gpu_max"] for b in populated),
-            "mean_spare": mean_gpu_spare,
-            "recoverable_low": gpu_low,
-            "recoverable_high": gpu_high,
-        },
+        "gpu": gpu_metric,
+        "gpu_sampled": bool(gpu_sampled),
         "ram": {
             "avg": avg_ram,
             "peak": max(b["ram_max"] for b in populated),
@@ -183,6 +222,7 @@ def aggregate(
     matching the per-device math exactly. Empty input -> zeroed aggregate.
     """
     contributing = [s for s in summaries if s["coverage_buckets"] > 0]
+    gpu_contributing = [s for s in contributing if s.get("gpu_sampled", False)]
     total_coverage = sum(s["coverage_buckets"] for s in summaries)
     if not contributing:
         return {
@@ -190,6 +230,7 @@ def aggregate(
             "total_coverage_buckets": total_coverage,
             "cpu": _empty_metric(),
             "gpu": _empty_metric(),
+            "gpu_device_count": 0,
             "ram": {"avg": 0.0, "headroom": 0.0},
             "ac_avg": 0.0,
             "idle_avg": 0.0,
@@ -197,10 +238,20 @@ def aggregate(
         }
 
     mean_cpu_spare = fmean([s["cpu"]["mean_spare"] for s in contributing])
-    mean_gpu_spare = fmean([s["gpu"]["mean_spare"] for s in contributing])
     cpu_low, cpu_high = _recoverable(mean_cpu_spare, harvest_low, harvest_high)
-    gpu_low, gpu_high = _recoverable(mean_gpu_spare, harvest_low, harvest_high)
     avg_ram = fmean([s["ram"]["avg"] for s in contributing])
+    if gpu_contributing:
+        mean_gpu_spare = fmean([s["gpu"]["mean_spare"] for s in gpu_contributing])
+        gpu_low, gpu_high = _recoverable(mean_gpu_spare, harvest_low, harvest_high)
+        gpu_metric = {
+            "avg": fmean([s["gpu"]["avg"] for s in gpu_contributing]),
+            "peak": max(s["gpu"]["peak"] for s in gpu_contributing),
+            "mean_spare": mean_gpu_spare,
+            "recoverable_low": gpu_low,
+            "recoverable_high": gpu_high,
+        }
+    else:
+        gpu_metric = _empty_metric()
 
     return {
         "device_count": len(contributing),
@@ -212,13 +263,8 @@ def aggregate(
             "recoverable_low": cpu_low,
             "recoverable_high": cpu_high,
         },
-        "gpu": {
-            "avg": fmean([s["gpu"]["avg"] for s in contributing]),
-            "peak": max(s["gpu"]["peak"] for s in contributing),
-            "mean_spare": mean_gpu_spare,
-            "recoverable_low": gpu_low,
-            "recoverable_high": gpu_high,
-        },
+        "gpu": gpu_metric,
+        "gpu_device_count": len(gpu_contributing),
         "ram": {"avg": avg_ram, "headroom": max(0.0, 100.0 - avg_ram)},
         "ac_avg": fmean([s.get("ac_avg", 0.0) for s in contributing]),
         "idle_avg": fmean([s.get("idle_avg", 0.0) for s in contributing]),

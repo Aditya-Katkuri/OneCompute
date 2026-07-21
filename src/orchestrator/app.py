@@ -634,11 +634,12 @@ def _compact_from_legacy_buckets(
 ) -> dict:
     summary = summarize_profile({"populated": normalize_buckets(buckets)})
     return {
-        "version": 2,
+        "version": 3,
         "device_class": device_class,
         "coverage_buckets": int(summary["coverage_buckets"]),
         "cpu": _sanitize_metric(summary["cpu"]),
         "gpu": _sanitize_metric(summary["gpu"]),
+        "gpu_sampled": bool(summary["gpu_sampled"]),
         "ram_avg": _clamp_pct(summary["ram"]["avg"]),
         "ram_headroom": _clamp_pct(summary["ram"]["headroom"]),
         "ac_avg": _clamp_pct(summary["ac_avg"]),
@@ -655,11 +656,12 @@ def _sanitize_profile_report(report: ProfileReport) -> dict:
     coverage = max(0, min(BUCKETS_PER_WEEK, int(report.coverage_buckets)))
     ram_avg = _clamp_pct(report.ram_avg)
     return {
-        "version": 2,
+        "version": 3,
         "device_class": report.device_class,
         "coverage_buckets": coverage,
         "cpu": _sanitize_metric(report.cpu),
         "gpu": _sanitize_metric(report.gpu),
+        "gpu_sampled": bool(report.gpu_sampled),
         "ram_avg": ram_avg,
         "ram_headroom": max(0.0, 100.0 - ram_avg),
         "ac_avg": _clamp_pct(report.ac_avg),
@@ -681,11 +683,12 @@ def _decode_stored_profile(value: object) -> dict | None:
     if device_class not in {"laptop", "desktop", "devbox", "xbox", "unknown"}:
         device_class = "unknown"
     return {
-        "version": 2,
+        "version": 3,
         "device_class": device_class,
         "coverage_buckets": coverage,
         "cpu": _sanitize_metric(value.get("cpu", {})),
         "gpu": _sanitize_metric(value.get("gpu", {})),
+        "gpu_sampled": value.get("gpu_sampled") is True,
         "ram_avg": ram_avg,
         "ram_headroom": max(0.0, 100.0 - ram_avg),
         "ac_avg": _clamp_pct(value.get("ac_avg", 0.0)),
@@ -705,8 +708,9 @@ def _aggregate_compact_profiles(profiles: list[dict]) -> dict:
         name = profile["device_class"]
         device_classes[name] = device_classes.get(name, 0) + 1
 
-    def metric(name: str) -> dict[str, float]:
-        if not contributing:
+    def metric(name: str, sources: list[dict] | None = None) -> dict[str, float]:
+        selected = contributing if sources is None else sources
+        if not selected:
             return {
                 "avg": 0.0,
                 "peak": 0.0,
@@ -714,16 +718,17 @@ def _aggregate_compact_profiles(profiles: list[dict]) -> dict:
                 "recoverable_high": 0.0,
             }
         return {
-            "avg": _average([p[name]["avg"] for p in contributing]),
-            "peak": max(p[name]["peak"] for p in contributing),
+            "avg": _average([p[name]["avg"] for p in selected]),
+            "peak": max(p[name]["peak"] for p in selected),
             "recoverable_low": _average(
-                [p[name]["recoverable_low"] for p in contributing]
+                [p[name]["recoverable_low"] for p in selected]
             ),
             "recoverable_high": _average(
-                [p[name]["recoverable_high"] for p in contributing]
+                [p[name]["recoverable_high"] for p in selected]
             ),
         }
 
+    gpu_contributing = [p for p in contributing if p.get("gpu_sampled", False)]
     timed = [
         p["availability"]
         for p in contributing
@@ -734,7 +739,8 @@ def _aggregate_compact_profiles(profiles: list[dict]) -> dict:
         "device_count": len(contributing),
         "total_coverage_buckets": total_coverage,
         "cpu": metric("cpu"),
-        "gpu": metric("gpu"),
+        "gpu": metric("gpu", gpu_contributing),
+        "gpu_device_count": len(gpu_contributing),
         "ram_avg": ram_avg,
         "ram_headroom": max(0.0, 100.0 - ram_avg) if contributing else 0.0,
         "ac_avg": _average([p["ac_avg"] for p in contributing]),
@@ -1138,33 +1144,44 @@ def create_app(
         req: HeartbeatRequest,
         authorization: str | None = Header(default=None),
     ) -> HeartbeatResponse:
-        _require_worker_token(
+        worker = _require_worker_token(
             conn, req.worker_id, authorization,
             bind_device_identity=bind_device_identity,
             presented_fingerprint=_verified_client_fingerprint(request),
         )
-        worker = _worker_or_404(conn, req.worker_id)
         approved = bool(worker["approved"])
+        capability = Capability(**json.loads(worker["capability_json"]))
         now = _now()
         with write_lock:
-            conn.execute(
-                """
-                UPDATE workers
-                SET idle = ?, cpu_pct = ?, gpu_pct = ?, on_ac = ?,
-                    free_ram_gb = COALESCE(?, free_ram_gb), last_heartbeat = ?
-                WHERE worker_id = ?
-                """,
-                (
-                    int(req.idle),
-                    req.cpu_pct,
-                    req.gpu_pct,
-                    int(req.on_ac),
-                    req.free_ram_gb,
-                    now,
-                    req.worker_id,
-                ),
-            )
-            if req.current_job_id:
+            if capability.measurement_only:
+                conn.execute(
+                    """
+                    UPDATE workers
+                    SET idle = 1, cpu_pct = 0, gpu_pct = NULL, on_ac = 0,
+                        free_ram_gb = NULL, last_heartbeat = ?
+                    WHERE worker_id = ?
+                    """,
+                    (now, req.worker_id),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE workers
+                    SET idle = ?, cpu_pct = ?, gpu_pct = ?, on_ac = ?,
+                        free_ram_gb = COALESCE(?, free_ram_gb), last_heartbeat = ?
+                    WHERE worker_id = ?
+                    """,
+                    (
+                        int(req.idle),
+                        req.cpu_pct,
+                        req.gpu_pct,
+                        int(req.on_ac),
+                        req.free_ram_gb,
+                        now,
+                        req.worker_id,
+                    ),
+                )
+            if not capability.measurement_only and req.current_job_id:
                 conn.execute(
                     """
                     UPDATE jobs
@@ -1428,11 +1445,13 @@ def create_app(
         authorization: str | None = Header(default=None),
     ) -> ProfileIngestResponse:
         """Store one compact measurement summary after authenticating and clamping every field."""
-        _require_worker_token(
+        worker = _require_worker_token(
             conn, req.worker_id, authorization,
             bind_device_identity=bind_device_identity,
             presented_fingerprint=_verified_client_fingerprint(request),
         )
+        if not worker["approved"]:
+            raise HTTPException(status_code=403, detail="worker is pending approval")
         compact = _sanitize_profile_report(req)
         now = _now()
         with write_lock:
@@ -1497,6 +1516,7 @@ def create_app(
                 recoverable_low=agg["gpu"]["recoverable_low"],
                 recoverable_high=agg["gpu"]["recoverable_high"],
             ),
+            gpu_device_count=agg["gpu_device_count"],
             ram_avg=agg["ram_avg"],
             ram_headroom=agg["ram_headroom"],
             ac_avg=agg["ac_avg"],

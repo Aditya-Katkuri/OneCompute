@@ -31,23 +31,37 @@ the same compact `POST /profile` contract without transmitting an activity timel
 
 - Rolling 168-slot hour-of-week CPU, GPU, RAM, AC-power, and idle/away aggregates used by the local
   governor.
-- Compact observed and unavailable timing totals used to estimate awake and inferred sleep/offline
-  periods.
+- First and last successful sample times plus compact observed and unavailable totals used to
+  estimate awake and inferred sleep/offline periods. No per-sample timestamps are retained.
+- Whether a usable GPU sampler was actually available. CPU-only devices are not treated as idle GPU
+  capacity.
 - No process names, application names, file names, URLs, screen content, keystrokes, input content,
   email, document content, or raw event stream.
 
 Measurement mode does not create `pilot-telemetry.jsonl`. Older installations may have that legacy
 per-sample file; the upgraded worker can use it once to bootstrap timing, after which the operator
-should purge it.
+should purge it. Migration rejects legacy files larger than 8 MB rather than loading an unbounded
+timeline.
+
+The observer saves the first successful sample immediately and then saves locally about every
+minute. It uses an OS-backed single-writer lock, validates loaded values, probes the profile location
+before collection, and publishes complete files with an atomic replace. A malformed profile is
+preserved as `usage_profile.corrupt-<timestamp>-<id>.json` before a clean profile is started. If the
+original cannot be preserved, startup fails instead of overwriting it.
+Continuous collection accepts intervals from five seconds through one hour; the pilot default
+remains 30 seconds.
 
 ### Sent to the orchestrator
 
-The worker sends one compact derived summary approximately every five minutes:
+The worker saves locally independently of the network and attempts one compact derived upload
+approximately every five minutes:
 
 - Stable random observer ID, or an IT-supplied pseudonymous fleet alias.
 - Coarse device class: laptop, desktop, devbox, xbox, or unknown.
 - Coverage count.
-- Aggregate CPU and GPU average, peak, and conservatively recoverable range.
+- Aggregate CPU average, peak, and conservatively recoverable range.
+- GPU sampling status plus GPU average, peak, and recoverable range only when a usable GPU sampler
+  contributed.
 - Aggregate RAM average and headroom.
 - Aggregate percentage of observed time on AC power.
 - Compact observed/unavailable hours per day, timing span, and sample count.
@@ -60,10 +74,17 @@ The worker does **not** upload:
 - The hostname by default.
 - Raw profile files or a per-sample timeline.
 
+Current GPU utilization sampling uses NVIDIA NVML. Devices without a usable NVML sampler still
+contribute CPU and RAM measurements, but do not contribute a GPU estimate. A transient GPU read
+failure also retains that interval's CPU and RAM sample while excluding only the missing GPU value.
+Unknown AC-power or idle-state readings are excluded from those local means and displayed as `?`.
+
 Enrollment separately stores the observer ID, approval status, a measurement-only marker, and the
 fingerprint derived by the server from the TLS-verified peer certificate. Current measurement
 registration does not send actual CPU count, GPU model, total RAM, or live free RAM. Approval
-heartbeats carry liveness only.
+heartbeats carry liveness only. Registration outages and pending approval do not stop local
+collection. Pending observers cannot upload a central profile. The service stores the latest report
+receipt time as operational metadata, not device-generated sample timestamps.
 
 The orchestrator accepts legacy bucket reports only for rolling upgrades. It collapses them in
 memory, discards the hourly and idle pattern, and stores only the compact summary.
@@ -81,6 +102,12 @@ Remote fleet collection requires all of the following:
 6. Separate submit and admin/operator tokens.
 7. Operator authentication for `/state`, `/measurement`, job/workload detail, and audit APIs.
 8. A signed worker package, scoped Defender/WDAC approval, and certificate private-key ACLs.
+9. Participant-user execution at limited privilege. The installers reject the built-in SYSTEM,
+   LOCAL SERVICE, and NETWORK SERVICE identities.
+10. A fixed signed executable or absolute virtual-environment interpreter, never a PATH-resolved
+    Python command.
+11. A per-profile singleton lock so Scheduled Task, Startup, and foreground launches cannot write the
+    same profile concurrently.
 
 Plain HTTP is rejected for remote measurement URLs. It is accepted only for explicit loopback
 development.
@@ -122,13 +149,16 @@ powershell -ExecutionPolicy Bypass -File C:\OneCompute\scripts\install_observer.
   -DeviceClass laptop
 ```
 
-The installer creates a resilient Scheduled Task, starts it, runs on battery because measurement
-itself imposes no workload, restarts on failure, and relaunches after logon. Use `-AtStartup` only
-for sanctioned always-on dev boxes and only from an elevated shell.
+The installer creates a resilient Scheduled Task at `RunLevel Limited`, starts it, runs on battery
+because measurement itself imposes no workload, restarts on failure, and relaunches after logon. It
+refuses the built-in Windows service identities. Use `-AtStartup` only for sanctioned always-on dev
+boxes and only from an elevated shell.
 
 For Intune, deploy the signed executable, certificate chain, per-device client credential, and the
-same arguments. Store the private key under an ACL limited to the task identity and administrators.
-Do not place admin or submit tokens on participant devices.
+same arguments in the participant's user context. For a PowerShell deployment, enable **Run this
+script using the logged-on credentials**. Store the private key under an ACL limited to the
+participant task identity and administrators. Do not place admin or submit tokens on participant
+devices.
 
 The worker registers with its random observer ID and certificate fingerprint. The pilot operator
 then approves the pending device code in the dashboard. The dashboard asks for the admin token and
@@ -144,6 +174,9 @@ powershell -ExecutionPolicy Bypass -File C:\OneCompute\scripts\observe_me.ps1 `
   -DeviceClass laptop
 ```
 
+Run the personal installer from a standard, non-elevated PowerShell window. It refuses an elevated
+token and the built-in Windows service identities.
+
 Check it at any time:
 
 ```powershell
@@ -151,8 +184,9 @@ powershell -ExecutionPolicy Bypass -File C:\OneCompute\scripts\observe_me.ps1 -S
 ```
 
 The status command reports verified observer PIDs, durable profile freshness, sample count,
-autostart state, and whether a legacy timeline still exists. The observer appears in Task Manager
-as `OneCompute Observer`.
+autostart state, and whether a legacy timeline still exists. In Task Manager, the process appears as
+the configured signed executable or Python interpreter; use the status command or the Scheduled Task
+name `OneCompute Observer` to identify it reliably.
 
 ## 7. Pilot rollout
 
@@ -184,8 +218,10 @@ Invoke-RestMethod https://onecompute-pilot.contoso.com:8080/measurement `
   -Certificate (Get-PfxCertificate C:\OneCompute\pki\operator.pfx)
 ```
 
-`GET /measurement` returns fleet averages, conservative recoverable ranges, timing coverage, and
-device-class counts. It does not return per-device hour patterns or idle/away data.
+`GET /measurement` returns fleet averages, conservative recoverable ranges, timing coverage,
+device-class counts, and `gpu_device_count`. GPU values average only devices that reported valid GPU
+sampling. When that count is zero, the dashboard renders GPU as **not measured**, not `0-0%`. The
+endpoint does not return per-device hour patterns or idle/away data.
 
 The measurements are self-reported by the endpoint process. Mutual TLS proves which enrolled device
 sent a report, but it does not prove the report is physically accurate. Review outliers, duplicate
@@ -230,9 +266,11 @@ The personal Startup-folder observer supports the same `-Uninstall` and `-Purge`
 `-Purge` removes:
 
 - `usage_profile.json`
+- the profile lock, atomic-write temporary files, writeability probes, and preserved corrupt profiles
 - `pilot-telemetry.jsonl` and rotated legacy copies
 - the persistent random `observer-id`
-- the scheduled task or Startup launcher
+- observer identity temporary files and `observer-config.json`
+- both the Scheduled Task and Startup launchers, including the legacy batch launcher
 
 When the operator disconnects a worker, the orchestrator immediately deletes that worker's latest
 central measurement summary. Audit records retain a pseudonymous observer ID for security
