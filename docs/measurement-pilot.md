@@ -1,117 +1,267 @@
-# OneCompute Measurement Pilot Runbook (1 week, voluntary, no job execution)
+# OneCompute Measurement Pilot Runbook
 
-The lowest-risk first step for OneCompute in a real org: measure how much idle CPU/GPU/RAM headroom actually exists across employee laptops, dev boxes, and Xboxes, before any workload is ever routed onto a device. This pilot runs pure read-only telemetry. It never pulls or runs a job, so there is no chance of a workload landing on someone's machine.
+**Target:** 50-100 voluntary devices for approximately one week
+**Phase:** measurement only, no job execution
+**Primary platforms:** managed Windows laptops, desktops, and dev boxes
 
-Pairs with `Azure_Integration_Plan.md` (Phase 0) and `Financial_Impact.md` (the measured numbers this pilot produces replace the estimates there).
+This is the lowest-risk first use of OneCompute in an organization. Each volunteer device learns
+how much CPU, GPU, and RAM headroom it has without pulling or running any workload. The pilot is
+gated by `docs/pitch/pilot-security-approval.md`, the threat model, Privacy/CELA review, and the
+participant notice in `docs/pitch/OneCompute-Measurement-Pilot-Consent.md`.
 
-## What it does and does not do
-- Does: on each volunteer device, learn a rolling, on-device usage profile (per hour-of-week min/avg/peak CPU, GPU, RAM), stream live utilization to the operator dashboard, and (opt-in) upload the derived usage envelope to the orchestrator so the fleet-wide number is visible centrally.
-- Does not: pull a job, run a job, or place any compute load on the machine. It never consults the admission/yield governor.
-- Privacy: the usage profile is stored on the employee's own machine (`%LOCALAPPDATA%\OneCompute\usage_profile.json`). Only derived, aggregated hour-of-week statistics (means/peaks per resource) are ever uploaded, and only a derived spare-capacity number is shown. No keystrokes, files, screen, app content, or wall-clock activity times are collected. Participation is voluntary and stops instantly on Ctrl-C or uninstall.
+## 1. Supported scope
 
-## 1. Consent and scope
-- Volunteers opt in (see `pilot-consent.md` if present). Confirm managers are aware.
-- Device classes to cover: assigned laptops, unassigned laptops, idle dev boxes, and Xboxes.
+| Device class | Current status | Pilot treatment |
+|---|---|---|
+| Windows laptop | Supported | Standard per-user or Intune deployment |
+| Windows desktop | Supported | Standard per-user or Intune deployment |
+| Windows dev box | Supported | Per-user or startup task, depending on ownership |
+| Retail Xbox | Not supported | Do not deploy the Python or PowerShell observer |
+| Xbox dev kit or sanctioned Windows-based Xbox environment | Conditional | Security and platform-owner approval required |
 
-## 2. Stand up the orchestrator (collects profiles centrally)
-- Run the orchestrator on a reachable host: `uv run python -m orchestrator` (default `http://<host>:8080`). Confirm reachability from a device: `curl http://<orchestrator>:8080/healthz` returns `{"ok": true}`.
-- Devices in `--measure-only` mode upload their on-device usage envelope to the orchestrator automatically (opt-in, derived stats only), so you get a live fleet view without collecting files by hand.
-- Fully offline still works: if a device cannot reach the orchestrator the upload is silently skipped and the profile keeps building locally, so you can collect that file later (offline path in step 5).
+A retail Xbox cannot run the current Python/PowerShell observer. Xbox participation requires a
+future signed native collector or a sanctioned dev-kit environment. That collector can implement
+the same compact `POST /profile` contract without transmitting an activity timeline.
 
-## 3. Run the measurement worker (each device)
+## 2. Privacy-minimized data flow
+
+### Stored only on the device
+
+`%LOCALAPPDATA%\OneCompute\usage_profile.json` contains:
+
+- Rolling 168-slot hour-of-week CPU, GPU, RAM, AC-power, and idle/away aggregates used by the local
+  governor.
+- Compact observed and unavailable timing totals used to estimate awake and inferred sleep/offline
+  periods.
+- No process names, application names, file names, URLs, screen content, keystrokes, input content,
+  email, document content, or raw event stream.
+
+Measurement mode does not create `pilot-telemetry.jsonl`. Older installations may have that legacy
+per-sample file; the upgraded worker can use it once to bootstrap timing, after which the operator
+should purge it.
+
+### Sent to the orchestrator
+
+The worker sends one compact derived summary approximately every five minutes:
+
+- Stable random observer ID, or an IT-supplied pseudonymous fleet alias.
+- Coarse device class: laptop, desktop, devbox, xbox, or unknown.
+- Coverage count.
+- Aggregate CPU and GPU average, peak, and conservatively recoverable range.
+- Aggregate RAM average and headroom.
+- Aggregate percentage of observed time on AC power.
+- Compact observed/unavailable hours per day, timing span, and sample count.
+
+The worker does **not** upload:
+
+- Per-hour buckets or wall-clock timestamps.
+- Idle/away or last-input percentages.
+- A live CPU/GPU/RAM stream.
+- The hostname by default.
+- Raw profile files or a per-sample timeline.
+
+Enrollment separately stores the observer ID, approval status, a measurement-only marker, and the
+fingerprint derived by the server from the TLS-verified peer certificate. Current measurement
+registration does not send actual CPU count, GPU model, total RAM, or live free RAM. Approval
+heartbeats carry liveness only.
+
+The orchestrator accepts legacy bucket reports only for rolling upgrades. It collapses them in
+memory, discards the hourly and idle pattern, and stores only the compact summary.
+
+## 3. Required security controls
+
+Remote fleet collection requires all of the following:
+
+1. HTTPS with the server CA pinned by every worker.
+2. A unique client certificate and private key per device.
+3. Mutual TLS on the orchestrator.
+4. Device identity binding to the fingerprint derived directly from the verified TLS peer
+   certificate. Client-supplied fingerprint headers are ignored.
+5. Device-code approval before profile upload.
+6. Separate submit and admin/operator tokens.
+7. Operator authentication for `/state`, `/measurement`, job/workload detail, and audit APIs.
+8. A signed worker package, scoped Defender/WDAC approval, and certificate private-key ACLs.
+
+Plain HTTP is rejected for remote measurement URLs. It is accepted only for explicit loopback
+development.
+
+## 4. Stand up the secure orchestrator
+
+Set distinct secrets through the environment rather than placing them in shell history:
+
 ```powershell
-uv run python -m worker --url http://<orchestrator-host>:8080 --measure-only
+$env:ONECOMPUTE_SUBMIT_TOKEN = Read-Host "Submit token"
+$env:ONECOMPUTE_ADMIN_TOKEN = Read-Host "Admin token"
+
+uv run python -m orchestrator `
+  --secure-measurement-pilot `
+  --tls-cert C:\OneCompute\pki\server.crt `
+  --tls-key C:\OneCompute\pki\server.key `
+  --tls-client-ca C:\OneCompute\pki\worker-ca.crt `
+  --db C:\OneCompute\data\measurement-pilot.db
 ```
-- Prints `measure-only: tracking CPU/GPU/RAM, no jobs will run`, then samples on a cadence (default every 30s; tune with `--measure-interval`) and saves the profile locally plus uploads its envelope to the orchestrator on the first sample and about every five minutes after.
-- For managed fleets, ship the signed single-exe instead of a Python checkout: build with `scripts/build_worker_exe.ps1` (it prints the SHA-256 for Defender allow-listing; sign it with the corporate cert), then run `onecompute-worker.exe --url http://<host>:8080 --measure-only`.
-- Leave it running for the pilot window (about one week, so the profile fills each of its 168 hour-of-week buckets at least once across weekdays and weekends). Stop anytime with Ctrl-C; the learned profile is saved and a final envelope is uploaded on exit.
 
-## 3.1 Keep it running across logoff, reboot, and sleep (recommended for the week)
+`--secure-measurement-pilot` fails closed unless server TLS, client CA, and distinct submit/admin
+tokens are configured. It enables approval gating and certificate-bound device identity.
 
-Running the command in a foreground window works, but it stops if the volunteer closes the window or reboots. To keep the observer alive for the whole week without babysitting, install it as a Windows Scheduled Task:
+Keep the orchestrator on a hardened, access-controlled host. Restrict inbound access to the pilot
+network and administrative operators. Back up the database according to the approved retention
+plan, not indefinitely.
+
+## 5. Enroll each managed Windows device
+
+Each device needs its own client certificate and private key. Do not reuse one client credential
+across the fleet.
 
 ```powershell
-# No admin needed: per-user task that starts now and re-launches at every logon.
-powershell -ExecutionPolicy Bypass -File scripts\install_observer.ps1 -Url http://<orchestrator-host>:8080
-
-# Always-on dev box/server (run in an elevated shell): also start at boot, before login.
-powershell -ExecutionPolicy Bypass -File scripts\install_observer.ps1 -Url http://<host>:8080 -AtStartup
-
-# Inspect what it would register, without registering:
-powershell -ExecutionPolicy Bypass -File scripts\install_observer.ps1 -Url http://<host>:8080 -DryRun
-
-# Opt out (remove it) at any time:
-powershell -ExecutionPolicy Bypass -File scripts\install_observer.ps1 -Uninstall
+powershell -ExecutionPolicy Bypass -File C:\OneCompute\scripts\install_observer.ps1 `
+  -Url https://onecompute-pilot.contoso.com:8080 `
+  -TlsCa C:\ProgramData\OneCompute\pki\server-ca.crt `
+  -ClientCert C:\ProgramData\OneCompute\pki\device.crt `
+  -ClientKey C:\ProgramData\OneCompute\pki\device.key `
+  -DeviceClass laptop
 ```
 
-What this buys the pilot (the observer is built to run unattended for a week):
+The installer creates a resilient Scheduled Task, starts it, runs on battery because measurement
+itself imposes no workload, restarts on failure, and relaunches after logon. Use `-AtStartup` only
+for sanctioned always-on dev boxes and only from an elevated shell.
 
-- **Survives reboot / shutdown:** the logon trigger re-launches it when the volunteer logs back in; `-AtStartup` (admin) also starts it at boot before login for machines that stay on without a user.
-- **Survives sleep / hibernate:** the process resumes on wake; the loop detects the gap and keeps sampling (each CPU reading is a fresh sample, so no bogus data), and never runs on the frozen machine.
-- **Survives crashes:** the task auto-restarts on failure (once a minute), and `StartWhenAvailable` catches a trigger missed while the device was off.
-- **Survives network drops and power state:** uploads are best-effort (the profile keeps building locally when the orchestrator is unreachable), and it runs on battery too because measurement imposes zero compute load.
-- **Loses at most a few minutes on a hard power-loss:** the profile is saved locally on the upload cadence, not only on a clean exit, and reloaded on the next start so a week of learning accumulates across reboots.
+For Intune, deploy the signed executable, certificate chain, per-device client credential, and the
+same arguments. Store the private key under an ACL limited to the task identity and administrators.
+Do not place admin or submit tokens on participant devices.
 
-Managed-device note: on a locked-down corporate device, creating a scheduled task can require an elevated shell or IT deployment (Intune / Group Policy pushing the same measure-only command). The installer prints exactly that guidance if registration is blocked; `-DryRun` shows the definition IT would deploy.
+The worker registers with its random observer ID and certificate fingerprint. The pilot operator
+then approves the pending device code in the dashboard. The dashboard asks for the admin token and
+keeps it only in page memory.
 
-## 3.2 Solo, local-only self-pilot (one machine, no orchestrator, no Scheduled Task)
+## 6. Solo local observer
 
-To observe just your own machine for a week with zero infrastructure, run measure-only **without a `--url`**: it records CPU/GPU/RAM to the on-device profile only, with no registration, heartbeat, upload, or network at all.
+For one-device testing with no orchestrator or network:
 
 ```powershell
-# Start now AND autostart at every logon (no admin, no Scheduled Task -- uses the Startup folder,
-# so it works even where task creation is policy-blocked). Runs in a titled "OneCompute Observer"
-# window you can find in Task Manager.
-powershell -ExecutionPolicy Bypass -File scripts\observe_me.ps1 -Install
-
-# Check any day that it's still collecting (profile freshness, sample count, PIDs, autostart state):
-powershell -ExecutionPolicy Bypass -File scripts\observe_me.ps1 -Status
-
-# Stop the autostart when the week is done (then close the observer window):
-powershell -ExecutionPolicy Bypass -File scripts\observe_me.ps1 -Uninstall
+powershell -ExecutionPolicy Bypass -File C:\OneCompute\scripts\observe_me.ps1 `
+  -Install `
+  -DeviceClass laptop
 ```
 
-- **Findable:** the observer runs in a console window titled **`OneCompute Observer`** (Task Manager > Processes, under Apps), and `-Status` prints its PID(s) for the Details tab. The `.venv` launcher re-execs the interpreter, so `-Status` may list two PIDs for the one observer (a parent launcher and its interpreter child).
-- **Same resilience as §3.1:** resumes on wake, relaunches at logon after a reboot, saves locally on the upload cadence, and never runs while the machine is asleep. Successful-sample timing is also persisted, so each resume or restart records the preceding interval as an unavailable gap without retaining a detailed activity timeline.
-- **Report at the end:** `uv run python scripts/measure_report.py "%LOCALAPPDATA%\OneCompute\usage_profile.json"` prints the measured idle-headroom readout (same governor-consistent math as the central rollup). `scripts/business_case.py` on the same profile prints both the currently executable awake-only value and a separately labelled wake-enabled potential (see §5).
-
-## 3.3 Multi-person pilot (collect several devices, no orchestrator)
-
-To run a small voluntary group without standing up an orchestrator, have each person run the local observer writing to a **distinctly-named** profile, then collect the files into one folder for a single aggregate readout.
+Check it at any time:
 
 ```powershell
-# Each person (name the profile so files don't collide when collected):
-powershell -ExecutionPolicy Bypass -File scripts\observe_me.ps1 -Install -ProfileFile "$env:LOCALAPPDATA\OneCompute\$env:COMPUTERNAME.json"
+powershell -ExecutionPolicy Bypass -File C:\OneCompute\scripts\observe_me.ps1 -Status
 ```
 
-At the end of the week each person copies their `%LOCALAPPDATA%\OneCompute\<name>.json` into a shared folder, and the coordinator runs the aggregate readout and dollar projection over the whole directory:
+The status command reports verified observer PIDs, durable profile freshness, sample count,
+autostart state, and whether a legacy timeline still exists. The observer appears in Task Manager
+as `OneCompute Observer`.
+
+## 7. Pilot rollout
+
+Use staged enrollment instead of connecting 100 devices at once:
+
+1. **Control ring:** 3-5 pilot-team devices for at least 24 hours.
+2. **Early ring:** 10-15 diverse laptops and dev boxes for at least 24 hours.
+3. **Fleet ring:** expand to 50-100 volunteers only after Security, Privacy, and the pilot lead
+   review the first two rings.
+
+At each gate, confirm:
+
+- No Defender, WDAC, Purview, or certificate alerts.
+- No unexpected CPU, GPU, memory, battery, or network impact.
+- Profile freshness and upload cadence are healthy.
+- Device counts and classes match the approved inventory.
+- No duplicate observer IDs or certificate fingerprints.
+- No anomalous or implausible self-reported measurements.
+
+## 8. Monitor the pilot
+
+Read the central summary with the admin token:
 
 ```powershell
-uv run python scripts/measure_report.py  <dir-of-collected-profiles>   # measured headroom, per-device + fleet
-uv run python scripts/business_case.py   <dir-of-collected-profiles>   # Azure-equivalent $ projection
+$scheme = "Bear" + "er"
+$headers = @{ Authorization = "$scheme $env:ONECOMPUTE_ADMIN_TOKEN" }
+Invoke-RestMethod https://onecompute-pilot.contoso.com:8080/measurement `
+  -Headers $headers `
+  -Certificate (Get-PfxCertificate C:\OneCompute\pki\operator.pfx)
 ```
 
-`measure_report.py` names each device from its filename, so distinctly-named profiles show as separate devices. Prefer the central-orchestrator path (§2, `--url`) when you want the live dashboard instead of manual collection.
+`GET /measurement` returns fleet averages, conservative recoverable ranges, timing coverage, and
+device-class counts. It does not return per-device hour patterns or idle/away data.
 
-## 4. Watch the fleet (live, central)
-- The operator dashboard (served at the orchestrator root `/`) shows a live "Measured idle headroom" beat: recoverable CPU headroom, contributing device count, average utilization, GPU and RAM.
-- Or read it directly: `GET /measurement` returns the fleet-wide measured idle-headroom rollup as JSON (see `dashboard-api.md`).
+The measurements are self-reported by the endpoint process. Mutual TLS proves which enrolled device
+sent a report, but it does not prove the report is physically accurate. Review outliers, duplicate
+patterns, impossible percentages, abrupt discontinuities, and unexpected class changes. For a
+sample of devices, compare results with approved Intune or endpoint-management inventory.
 
-## 5. Produce the report (the deliverable)
-- Central (recommended): the live `GET /measurement` rollup already is the measured number, computed with the same governor-consistent math as the CLI.
-- Offline / archival: collect each device's `%LOCALAPPDATA%\OneCompute\usage_profile.json` (one file per device) into a directory and run:
-  ```powershell
-  uv run python scripts/measure_report.py <dir-of-collected-profiles>
-  ```
-  Output is a per-device and aggregate summary of average/peak CPU/GPU/RAM plus an **estimated conservatively-recoverable headroom** range (measured spare capacity, with the governor's 25 percent comfort margin, harvested at a conservative 20-40 percent). Both paths share identical math (`measurement.headroom`), so the CLI and the dashboard always agree. Use `--json` for a machine-readable version.
-- This aggregate is the honest, measured number that replaces the estimates in `Financial_Impact.md`.
-- **Dollar projection:** `uv run python scripts/business_case.py <profile-or-dir>` uses persistent sample timing when available, or automatically reconstructs historical gaps from a sibling `pilot-telemetry.jsonl` for an existing local pilot. It prints the current awake-on-AC value and, by default, a wake-enabled potential that assumes every inferred unavailable gap can be powered and used at 75% CPU. Use `--awake-only` to exclude gaps. The worker does not currently wake or power on devices, and the report says so explicitly.
-- **Gap interpretation:** a missing-sample interval proves only that the observer was unavailable. It may be sleep, shutdown, reboot, or a stopped observer. Windows event logs can classify a specific machine after the fact, but the portable profile intentionally stores only aggregate timing.
-- **RAM interpretation:** sleep does not make application memory free. The wake scenario therefore keeps RAM bounded by measured headroom rather than assuming the whole machine is empty.
+## 9. Reporting
 
-## 6. Interpret and hand off
-- The measured recoverable-headroom figure, plus the utilization profiles, are exactly what Azure Compute (functionality) and the CISO office (safety) need to co-design safe routing of Azure/Foundry requests into the pool (Azure_Integration_Plan.md, Phase 0). Nothing is routed onto a device until that co-development is done.
+Use the central compact rollup for the 50-100 device readout. Do not collect raw
+`usage_profile.json` files into a central share unless Privacy explicitly approves that richer
+hour-of-week pattern.
 
-## 7. Rollback
-- Fully reversible on the device: volunteers Ctrl-C or uninstall the worker. The only device artifact is the local profile file, which is theirs to keep or delete.
-- Central state is minimal: the orchestrator keeps only the latest derived usage envelope per worker (one row, derived stats only). Removing a device from the fleet or tearing down the orchestrator's database drops it; nothing about a device persists once it stops participating.
+For a local-only participant, run reports on that device:
+
+```powershell
+uv run python C:\OneCompute\scripts\measure_report.py `
+  "$env:LOCALAPPDATA\OneCompute\usage_profile.json"
+
+uv run python C:\OneCompute\scripts\business_case.py `
+  "$env:LOCALAPPDATA\OneCompute\usage_profile.json"
+```
+
+The business-case report separates currently executable awake-only capacity from modeled
+wake-enabled potential. OneCompute does not currently wake or power on sleeping devices.
+
+## 10. Opt-out, erasure, and retention
+
+Stop collection but retain the local profile:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\OneCompute\scripts\install_observer.ps1 -Uninstall
+```
+
+Stop collection and delete all known local pilot artifacts:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\OneCompute\scripts\install_observer.ps1 -Purge
+```
+
+The personal Startup-folder observer supports the same `-Uninstall` and `-Purge` choices.
+
+`-Purge` removes:
+
+- `usage_profile.json`
+- `pilot-telemetry.jsonl` and rotated legacy copies
+- the persistent random `observer-id`
+- the scheduled task or Startup launcher
+
+When the operator disconnects a worker, the orchestrator immediately deletes that worker's latest
+central measurement summary. Audit records retain a pseudonymous observer ID for security
+accountability. The pilot approval should set a concrete retention window for the database and
+audit log. The proposed default is deletion within 30 days after the pilot closes, unless an
+approved incident hold applies.
+
+## 11. Incident response and kill switch
+
+Pause the pilot for any security alert, suspected certificate misuse, unexplained data anomaly,
+participant complaint, or material endpoint impact:
+
+1. Stop the orchestrator or block its network listener.
+2. Disconnect affected observer IDs through the authenticated admin endpoint.
+3. Stop or purge the observer on affected devices.
+4. Revoke affected client certificates.
+5. Preserve only the evidence required by the approved incident process.
+6. Do not resume until the Security and Privacy contacts approve.
+
+## 12. Residual risks reviewers must accept
+
+- Endpoint measurements are self-reported and can be falsified by a local administrator or
+  compromised device.
+- A pseudonymous observer can still become identifiable if the operator keeps an external
+  observer-to-employee enrollment map.
+- Compact observed/unavailable totals can reveal broad device-availability behavior, although they
+  do not reveal wall-clock times or an idle/presence heatmap.
+- Certificate issuance, private-key protection, revocation, and operator-token custody are
+  deployment responsibilities.
+- Unavailable gaps cannot distinguish sleep, shutdown, reboot, network loss, or a stopped observer
+  without collecting more invasive telemetry.
+- Retail Xbox collection is not implemented.

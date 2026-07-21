@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS workers (
     device_code    TEXT,                        -- short human code shown while pending approval
     last_heartbeat TEXT,
     registered_at  TEXT NOT NULL,
-    cert_fingerprint TEXT                        -- lowercase hex SHA-256 of the worker's TLS client-cert DER; binds device identity (STRIDE Spoofing / B3). NULL = unbound
+    cert_fingerprint TEXT                        -- SHA-256 of TLS-verified peer cert DER; never trusted from a client header. NULL = unbound
 );
 
 CREATE TABLE IF NOT EXISTS jobs (
@@ -64,12 +64,12 @@ CREATE TABLE IF NOT EXISTS events (
     hash      TEXT             -- sha256_hex(canonical_bytes([prev_hash, ts, type, worker_id, job_id, detail]))
 );
 
--- Opt-in measurement pilot: the latest on-device usage envelope per worker (derived hour-of-week
--- stats only, never raw activity). One row per worker, replaced on each POST /profile. Read by
--- GET /measurement to roll up fleet-wide measured idle headroom.
+-- Opt-in measurement pilot: the latest privacy-minimized derived summary per worker. Current
+-- workers never upload per-hour buckets or idle/presence data. One row per worker, replaced on
+-- each POST /profile and read by GET /measurement for the fleet rollup.
 CREATE TABLE IF NOT EXISTS worker_profiles (
     worker_id    TEXT PRIMARY KEY,
-    buckets_json TEXT NOT NULL,               -- JSON list of populated buckets (see UsageBucket)
-    coverage     INTEGER NOT NULL DEFAULT 0,  -- populated hour-of-week buckets in this profile
+    buckets_json TEXT NOT NULL,               -- compact summary JSON; name retained for migration
+    coverage     INTEGER NOT NULL DEFAULT 0,  -- covered hour-of-week slots, not stored slot data
     updated_at   TEXT NOT NULL
 );

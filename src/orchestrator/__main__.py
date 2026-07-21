@@ -25,6 +25,7 @@ import sys
 import uvicorn
 
 from orchestrator.app import create_app
+from orchestrator.mtls_protocol import VerifiedClientCertH11Protocol
 from orchestrator.netinfo import lan_ipv4_addresses, primary_lan_ipv4
 from trust import server_ssl_kwargs
 
@@ -132,8 +133,9 @@ def _serve(host: str, port: int, db_path: str, log_level: str,
     submission and ``admin_token`` gates the device-admin endpoints (approve/disconnect/tier),
     separately when set (else the device-admin gate falls back to the submit token). When
     ``require_approval`` is set, joining workers are gated behind a dashboard device-code approval.
-    When ``bind_device_identity`` is set, a worker's bearer token is bound to its TLS client-cert
-    fingerprint (STRIDE Spoofing / B3). When ``attestation_pubkey`` is set, a worker's tier is
+    When ``bind_device_identity`` is set, the custom HTTP protocol derives the fingerprint from the
+    TLS-verified peer certificate and binds the worker token to possession of that device key.
+    When ``attestation_pubkey`` is set, a worker's tier is
     derived from a device-posture attestation it verifies against that authority key (else the
     feature is inert). Blocks until shutdown."""
     app = create_app(
@@ -149,7 +151,12 @@ def _serve(host: str, port: int, db_path: str, log_level: str,
     if tls_cert and tls_key:
         ssl_kwargs = server_ssl_kwargs(tls_cert, tls_key, tls_client_ca)
     config = uvicorn.Config(
-        app, host=host, port=port, log_level=log_level, **ssl_kwargs,
+        app,
+        host=host,
+        port=port,
+        log_level=log_level,
+        http=VerifiedClientCertH11Protocol if tls_client_ca else "auto",
+        **ssl_kwargs,
     )
     server = uvicorn.Server(config)
     server.run()  # installs its own SIGINT handler for clean Ctrl-C shutdown
@@ -206,11 +213,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--bind-device-identity",
         action="store_true",
-        help="Bind each worker's bearer token to its TLS client-cert fingerprint (STRIDE Spoofing "
-             "/ B3): later authenticated calls must present the same X-Client-Cert-SHA256 the "
-             "worker registered, so a stolen token alone cannot impersonate the device. In "
-             "production the mTLS-terminating front end injects this header after verifying the "
-             "client cert. Off by default.",
+        help="Bind each worker bearer token to the SHA-256 fingerprint derived directly from its "
+             "TLS-verified peer certificate, so a stolen token alone cannot impersonate the "
+             "device. Requires --tls-cert, --tls-key, and --tls-client-ca. Off by default.",
+    )
+    parser.add_argument(
+        "--secure-measurement-pilot",
+        action="store_true",
+        help="Fail-closed preset for a remote volunteer measurement fleet. Requires HTTPS server "
+             "cert/key, a client CA for mTLS, distinct submit/admin tokens, approval, and bound "
+             "device identity.",
     )
     parser.add_argument(
         "--attestation-key",
@@ -223,6 +235,35 @@ def main(argv: list[str] | None = None) -> int:
              "so behavior is unchanged and tiers are set only by the admin endpoint.",
     )
     args = parser.parse_args(argv)
+    if args.secure_measurement_pilot:
+        missing = [
+            option
+            for option, value in (
+                ("--tls-cert", args.tls_cert),
+                ("--tls-key", args.tls_key),
+                ("--tls-client-ca", args.tls_client_ca),
+                ("--submit-token", args.submit_token),
+                ("--admin-token", args.admin_token),
+            )
+            if not value
+        ]
+        if missing:
+            parser.error(
+                "--secure-measurement-pilot requires " + ", ".join(missing)
+            )
+        if args.submit_token == args.admin_token:
+            parser.error(
+                "--secure-measurement-pilot requires distinct submit and admin tokens"
+            )
+        args.require_approval = True
+        args.bind_device_identity = True
+    if args.bind_device_identity and not (
+        args.tls_cert and args.tls_key and args.tls_client_ca
+    ):
+        parser.error(
+            "--bind-device-identity requires --tls-cert, --tls-key, and --tls-client-ca "
+            "so the server can derive identity from the verified TLS peer certificate"
+        )
 
     host = args.host if args.host is not None else env_host
     if args.port is not None:

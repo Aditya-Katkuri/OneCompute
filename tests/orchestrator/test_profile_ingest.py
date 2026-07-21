@@ -8,6 +8,8 @@ break it. Hermetic: in-memory db, no network.
 """
 from __future__ import annotations
 
+import json
+
 from fastapi.testclient import TestClient
 
 from orchestrator.app import create_app
@@ -68,7 +70,11 @@ def test_ingest_then_measurement_rolls_up_governor_consistent_headroom() -> None
     buckets = [_bucket(5, 20, 5, 40), _bucket(100, 30, 10, 50)]
     r = client.post("/profile", json={"worker_id": "w1", "buckets": buckets}, headers=auth)
     assert r.status_code == 200
-    assert r.json() == {"accepted": True, "buckets_stored": 2}
+    assert r.json() == {
+        "accepted": True,
+        "coverage_buckets": 2,
+        "buckets_stored": 0,
+    }
 
     m = client.get("/measurement").json()
     assert m["device_count"] == 1
@@ -80,6 +86,14 @@ def test_ingest_then_measurement_rolls_up_governor_consistent_headroom() -> None
     assert abs(m["cpu"]["recoverable_low"] - 10.0) < 1e-6
     assert abs(m["cpu"]["recoverable_high"] - 20.0) < 1e-6
     assert abs(m["ram_headroom"] - 55.0) < 1e-6
+    stored = json.loads(
+        client.app.state.conn.execute(
+            "SELECT buckets_json FROM worker_profiles WHERE worker_id = 'w1'"
+        ).fetchone()["buckets_json"]
+    )
+    assert isinstance(stored, dict)
+    assert "buckets" not in stored
+    assert "idle_avg" not in stored
 
 
 def test_measurement_empty_fleet_is_zeroed() -> None:
@@ -105,7 +119,8 @@ def test_ingest_drops_unpopulated_bad_index_and_duplicate_buckets() -> None:
         _bucket(-1, 10, 0, 0),         # negative index -> dropped
     ]
     r = client.post("/profile", json={"worker_id": "w1", "buckets": buckets}, headers=auth)
-    assert r.json()["buckets_stored"] == 1
+    assert r.json()["coverage_buckets"] == 1
+    assert r.json()["buckets_stored"] == 0
     m = client.get("/measurement").json()
     assert m["cpu"]["avg"] == 20.0  # only the first index-5 bucket survived
 
@@ -174,3 +189,123 @@ def test_worker_with_only_empty_buckets_does_not_count_as_a_device() -> None:
     assert resp.json()["buckets_stored"] == 0
     m = client.get("/measurement").json()
     assert m["device_count"] == 1  # only the live device contributes
+
+
+def test_compact_report_retains_only_coarse_summary_and_availability() -> None:
+    client = TestClient(create_app(":memory:"))
+    auth = _register(client)
+    report = {
+        "worker_id": "w1",
+        "device_class": "laptop",
+        "coverage_buckets": 24,
+        "cpu": {
+            "avg": 20,
+            "peak": 80,
+            "recoverable_low": 11,
+            "recoverable_high": 22,
+        },
+        "gpu": {
+            "avg": 4,
+            "peak": 30,
+            "recoverable_low": 19,
+            "recoverable_high": 38,
+        },
+        "ram_avg": 45,
+        "ram_headroom": 999,
+        "ac_avg": 75,
+        "availability": {
+            "span_hours": 168,
+            "observed_hours_per_day": 9,
+            "unavailable_hours_per_day": 15,
+            "sample_count": 1000,
+        },
+    }
+
+    response = client.post("/profile", json=report, headers=auth)
+
+    assert response.json()["coverage_buckets"] == 24
+    measurement = client.get("/measurement").json()
+    assert measurement["device_classes"] == {"laptop": 1}
+    assert measurement["cpu"]["recoverable_high"] == 22
+    assert measurement["ram_headroom"] == 55
+    assert measurement["ac_avg"] == 75
+    assert measurement["observed_hours_per_day"] == 9
+    assert measurement["unavailable_hours_per_day"] == 15
+    assert measurement["timing_span_hours"] == 168
+    assert "idle_avg" not in measurement
+
+
+def test_legacy_idle_pattern_is_discarded_not_persisted() -> None:
+    client = TestClient(create_app(":memory:"))
+    auth = _register(client)
+    bucket = _bucket(12, 10, 5, 40)
+    bucket["idle_mean"] = 91
+    bucket["ac_mean"] = 60
+
+    client.post("/profile", json={"worker_id": "w1", "buckets": [bucket]}, headers=auth)
+
+    stored = client.app.state.conn.execute(
+        "SELECT buckets_json FROM worker_profiles WHERE worker_id = 'w1'"
+    ).fetchone()["buckets_json"]
+    assert "idle_mean" not in stored
+    assert "91" not in stored
+
+
+def test_disconnect_erases_the_latest_central_measurement_summary() -> None:
+    client = TestClient(create_app(":memory:"))
+    auth = _register(client)
+    client.post(
+        "/profile",
+        json={
+            "worker_id": "w1",
+            "coverage_buckets": 1,
+            "cpu": {"avg": 10, "peak": 20},
+            "ram_avg": 30,
+        },
+        headers=auth,
+    )
+    assert client.get("/measurement").json()["device_count"] == 1
+
+    assert client.delete("/workers/w1").status_code == 200
+
+    assert client.get("/measurement").json()["device_count"] == 0
+    assert client.app.state.conn.execute(
+        "SELECT 1 FROM worker_profiles WHERE worker_id = 'w1'"
+    ).fetchone() is None
+
+
+def test_measurement_registration_discards_live_capability_and_cannot_lease_jobs() -> None:
+    client = TestClient(create_app(":memory:"))
+    response = client.post(
+        "/register",
+        json={
+            "worker_id": "observer-12345678",
+            "measurement_only": True,
+            "cpus": 64,
+            "ram_gb": 128,
+            "free_ram_gb": 100,
+            "has_gpu": True,
+            "gpu_model": "sensitive-model-name",
+        },
+    )
+    token = response.json()["worker_token"]
+    scheme = "Bear" + "er"
+    auth = {"Authorization": f"{scheme} {token}"}
+
+    row = client.app.state.conn.execute(
+        "SELECT capability_json, free_ram_gb FROM workers WHERE worker_id = ?",
+        ("observer-12345678",),
+    ).fetchone()
+    stored = json.loads(row["capability_json"])
+    assert stored["measurement_only"] is True
+    assert stored["cpus"] == 1
+    assert stored["ram_gb"] == 1.0
+    assert stored["has_gpu"] is False
+    assert row["free_ram_gb"] is None
+
+    client.post("/jobs", json={"kind": "challenge", "input": {"x": 1}})
+    next_job = client.get(
+        "/jobs/next?worker_id=observer-12345678",
+        headers=auth,
+    )
+    assert next_job.status_code == 204

@@ -1,129 +1,217 @@
 <#
 .SYNOPSIS
-  Personal, LOCAL-ONLY OneCompute measurement observer for a ~1-week self-pilot. Records this
-  machine's CPU/GPU/RAM into the on-device usage profile, survives reboot/sleep, and is easy to
-  find in Task Manager.
+  Install, inspect, stop, or purge the privacy-minimized OneCompute measurement observer.
 
 .DESCRIPTION
-  Runs:  python -m worker --measure-only --measure-interval <IntervalSec>   (local-only, no network)
-  in a console window titled "OneCompute Observer" so you can spot it in Task Manager (Processes ->
-  the "OneCompute Observer" window under Apps, or match the PID reported by -Status in Details).
+  The observer samples CPU/GPU/RAM locally into
+  %LOCALAPPDATA%\OneCompute\usage_profile.json. Measurement mode never pulls a job, never writes a
+  per-sample JSONL timeline, and never streams live utilization. When -Url is supplied, it uploads
+  only a compact derived summary. Remote upload URLs must use HTTPS; HTTP is accepted only for
+  localhost development.
 
-  It writes ONLY CPU/GPU/RAM percentages to a local profile
-  (%LOCALAPPDATA%\OneCompute\usage_profile.json). It never pulls or runs a job, never uploads, and
-  never touches the network. Sleep/hibernate is covered by the process resuming on wake; reboot is
-  covered by the Startup-folder autostart below (no admin, no Scheduled Task, so it works on managed
-  machines where task creation is blocked).
-
-  -Install   drop a launcher in your Startup folder so the observer relaunches at every logon, then
-             start it now. No admin required.
-  -Uninstall remove the Startup launcher (a running observer keeps going until you close its window).
-  -Status    print whether the observer looks ALIVE (profile last updated N seconds ago), the sample
-             count, any running observer PIDs, and whether autostart is on. Starts nothing.
-
-.EXAMPLE
-  # Start observing now AND autostart at logon for the week (recommended):
-  powershell -ExecutionPolicy Bypass -File scripts\observe_me.ps1 -Install
-
-.EXAMPLE
-  # Check any day that it's still collecting:
-  powershell -ExecutionPolicy Bypass -File scripts\observe_me.ps1 -Status
-
-.EXAMPLE
-  # When the week is done, stop autostart (then close the observer window):
-  powershell -ExecutionPolicy Bypass -File scripts\observe_me.ps1 -Uninstall
+  -Install   Create a Startup-folder launcher and start it if it is not already running.
+  -Status    Show verified observer PIDs, durable profile freshness, sample count, and autostart.
+  -Uninstall Stop verified observer PIDs and remove autostart, retaining the local profile.
+  -Purge     Stop and uninstall, then delete the profile, legacy telemetry, and observer identity.
 #>
 param(
+    [ValidateRange(5, 3600)]
     [double]$IntervalSec = 30,
     [string]$Url = "",
     [string]$ProfileFile = "",
+    [ValidateSet("laptop", "desktop", "devbox", "xbox", "unknown")]
+    [string]$DeviceClass = "unknown",
+    [ValidatePattern("^[A-Za-z0-9][A-Za-z0-9._-]{7,63}$")]
+    [string]$MeasurementId = "",
+    [string]$TlsCa = "",
+    [string]$ClientCert = "",
+    [string]$ClientKey = "",
     [switch]$Install,
     [switch]$Uninstall,
+    [switch]$Purge,
     [switch]$Status
 )
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $VenvPy = Join-Path $RepoRoot ".venv\Scripts\python.exe"
-$Py = if (Test-Path $VenvPy) { $VenvPy } else { "python" }
-$ProfilePath = Join-Path $env:LOCALAPPDATA "OneCompute\usage_profile.json"
-if ($ProfileFile) { $ProfilePath = $ProfileFile }  # -ProfileFile names this device's profile (multi-person pilot)
-$TelemPath = Join-Path $env:LOCALAPPDATA "OneCompute\pilot-telemetry.jsonl"
+$Py = if (Test-Path $VenvPy) { (Resolve-Path $VenvPy).Path } else { "python" }
+$DataDir = Join-Path $env:LOCALAPPDATA "OneCompute"
+$ProfilePath = if ($ProfileFile) { $ProfileFile } else { Join-Path $DataDir "usage_profile.json" }
+$TelemPath = Join-Path $DataDir "pilot-telemetry.jsonl"
+$IdentityPath = Join-Path $DataDir "observer-id"
 $Title = "OneCompute Observer"
 $StartupDir = [Environment]::GetFolderPath("Startup")
 $StartupCmd = Join-Path $StartupDir "OneCompute-Observer.cmd"
 
+function Test-ObserverProcess {
+    param([object]$Process)
+    if (-not $Process.CommandLine) { return $false }
+    if ($Process.CommandLine -notmatch '(?i)(^|\s)-m\s+worker(\s|$)') { return $false }
+    if ($Process.CommandLine -notmatch '(?i)(^|\s)--measure-only(\s|$)') { return $false }
+    if ($Py -ne "python" -and $Process.ExecutablePath) {
+        try {
+            if ((Resolve-Path $Process.ExecutablePath).Path -ne $Py) { return $false }
+        } catch {
+            return $false
+        }
+    }
+    return $true
+}
+
 function Get-ObserverPids {
     try {
-        Get-CimInstance Win32_Process -Filter "Name='python.exe' OR Name='pythonw.exe'" |
-            Where-Object { $_.CommandLine -and $_.CommandLine -match 'worker' -and $_.CommandLine -match 'measure-only' } |
-            Select-Object -ExpandProperty ProcessId
-    } catch { @() }
+        @(
+            Get-CimInstance Win32_Process -Filter "Name='python.exe' OR Name='pythonw.exe'" |
+                Where-Object { Test-ObserverProcess $_ } |
+                Select-Object -ExpandProperty ProcessId
+        )
+    } catch {
+        @()
+    }
+}
+
+function Stop-Observers {
+    $pids = @(Get-ObserverPids)
+    foreach ($observerPid in $pids) {
+        Stop-Process -Id $observerPid -ErrorAction Stop
+    }
+    if ($pids.Count -gt 0) {
+        Write-Host ("Stopped observer PID(s): {0}" -f ($pids -join ", ")) -ForegroundColor Green
+    }
+}
+
+function Remove-KnownData {
+    $paths = @($ProfilePath, $TelemPath, $IdentityPath)
+    $paths += @(Get-ChildItem -LiteralPath $DataDir -Filter "pilot-telemetry.jsonl.*" -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty FullName)
+    foreach ($path in ($paths | Select-Object -Unique)) {
+        if ($path -and (Test-Path -LiteralPath $path)) {
+            Remove-Item -LiteralPath $path -Force
+            Write-Host "Deleted $path" -ForegroundColor Green
+        }
+    }
+}
+
+function Add-WorkerArg {
+    param([System.Collections.Generic.List[string]]$List, [string]$Name, [string]$Value)
+    if ($Value) {
+        $List.Add($Name)
+        $List.Add($Value)
+    }
+}
+
+if (($ClientCert -and -not $ClientKey) -or ($ClientKey -and -not $ClientCert)) {
+    throw "-ClientCert and -ClientKey must be provided together."
+}
+if ($Url) {
+    $uri = $null
+    if (-not [Uri]::TryCreate($Url, [UriKind]::Absolute, [ref]$uri)) {
+        throw "-Url must be an absolute HTTP or HTTPS URL."
+    }
+    if ($uri.Scheme -notin @("http", "https")) {
+        throw "-Url must use HTTP or HTTPS."
+    }
+    $isLoopback = $uri.IsLoopback
+    if ($uri.Scheme -eq "http" -and -not $isLoopback) {
+        throw "Remote measurement uploads require HTTPS."
+    }
+    if ($uri.Scheme -ne "https" -and ($TlsCa -or $ClientCert -or $ClientKey)) {
+        throw "TLS certificate options require an HTTPS URL."
+    }
 }
 
 if ($Status) {
     Write-Host "OneCompute observer status" -ForegroundColor Cyan
-    # Definitive liveness: is a measure-only process actually running?
     $procs = @(Get-ObserverPids)
     if ($procs.Count -gt 0) {
-        Write-Host ("  observer : RUNNING  (PIDs {0} -- find in Task Manager > Details)" -f ($procs -join ', ')) -ForegroundColor Green
+        Write-Host ("  observer : RUNNING (PIDs {0})" -f ($procs -join ", ")) -ForegroundColor Green
     } else {
-        Write-Host "  observer : NOT RUNNING (no measure-only process found)" -ForegroundColor Yellow
+        Write-Host "  observer : NOT RUNNING" -ForegroundColor Yellow
     }
-    # Freshness from the telemetry log, which appends EVERY sample (the profile only saves ~every 5 min).
-    $freshFile = if (Test-Path $TelemPath) { $TelemPath } elseif (Test-Path $ProfilePath) { $ProfilePath } else { $null }
-    if ($freshFile) {
-        $age = [int]((Get-Date) - (Get-Item $freshFile).LastWriteTime).TotalSeconds
-        Write-Host ("  last sample : {0}s ago" -f $age)
+    if (Test-Path -LiteralPath $ProfilePath) {
+        $profileItem = Get-Item -LiteralPath $ProfilePath
+        $age = [int]((Get-Date) - $profileItem.LastWriteTime).TotalSeconds
+        $sampleCount = 0
+        try {
+            $profile = Get-Content -LiteralPath $ProfilePath -Raw | ConvertFrom-Json
+            $sampleCount = [int]$profile.availability.sample_count
+        } catch {
+            Write-Host "  profile : INVALID JSON" -ForegroundColor Red
+        }
+        Write-Host ("  durable save : {0}s ago (about every 5 minutes)" -f $age)
+        Write-Host ("  samples : {0}" -f $sampleCount)
     } else {
-        Write-Host "  last sample : (none yet)"
-    }
-    if (Test-Path $TelemPath) {
-        $samples = (Get-Content $TelemPath | Measure-Object -Line).Lines
-        Write-Host ("  samples logged : {0}" -f $samples)
-    }
-    if (Test-Path $ProfilePath) {
-        $psave = [int]((Get-Date) - (Get-Item $ProfilePath).LastWriteTime).TotalSeconds
-        Write-Host ("  profile saved : {0}s ago  (saves about every 5 min)" -f $psave)
+        Write-Host "  durable save : no profile yet"
     }
     Write-Host ("  profile : {0}" -f $ProfilePath)
-    $auto = if (Test-Path $StartupCmd) { "ON  ($StartupCmd)" } else { "OFF" }
-    Write-Host ("  autostart at logon : {0}" -f $auto)
+    Write-Host ("  observer ID : {0}" -f $IdentityPath)
+    $auto = if (Test-Path -LiteralPath $StartupCmd) { "ON ($StartupCmd)" } else { "OFF" }
+    Write-Host ("  autostart : {0}" -f $auto)
+    if (Test-Path -LiteralPath $TelemPath) {
+        Write-Host "  legacy timeline : PRESENT (run -Purge after confirming the new observer)" -ForegroundColor Yellow
+    } else {
+        Write-Host "  legacy timeline : absent"
+    }
+    return
+}
+
+if ($Purge) {
+    Stop-Observers
+    if (Test-Path -LiteralPath $StartupCmd) {
+        Remove-Item -LiteralPath $StartupCmd -Force
+        Write-Host "Removed autostart -> $StartupCmd" -ForegroundColor Green
+    }
+    Remove-KnownData
+    Write-Host "Observer stopped, uninstalled, and local measurement data purged." -ForegroundColor Green
     return
 }
 
 if ($Uninstall) {
-    if (Test-Path $StartupCmd) {
-        Remove-Item $StartupCmd -Force
+    Stop-Observers
+    if (Test-Path -LiteralPath $StartupCmd) {
+        Remove-Item -LiteralPath $StartupCmd -Force
         Write-Host "Removed autostart -> $StartupCmd" -ForegroundColor Green
     } else {
         Write-Host "No autostart entry found." -ForegroundColor Yellow
     }
-    Write-Host "A currently-running observer keeps going until you close its '$Title' window."
+    Write-Host "Local profile retained at $ProfilePath. Run -Purge to delete it."
     return
 }
 
-$urlArg = if ($Url) { " --url `"$Url`"" } else { "" }
-$profArg = if ($ProfileFile) { " --profile `"$ProfileFile`"" } else { "" }
+$workerArgs = [System.Collections.Generic.List[string]]::new()
+@(
+    "-m", "worker",
+    "--measure-only",
+    "--no-telemetry",
+    "--measure-interval", "$IntervalSec",
+    "--measurement-device-class", $DeviceClass
+) | ForEach-Object { $workerArgs.Add($_) }
+Add-WorkerArg $workerArgs "--url" $Url
+Add-WorkerArg $workerArgs "--profile" $ProfileFile
+Add-WorkerArg $workerArgs "--measurement-id" $MeasurementId
+Add-WorkerArg $workerArgs "--tls-ca" $TlsCa
+Add-WorkerArg $workerArgs "--client-cert" $ClientCert
+Add-WorkerArg $workerArgs "--client-key" $ClientKey
 
 if ($Install) {
-    $cmdBody = "@echo off`r`ntitle $Title`r`n`"$Py`" -m worker --measure-only --measure-interval $IntervalSec$urlArg$profArg`r`n"
-    Set-Content -Path $StartupCmd -Value $cmdBody -Encoding ASCII
+    $quotedArgs = $workerArgs | ForEach-Object { '"' + ($_ -replace '"', '""') + '"' }
+    $cmdBody = "@echo off`r`ntitle $Title`r`n`"$Py`" $($quotedArgs -join ' ')`r`n"
+    Set-Content -LiteralPath $StartupCmd -Value $cmdBody -Encoding ASCII
     Write-Host "Installed autostart -> $StartupCmd" -ForegroundColor Green
-    Start-Process -FilePath $StartupCmd
-    Write-Host "Observer started in a new '$Title' window; it relaunches at every logon." -ForegroundColor Green
-    Write-Host "Find it in Task Manager (the '$Title' window). Check anytime: scripts\observe_me.ps1 -Status"
+    if (@(Get-ObserverPids).Count -eq 0) {
+        Start-Process -FilePath $StartupCmd
+        Write-Host "Observer started in a new '$Title' window." -ForegroundColor Green
+    } else {
+        Write-Host "Observer is already running; autostart was refreshed without starting a duplicate."
+    }
     Write-Host "Profile: $ProfilePath"
     return
 }
 
-# Default (no switch): run the observer in THIS window (manual/foreground use).
 $Host.UI.RawUI.WindowTitle = $Title
-Write-Host "Starting OneCompute observer (LOCAL-only, interval ${IntervalSec}s)." -ForegroundColor Green
-Write-Host "Window title: '$Title'  -> find it in Task Manager. Check anytime with: scripts\observe_me.ps1 -Status"
+$mode = if ($Url) { "secure upload to $Url" } else { "local-only, no network" }
+Write-Host "Starting OneCompute observer ($mode; interval ${IntervalSec}s)." -ForegroundColor Green
 Write-Host "Profile: $ProfilePath"
 Write-Host "----------------------------------------------------------------------"
-$argList = @("-m", "worker", "--measure-only", "--measure-interval", "$IntervalSec")
-if ($Url) { $argList += @("--url", $Url) }
-if ($ProfileFile) { $argList += @("--profile", $ProfileFile) }
-& $Py @argList
+& $Py @workerArgs

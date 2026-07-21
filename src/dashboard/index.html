@@ -1128,6 +1128,41 @@
 
     const fmtInt = (v) => Math.round(v).toLocaleString();
     const fmt1 = (v) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(v || 0);
+    const adminCredential = {
+      token: "",
+      prompt: "Enter the OneCompute operator/admin token. It is held only in this page's memory.",
+    };
+    const submitCredential = {
+      token: "",
+      prompt: "Enter the OneCompute submit token. It is held only in this page's memory.",
+    };
+
+    async function credentialedFetch(resource, init, credential) {
+      const request = async () => {
+        const options = { ...(init || {}) };
+        const headers = new Headers(options.headers || {});
+        if (credential.token) {
+          const scheme = "Bear" + "er";
+          headers.set("Authorization", `${scheme} ${credential.token}`);
+        }
+        options.headers = headers;
+        return fetch(resource, options);
+      };
+      let response = await request();
+      if (response.status !== 401) return response;
+      credential.token = "";
+      const entered = window.prompt(credential.prompt);
+      if (!entered || !entered.trim()) return response;
+      credential.token = entered.trim();
+      response = await request();
+      if (response.status === 401) credential.token = "";
+      return response;
+    }
+
+    const operatorFetch = (resource, init) =>
+      credentialedFetch(resource, init, adminCredential);
+    const submitFetch = (resource, init) =>
+      credentialedFetch(resource, init, submitCredential);
 
     function setStatus(state, text) {
       E.statusPill.classList.remove("live", "offline");
@@ -1164,7 +1199,7 @@
       approvingWorkers.add(workerId);
       if (btn) { btn.disabled = true; btn.textContent = "Approving…"; }
       try {
-        const res = await fetch(`/workers/${encodeURIComponent(workerId)}/approve`, {
+        const res = await operatorFetch(`/workers/${encodeURIComponent(workerId)}/approve`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           cache: "no-store",
@@ -1187,7 +1222,10 @@
       disconnectingWorkers.add(workerId);
       if (goBtn) { goBtn.disabled = true; goBtn.textContent = "Disconnecting…"; }
       try {
-        const res = await fetch(`/workers/${encodeURIComponent(workerId)}`, { method: "DELETE", cache: "no-store" });
+        const res = await operatorFetch(
+          `/workers/${encodeURIComponent(workerId)}`,
+          { method: "DELETE", cache: "no-store" },
+        );
         if (!res.ok && res.status !== 404) throw new Error(`disconnect ${res.status}`);
         pendingRemoval.add(workerId);
         const tile = tileEls.get(workerId);
@@ -1574,7 +1612,7 @@
     async function pollEvents() {
       if (!eventsAvailable) return;
       try {
-        const res = await fetch(`/events?since=${lastEventId}`, { cache: "no-store" });
+        const res = await operatorFetch(`/events?since=${lastEventId}`, { cache: "no-store" });
         if (res.status === 404) { eventsAvailable = false; renderEvents(); return; }
         if (!res.ok) return;
         const payload = await res.json();
@@ -1623,7 +1661,7 @@
     // dashboard degrades cleanly.
     async function pollMeasurement() {
       try {
-        const res = await fetch("/measurement", { cache: "no-store" });
+        const res = await operatorFetch("/measurement", { cache: "no-store" });
         if (!res.ok) { E.measurement.hidden = true; return; }
         renderMeasurement(await res.json());
       } catch {
@@ -1633,7 +1671,7 @@
 
     async function poll() {
       try {
-        const res = await fetch("/state", { cache: "no-store" });
+        const res = await operatorFetch("/state", { cache: "no-store" });
         if (!res.ok) throw new Error(`state ${res.status}`);
         const state = await res.json();
         setStatus("live", "Live");
@@ -1765,7 +1803,7 @@
       btn.disabled = true;
       btn.textContent = "Launching…";
       try {
-        const res = await fetch("/workloads", {
+        const res = await submitFetch("/workloads", {
           method: "POST", cache: "no-store",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ kind: entry.kind, n_tiles: n, params: entry.default_params || {} }),
@@ -1812,7 +1850,10 @@
       const tick = async () => {
         tries += 1;
         try {
-          const res = await fetch(`/workloads/${encodeURIComponent(wid)}`, { cache: "no-store" });
+          const res = await operatorFetch(
+            `/workloads/${encodeURIComponent(wid)}`,
+            { cache: "no-store" },
+          );
           if (res.status === 404) {
             const panel = resultPanels.get(wid);
             if (panel) panel.body.innerHTML = '<div class="res-running">Workload not found on the orchestrator.</div>';

@@ -1,97 +1,189 @@
 <#
 .SYNOPSIS
-  Install (or remove) the OneCompute measurement observer as a Windows Scheduled Task so it keeps
-  running across logoff, reboot, sleep/hibernate, crashes, and network drops for a measurement
-  pilot. Measurement-only: it never pulls or runs a job (see docs/measurement-pilot.md).
+  Install, inspect, uninstall, or purge a managed OneCompute measurement observer.
 
 .DESCRIPTION
-  By default registers a per-user LOGON task (no admin required) that launches
-      python -m worker --url <Url> --measure-only --measure-interval <IntervalSec>
-  with: auto-restart on failure, start-when-available (catches a trigger missed while the device
-  was off), unlimited run time, no duplicate instances, and battery-friendly settings (measurement
-  imposes no load, so it runs on battery too). It starts immediately and re-launches every time the
-  volunteer logs in, so a shutdown/reboot is covered by the next login and a sleep/hibernate is
-  covered by the process resuming.
+  Registers a resilient Windows Scheduled Task that runs only measurement mode. Current measurement
+  mode never pulls jobs, writes a per-sample timeline, or streams live utilization. It periodically
+  uploads one compact derived summary.
 
-  -AtStartup (requires an elevated shell) also starts the observer at BOOT, before anyone logs in,
-  for always-on dev boxes/servers. It runs the task whether or not a user is logged on.
-
-  Fully reversible: -Uninstall removes the task and the observer never restarts. The only device
-  artifact is the local usage profile (%LOCALAPPDATA%\OneCompute\usage_profile.json), which the
-  volunteer keeps or deletes.
-
-.EXAMPLE
-  # Install (no admin), 30s cadence, against a LAN orchestrator:
-  powershell -ExecutionPolicy Bypass -File scripts\install_observer.ps1 -Url http://10.0.0.5:8080
-
-.EXAMPLE
-  # Use a signed single-exe instead of a Python checkout (managed fleets):
-  powershell -ExecutionPolicy Bypass -File scripts\install_observer.ps1 -Url http://10.0.0.5:8080 -Exe C:\OneCompute\onecompute-worker.exe
-
-.EXAMPLE
-  # Always-on dev box: also start at boot (run this in an elevated shell):
-  powershell -ExecutionPolicy Bypass -File scripts\install_observer.ps1 -Url http://10.0.0.5:8080 -AtStartup
-
-.EXAMPLE
-  # Opt out (remove it):
-  powershell -ExecutionPolicy Bypass -File scripts\install_observer.ps1 -Uninstall
+  A non-loopback pilot URL must use HTTPS with a pinned CA and a client certificate/key. Use
+  -AllowInsecureLocalhost only for explicit development on the same machine.
 #>
 [CmdletBinding()]
 param(
   [string]$Url,
+  [ValidateRange(5, 3600)]
   [int]$IntervalSec = 30,
+  [ValidateSet("laptop", "desktop", "devbox", "xbox", "unknown")]
+  [string]$DeviceClass = "unknown",
+  [ValidatePattern("^[A-Za-z0-9][A-Za-z0-9._-]{7,63}$")]
+  [string]$MeasurementId = "",
+  [string]$TlsCa = "",
+  [string]$ClientCert = "",
+  [string]$ClientKey = "",
+  [string]$ProfileFile = "",
   [string]$TaskName = "OneCompute Observer",
-  [string]$Exe,                 # optional: path to a built onecompute-worker.exe
-  [string]$RepoDir,             # repo root for the `uv run` path; defaults to the script's parent
-  [string]$ExtraArgs = "",      # optional extra worker args, e.g. "--tls-ca C:\pki\ca.pem"
-  [switch]$AtStartup,           # also start at boot (requires an elevated shell)
-  [switch]$DryRun,              # build + print the task definition without registering it
-  [switch]$Uninstall
+  [string]$Exe,
+  [string]$RepoDir,
+  [switch]$AllowInsecureLocalhost,
+  [switch]$AtStartup,
+  [switch]$DryRun,
+  [switch]$Status,
+  [switch]$Uninstall,
+  [switch]$Purge
 )
 
 $ErrorActionPreference = "Stop"
+$DataDir = Join-Path $env:LOCALAPPDATA "OneCompute"
+$ProfilePath = if ($ProfileFile) { $ProfileFile } else { Join-Path $DataDir "usage_profile.json" }
+$TelemetryPath = Join-Path $DataDir "pilot-telemetry.jsonl"
+$IdentityPath = Join-Path $DataDir "observer-id"
 
-if ($Uninstall) {
+function Stop-ObserverTask {
   $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-  if ($existing) {
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-    Write-Host "Removed scheduled task '$TaskName'. The observer will not restart. Local profile is kept."
+  if ($existing -and $existing.State -ne "Disabled") {
+    Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+  }
+  return $existing
+}
+
+function Remove-ObserverData {
+  $paths = @($ProfilePath, $TelemetryPath, $IdentityPath)
+  $paths += @(Get-ChildItem -LiteralPath $DataDir -Filter "pilot-telemetry.jsonl.*" -ErrorAction SilentlyContinue |
+    Select-Object -ExpandProperty FullName)
+  foreach ($path in ($paths | Select-Object -Unique)) {
+    if ($path -and (Test-Path -LiteralPath $path)) {
+      Remove-Item -LiteralPath $path -Force
+      Write-Host "Deleted $path"
+    }
+  }
+}
+
+function Quote-Argument {
+  param([string]$Value)
+  if ($Value -notmatch '[\s"]') { return $Value }
+  return '"' + ($Value -replace '(\\*)"', '$1$1\"' -replace '(\\+)$', '$1$1') + '"'
+}
+
+if ($Status) {
+  $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+  if ($task) {
+    $info = Get-ScheduledTaskInfo -TaskName $TaskName
+    Write-Host "Task '$TaskName': $($task.State)" -ForegroundColor Green
+    Write-Host "  last run : $($info.LastRunTime)"
+    Write-Host "  result : $($info.LastTaskResult)"
+    Write-Host "  next run : $($info.NextRunTime)"
   } else {
-    Write-Host "No scheduled task '$TaskName' found; nothing to remove."
+    Write-Host "Task '$TaskName' is not installed." -ForegroundColor Yellow
+  }
+  if (Test-Path -LiteralPath $ProfilePath) {
+    $item = Get-Item -LiteralPath $ProfilePath
+    $age = [int]((Get-Date) - $item.LastWriteTime).TotalSeconds
+    $samples = 0
+    try {
+      $profile = Get-Content -LiteralPath $ProfilePath -Raw | ConvertFrom-Json
+      $samples = [int]$profile.availability.sample_count
+    } catch {
+      Write-Host "Profile JSON is invalid." -ForegroundColor Red
+    }
+    Write-Host "  profile age : ${age}s"
+    Write-Host "  samples : $samples"
+  } else {
+    Write-Host "  profile : not created yet"
+  }
+  Write-Host "  profile path : $ProfilePath"
+  if (Test-Path -LiteralPath $TelemetryPath) {
+    Write-Host "  legacy timeline : PRESENT; purge after validating the upgraded observer" -ForegroundColor Yellow
+  } else {
+    Write-Host "  legacy timeline : absent"
   }
   return
 }
 
-if (-not $Url) { throw "Provide -Url http://<orchestrator-host>:8080 (or -Uninstall)." }
-
-# Resolve the repo dir (parent of scripts\) for the `uv run` working directory.
-if (-not $RepoDir) { $RepoDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path) }
-
-# Build the observer command. Prefer a built exe; else `uv run python -m worker` from the repo.
-$workerArgs = "--url `"$Url`" --measure-only --measure-interval $IntervalSec"
-if ($ExtraArgs) { $workerArgs = "$workerArgs $ExtraArgs" }
-
-if ($Exe) {
-  if (-not (Test-Path $Exe)) { throw "-Exe path not found: $Exe" }
-  $execute  = $Exe
-  $argument = $workerArgs
-  $workDir  = Split-Path -Parent $Exe
-} else {
-  $uv = Get-Command uv -ErrorAction SilentlyContinue
-  if (-not $uv) { throw "uv not found on PATH. Install uv, or pass -Exe <path-to-onecompute-worker.exe>." }
-  $execute  = $uv.Source
-  $argument = "run python -m worker $workerArgs"
-  $workDir  = $RepoDir
+if ($Purge -or $Uninstall) {
+  $existing = Stop-ObserverTask
+  if ($existing) {
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+    Write-Host "Removed scheduled task '$TaskName'."
+  } else {
+    Write-Host "No scheduled task '$TaskName' found."
+  }
+  if ($Purge) {
+    Remove-ObserverData
+    Write-Host "Observer stopped, uninstalled, and local measurement data purged." -ForegroundColor Green
+  } else {
+    Write-Host "Local profile retained at $ProfilePath. Run -Purge to delete it."
+  }
+  return
 }
 
+if (-not $Url) { throw "Provide -Url https://<orchestrator-host>:<port>." }
+$uri = $null
+if (-not [Uri]::TryCreate($Url, [UriKind]::Absolute, [ref]$uri)) {
+  throw "-Url must be an absolute HTTP or HTTPS URL."
+}
+if ($uri.Scheme -notin @("http", "https")) {
+  throw "-Url must use HTTP or HTTPS."
+}
+if (($ClientCert -and -not $ClientKey) -or ($ClientKey -and -not $ClientCert)) {
+  throw "-ClientCert and -ClientKey must be provided together."
+}
+if ($uri.IsLoopback) {
+  if ($uri.Scheme -eq "http" -and -not $AllowInsecureLocalhost) {
+    throw "Plain HTTP requires the explicit -AllowInsecureLocalhost switch."
+  }
+} else {
+  if ($uri.Scheme -ne "https") {
+    throw "Remote measurement pilots require HTTPS."
+  }
+  if (-not $TlsCa -or -not $ClientCert -or -not $ClientKey) {
+    throw "Remote measurement pilots require -TlsCa, -ClientCert, and -ClientKey for pinned mTLS."
+  }
+}
+if ($uri.Scheme -ne "https" -and ($TlsCa -or $ClientCert -or $ClientKey)) {
+  throw "TLS certificate options require an HTTPS URL."
+}
+foreach ($certificatePath in @($TlsCa, $ClientCert, $ClientKey)) {
+  if ($certificatePath -and -not (Test-Path -LiteralPath $certificatePath -PathType Leaf)) {
+    throw "Certificate file not found: $certificatePath"
+  }
+}
+
+if (-not $RepoDir) {
+  $RepoDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+}
+
+$workerArgs = [System.Collections.Generic.List[string]]::new()
+@(
+  "--url", $Url,
+  "--measure-only",
+  "--no-telemetry",
+  "--measure-interval", "$IntervalSec",
+  "--measurement-device-class", $DeviceClass
+) | ForEach-Object { $workerArgs.Add($_) }
+if ($MeasurementId) { $workerArgs.Add("--measurement-id"); $workerArgs.Add($MeasurementId) }
+if ($ProfileFile) { $workerArgs.Add("--profile"); $workerArgs.Add($ProfileFile) }
+if ($TlsCa) { $workerArgs.Add("--tls-ca"); $workerArgs.Add($TlsCa) }
+if ($ClientCert) { $workerArgs.Add("--client-cert"); $workerArgs.Add($ClientCert) }
+if ($ClientKey) { $workerArgs.Add("--client-key"); $workerArgs.Add($ClientKey) }
+
+if ($Exe) {
+  if (-not (Test-Path -LiteralPath $Exe -PathType Leaf)) { throw "-Exe path not found: $Exe" }
+  $execute = (Resolve-Path $Exe).Path
+  $allArgs = @($workerArgs)
+  $workDir = Split-Path -Parent $execute
+} else {
+  $uv = Get-Command uv -ErrorAction SilentlyContinue
+  if (-not $uv) { throw "uv not found on PATH. Install uv or pass -Exe." }
+  $execute = $uv.Source
+  $allArgs = @("run", "python", "-m", "worker") + @($workerArgs)
+  $workDir = (Resolve-Path $RepoDir).Path
+}
+$argument = ($allArgs | ForEach-Object { Quote-Argument $_ }) -join " "
 $action = New-ScheduledTaskAction -Execute $execute -Argument $argument -WorkingDirectory $workDir
-
-$triggers = @( New-ScheduledTaskTrigger -AtLogOn )
+$triggers = @(New-ScheduledTaskTrigger -AtLogOn)
 if ($AtStartup) { $triggers += New-ScheduledTaskTrigger -AtStartup }
-
-# Resilience knobs: restart on failure, catch a trigger missed while the device was off, run with
-# no time limit, never spawn a duplicate, and run on battery (measurement imposes zero load) and
-# offline (uploads are best-effort; the profile keeps building locally).
 $settings = New-ScheduledTaskSettingsSet `
   -AllowStartIfOnBatteries `
   -DontStopIfGoingOnBatteries `
@@ -100,51 +192,49 @@ $settings = New-ScheduledTaskSettingsSet `
   -RestartInterval (New-TimeSpan -Minutes 1) `
   -ExecutionTimeLimit ([TimeSpan]::Zero) `
   -MultipleInstances IgnoreNew
-
 $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-if ($AtStartup) {
-  # Run whether or not the user is logged on (needs admin to register); covers boot before login.
-  $principal = New-ScheduledTaskPrincipal -UserId $me -LogonType S4U -RunLevel Highest
+$principal = if ($AtStartup) {
+  New-ScheduledTaskPrincipal -UserId $me -LogonType S4U -RunLevel Highest
 } else {
-  # Per-user, no admin: runs in the volunteer's session, re-launched at each logon.
-  $principal = New-ScheduledTaskPrincipal -UserId $me -LogonType Interactive -RunLevel Limited
+  New-ScheduledTaskPrincipal -UserId $me -LogonType Interactive -RunLevel Limited
 }
-
-$desc = "OneCompute measurement observer (measure-only; never runs a job). Auto-restarts and survives reboot/sleep for the pilot window."
+$description = "OneCompute privacy-minimized measurement observer. Never runs jobs or writes a sample timeline."
 
 if ($DryRun) {
-  Write-Host "[dry run] would register scheduled task '$TaskName':"
-  Write-Host "  Execute:  $execute"
-  Write-Host "  Argument: $argument"
-  Write-Host "  WorkDir:  $workDir"
-  Write-Host "  Triggers: $(($triggers | ForEach-Object { $_.CimClass.CimClassName }) -join ', ')"
-  Write-Host "  Principal LogonType=$($principal.LogonType) RunLevel=$($principal.RunLevel)"
-  Write-Host "  Settings: RestartCount=$($settings.RestartCount) RestartInterval=$($settings.RestartInterval) StartWhenAvailable=$($settings.StartWhenAvailable) MultipleInstances=$($settings.MultipleInstances)"
+  Write-Host "[dry run] scheduled task '$TaskName'"
+  Write-Host "  Execute: $execute"
+  Write-Host "  Arguments: $argument"
+  Write-Host "  Working directory: $workDir"
+  Write-Host "  Device class: $DeviceClass"
+  Write-Host "  Transport: $($uri.Scheme); client certificate=$([bool]$ClientCert)"
   return
 }
 
 try {
-  Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $triggers -Settings $settings -Principal $principal -Description $desc -Force -ErrorAction Stop | Out-Null
+  Register-ScheduledTask `
+    -TaskName $TaskName `
+    -Action $action `
+    -Trigger $triggers `
+    -Settings $settings `
+    -Principal $principal `
+    -Description $description `
+    -Force `
+    -ErrorAction Stop | Out-Null
 } catch {
   Write-Error @"
 Could not register the scheduled task: $($_.Exception.Message)
 
-On a managed/corporate device, creating a scheduled task is often blocked for a standard shell.
-Options:
-  1. Run this script from an ELEVATED PowerShell (Run as administrator).
-  2. Have IT deploy the observer via Intune / Group Policy (the same measure-only command).
-  3. For a quick pilot, just run the observer in the foreground and leave the window open:
-       uv run python -m worker --url $Url --measure-only
-     (It still persists locally and re-uploads; you lose only auto-restart across logoff/reboot.)
-Re-run with -DryRun to print the exact task definition without registering it.
+Use an elevated PowerShell, deploy the same command through Intune, or use
+$PSScriptRoot\observe_me.ps1 -Install for a no-admin Startup-folder observer.
 "@
   exit 1
 }
-Start-ScheduledTask -TaskName $TaskName
 
+Start-ScheduledTask -TaskName $TaskName
 $bootNote = if ($AtStartup) { " and at boot" } else { "" }
-Write-Host "Installed '$TaskName': measure-only observer against $Url (every ${IntervalSec}s)."
-Write-Host "  Starts now and re-launches at logon$bootNote; auto-restarts on failure; survives sleep/reboot; runs offline + on battery."
-Write-Host "  Local profile: %LOCALAPPDATA%\OneCompute\usage_profile.json (derived stats only; on-device)."
-Write-Host "  Status:   Get-ScheduledTask -TaskName '$TaskName' | Get-ScheduledTaskInfo"
-Write-Host "  Opt out:  powershell -ExecutionPolicy Bypass -File scripts\install_observer.ps1 -Uninstall"
+Write-Host "Installed '$TaskName' against $Url (every ${IntervalSec}s)." -ForegroundColor Green
+Write-Host "  Starts now and at logon$bootNote; no job execution, live usage stream, or sample timeline."
+Write-Host "  Local profile: $ProfilePath"
+Write-Host "  Status: $PSCommandPath -Status"
+Write-Host "  Retain data on opt-out: $PSCommandPath -Uninstall"
+Write-Host "  Delete all local pilot data: $PSCommandPath -Purge"

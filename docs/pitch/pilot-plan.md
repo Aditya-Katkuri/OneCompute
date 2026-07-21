@@ -9,7 +9,7 @@
 
 ## 1. Objectives
 
-1. **Measure real idle headroom** across a small, consenting fleet (laptops, dev boxes, and where applicable Xboxes) without disturbing anyone's work.
+1. **Measure real idle headroom** across 50-100 consenting Windows laptops, desktops, and dev boxes without disturbing anyone's work.
 2. **Validate the safety story in the field**: instant-yield governor behavior, endpoint-control coexistence (Defender/WDAC/Purview), and the fail-closed isolation posture.
 3. **Produce an honest go/no-go**: a readout tying measured headroom and any incidents back to the threat-model risk register.
 
@@ -23,9 +23,11 @@ Explicit non-objectives: enterprise rollout, sensitive-data workloads, GPU/AI wo
 
 ### Phase 1 - Measurement only (approx. 1 week)
 - Consenting devices run the worker in `--measure-only` mode. It tracks CPU/GPU/RAM and joins the fleet view, but **never pulls or runs a job** (`src/worker/__main__.py` measure-only path).
-- Each device uploads only a derived hour-of-week usage envelope via `POST /profile`; raw activity never leaves the device (`src/measurement/headroom.py`, `src/contracts/schema.sql:60-68`).
+- Each device uploads one pseudonymous compact summary via `POST /profile`: coarse device class, coverage, aggregate CPU/GPU/RAM/AC, and compact availability totals. No hour-of-week buckets, idle/away field, raw timestamps, hostname by default, sample timeline, or live resource stream leave the device.
 - Fleet-wide measured idle headroom is rolled up at `GET /measurement` and on the dashboard's "Measured idle headroom" beat.
 - Deliverable: a measurement readout using `docs/product/Measurement-Pilot-Readout-Template.md`, reporting measured (not theoretical) harvestable headroom, with the conservative harvest target (roughly 20-40% of idle, staying well below the level users perceive as slow).
+- Enrollment is staged: 3-5 controlled devices for 24 hours, then 10-15 diverse devices for 24 hours, then 50-100 only after Security, Privacy, and pilot-lead review.
+- Retail Xbox is out of scope. A future signed native collector or sanctioned dev-kit environment must undergo separate review.
 
 ### Phase 2 - Contained execution (only if Phase 1 is clean and re-sanctioned)
 - A subset of Phase 1 devices runs real CPU, non-sensitive jobs under the **required secure configuration** (`--require-approval` orchestrator; `--require-isolation --trusted-key` workers) from `pilot-security-approval.md` section 1.
@@ -34,8 +36,8 @@ Explicit non-objectives: enterprise rollout, sensitive-data workloads, GPU/AI wo
 
 ## 3. Device set and consent
 
-- **Start with loaner/controlled devices**, then a handful of named, consenting employee devices.
-- Consent is voluntary, informed, opt-in, with instant withdrawal, per `OneCompute-Pilot-Consent.md`.
+- **Start with loaner/controlled devices**, then use staged rings to reach 50-100 named, consenting employee devices.
+- Consent is voluntary, informed, opt-in, with instant withdrawal and explicit purge, per `OneCompute-Measurement-Pilot-Consent.md`.
 - Regional handling: engage employee representation (for example works councils) before any expansion beyond the sanctioned pilot.
 
 ## 4. Roles
@@ -54,13 +56,15 @@ Explicit non-objectives: enterprise rollout, sensitive-data workloads, GPU/AI wo
 | Metric | Source | Success signal |
 |---|---|---|
 | Measured idle headroom (fleet) | `GET /measurement` | A credible, conservative harvestable envelope emerges |
+| Privacy contract | captured `POST /profile` plus stored row inspection | No hourly bucket, idle field, raw timestamp, or hostname-by-default data leaves or persists centrally |
+| Measurement integrity | outlier review plus approved inventory sample | No impossible values, duplicate identities, or unexplained class changes |
 | Perceived slowdown reports | Participant channel | Near zero; any report is investigated and the governor re-tuned |
 | Yield responsiveness | worker logs / governor decisions | Sub-second yield when the employee's demand spikes |
 | Endpoint alerts | Defender/Purview | Zero unexpected alerts on allow-listed devices |
 | Auth/anti-cheat health | `GET /events` (`auth_failed`, `blacklisted`) | No anomalies; controls behave as designed |
 | Work correctness (Phase 2) | proof-hash + challenge results | No accepted incorrect results; cheaters blacklisted |
 
-The pilot **succeeds** if it measures real headroom, generates clean attributable telemetry, produces no unresolved security/privacy incident, and gives reviewers a sound basis for a next-phase decision. A null or negative result (for example headroom too small, or governor tuning harder than expected) is a valid, honest outcome.
+The pilot **succeeds** if it measures real headroom, preserves the compact privacy contract, produces no unresolved security/privacy incident, and gives reviewers a sound basis for a next-phase decision. A null or negative result is a valid, honest outcome.
 
 ## 6. Risk linkage
 
@@ -70,10 +74,12 @@ Each active-phase risk maps to the threat-model risk register and its treatment:
 - R6 orchestrator compromise -> `--trusted-key` pinned signer.
 - R8 governor mis-sizing -> Phase 1 measurement + conservative defaults; slowdown playbook.
 - R4/R12 privacy/legal -> measurement-only first; DPIA and CELA/HR review.
+- R9 transport/enrollment -> secure measurement preset, mTLS, approval, and certificate-bound identity.
+- R16 self-reported integrity -> server clamping, outlier review, and comparison against approved inventory samples.
 - R15 MXC preview -> not relied on; Docker/Job-Object + fail-closed is the enforced path.
 
 ## 7. Reporting and exit
 
 - **Daily** status to the sponsor during active phases; **immediate** escalation on any security/privacy trigger.
 - **End of Phase 1:** measurement readout + recommendation on whether to enter Phase 2.
-- **End of pilot:** execute the kill switch (`pilot-security-approval.md` section 4), remove the allow-list entry, return devices to baseline, and write findings against the risk register.
+- **End of pilot:** execute the kill switch, revoke client certificates, obtain local purge and central-deletion evidence, remove the allow-list entry, return devices to baseline, and write findings against the risk register.

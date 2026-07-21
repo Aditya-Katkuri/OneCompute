@@ -2,7 +2,7 @@
 
 **Engine codename:** NightShift  ·  **Document class:** Microsoft Confidential (draft for security/privacy review)
 **Audience:** CISO and Azure Security, Microsoft Digital (MSD), CELA, Privacy/Purview, HR
-**Scope of this revision:** the proof-of-concept (PoC) as built, and the proposed contained pilot. It is explicit about what is enforced in code today versus what is honest roadmap. v1.1 synced the document to three merged controls (MXC OS-enforced backend, `--require-isolation` fail-closed switch, `--trusted-key` out-of-band pinned signer) and expanded the side-channel, dependency supply-chain, and data-erasure coverage. v1.2 adds the shipped transport hardening: optional TLS + mutual TLS and per-client rate limiting. v1.3 adds submitter authentication: an optional operator token that gates job/workload submission. v1.4 adds two supply-chain / isolation-assurance controls: a generated CycloneDX SBOM and an MXC launch-path validation harness. v1.5 adds a signed SLSA v1 build-provenance attestation and a hash-chained, tamper-evident, SIEM-exportable audit log. v1.6 adds optional device-identity binding (worker token tied to its TLS cert fingerprint) and a Sigstore cosign signing integration, alongside two capability items (NPU detection/advertisement and capability-weighted dynamic partitioning).
+**Scope of this revision:** the proof-of-concept (PoC) as built, and the proposed contained pilot. It is explicit about what is enforced in code today versus what is honest roadmap. v1.7 hardens the 50-100 device measurement pilot: privacy-minimized central summaries, no measurement timeline or live utilization stream, mandatory remote HTTPS, fail-closed certificate-bound enrollment, authenticated operator reads, complete local purge, and explicit retail-Xbox exclusion.
 
 > **One-paragraph summary.** OneCompute runs an opt-in agent on employee machines that harvests spare CPU/GPU headroom for cloud-substitutable batch work and yields the machine back to the employee in under a second. It is internal-only, opt-in, sandboxed, signed, verified, and audited. This document models the threats across every trust boundary, scores the residual risk honestly, maps each control to the teams that must accept it, and proposes a small, reversible, time-boxed pilot as the next safe step. It does not request enterprise rollout.
 
@@ -12,12 +12,12 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.6 (draft) |
+| Version | 1.7 (draft) |
 | Status | For review; not yet socialized with CELA/MSD/CISO |
 | Owner | Colin Finney (intern) + sponsor TBD |
 | Methodologies | Microsoft SDL threat modeling, STRIDE (per boundary), LINDDUN (privacy), MITRE ATT&CK mapping, qualitative likelihood x impact risk scoring |
 | Framework crosswalk | SOC 2 TSC (see `soc2-alignment.md`), NIST CSF, NIST 800-53 control families, CIS Controls, OWASP ASVS (control concepts) |
-| Related docs | `idea.md` (concept), `architecture.md` (design), `mxc-sandbox.md` (MXC backend design + preview caveats), `mxc-validation.md` (MXC launch-path harness), `supply-chain.md` (SBOM + signed provenance), `cosign.md` (Sigstore signing), `audit-log.md` (tamper-evident audit + SIEM export), `device-identity.md` (device-bound worker identity), `npu-harvesting.md`, `partitioning.md`, `soc2-alignment.md` (control-to-code mapping), `pilot-security-approval.md` (sanction runbook), `pilot-plan.md` (pilot operations), `OneCompute-Risk-Memo.docx` |
+| Related docs | `idea.md` (concept), `architecture.md` (design), `measurement-pilot.md` (secure collection runbook), `pitch/measurement-pilot-security-review.md` (review packet), `pitch/OneCompute-Measurement-Pilot-Consent.md` (participant notice), `mxc-sandbox.md`, `mxc-validation.md`, `supply-chain.md`, `cosign.md`, `audit-log.md`, `device-identity.md`, `npu-harvesting.md`, `partitioning.md`, `soc2-alignment.md`, `pilot-security-approval.md`, `pilot-plan.md`, `OneCompute-Risk-Memo.docx` |
 
 **Revision history**
 
@@ -31,6 +31,7 @@
 | 1.4 | this rev | Access-control + reward-integrity fixes: the `approve`/`disconnect` admin endpoints now require the operator token (`--submit-token`), closing a B3 self-admit bypass where a pending worker could approve itself and lease real work; credit is now metered on the JOB's GPU requirement from the signed manifest, not the worker's self-reported `has_gpu`, closing a 5x credit-inflation path. Updated the credit-integrity control, the mitigations matrix, and `architecture.md` §4.1/§9 |
 | 1.5 | this rev | **Harvest-phase threat model** (new section 24): models routing real Azure/Foundry workloads onto employee machines, where the trust model inverts and the device operator becomes an adversary against the workload's data. Adds boundary B6 (Foundry/routing-gateway) and flow F9, the data-confidentiality-on-a-curious-host threat, and the shipped mitigation: **data-classification-gated routing to server-assigned device trust tiers** (`src/orchestrator/routing_policy.py`, fail-closed; classification is in the signed manifest, the tier is server-assigned and never self-reported). Companion design: `azure-routing.md`; control detail: `routing-policy.md` |
 | 1.6 | this rev | Harvest-phase hardening: (a) a dedicated `--admin-token` **separates device-admin authority** (approve/disconnect/set-tier) from job submission, so a mere submitter can no longer approve a device or raise its trust tier (updated §24.3); (b) **attestation-derived tiering** now ships (`src/trust/attestation.py`, `docs/device-attestation.md`): a device's tier can be derived from a device-posture attestation verified against a configured authority key (fail-closed, inert until configured, admin-pin authoritative), so tiers come from verifiable posture rather than only manual assignment. Both followed a security review of the routing control that found no exploitable bypass |
+| 1.7 | this rev | Measurement-pilot hardening for 50-100 volunteers: compact central report with no idle or hour-of-week pattern; no live resource heartbeat or measurement JSONL; stable random observer IDs; remote HTTPS and managed mTLS; collision-safe device binding; authenticated operator reads; disconnect erasure; complete local purge; consent, retention, integrity, and Xbox-scope reconciliation |
 | 1.4 | prior rev | Supply-chain + isolation assurance: a generated **CycloneDX SBOM** (`scripts/generate_sbom.py`, `supply-chain.md`) and an **MXC launch-path validation harness** (stub `wxc-exec` driving real `_run_mxc`, `mxc-validation.md`). Updated abuse-case 6, section 11 + section 14, R13 (residual lowered) and R15 (wiring proven), the residual summary, the CISO Q&A, and the traceability matrix; fixed a stale note that still listed the `cryptography` pin as an open gap |
 | 1.5 | prior rev | Two more controls: a **signed SLSA v1 build-provenance attestation** (`scripts/generate_provenance.py`, STRIDE Tampering) and a **hash-chained tamper-evident audit log** with verify + JSONL SIEM export (`GET /events/verify`, `GET /events/export`, STRIDE Repudiation, Microsoft Sentinel). Updated the B1/B3 Repudiation rows, sections 14 and 15, R13, and the traceability matrix |
 | 1.6 | this rev | Four workstreams: **device-identity binding** (`--bind-device-identity`, B3 Spoofing, Intune/Entra), **Sigstore cosign integration** (`src/trust/cosign.py`, Tampering/SDL, inert-when-absent), plus two capability items -- **NPU detection/advertisement** (Copilot+/DirectML, `docs/npu-harvesting.md`) and **capability-weighted dynamic partitioning** (`docs/partitioning.md`). Updated the B3 Spoofing row, section 14, the CISO Q&A, the traceability matrix, and Related docs |
@@ -67,8 +68,8 @@
 ## 2. System description
 
 ### 2.1 Components
-- **Worker agent** (employee PC): a lightweight user-space Python process (`python -m worker`, no admin install and no kernel driver; a code-signed `.exe` is the packaging roadmap). It registers, advertises spare capability, detects headroom against a learned profile, pulls jobs (outbound-only), runs them sandboxed, returns results, and yields instantly on employee demand.
-- **Orchestrator** (hardened host): device-code admission gate, job queue, scheduler, verifier (challenge/replication), append-only ledger and audit event stream, control-plane HTTP API.
+- **Worker agent** (employee PC): a lightweight user-space Python process (`python -m worker`, no admin install and no kernel driver; a code-signed `.exe` is the managed-pilot packaging target). In measurement mode it learns locally and sends only a compact summary. In execution mode it registers, detects headroom, pulls jobs over an outbound-only connection, runs them sandboxed, returns results, and yields instantly on employee demand.
+- **Orchestrator** (hardened host): device-code admission gate, job queue, scheduler, verifier, append-only ledger and audit event stream, measurement-summary store, and authenticated HTTPS control-plane API.
 - **Submitter**: an internal team that queues a job; the orchestrator binds the input hash and Ed25519-signs the manifest (code is a built-in registered adapter, not shipped code).
 - **Rewards/metering**: server-authoritative, append-only, credits only verified work.
 
@@ -77,13 +78,16 @@
 [Submitter] --(F1 job)--> [Orchestrator]  (binds input hash + limits, Ed25519-signs the manifest)
 [Orchestrator] --(F2 device-code admission)--> [Worker]      (PENDING until admin approves)
 [Worker] --(F3 register + capability advert; bearer token issued)--> [Orchestrator]
+[Worker] --(F3m compact measurement summary; no hourly/idle pattern)--> [Orchestrator]
 [Worker] --(F4 outbound short-poll: jobs/next)--> [Orchestrator] --(F5 lease + signed manifest)--> [Worker]
 [Worker] verify(signature, input hash, expiry; optional out-of-band pinned signer via --trusted-key) -> CPU kinds: MXC container when a real runtime is present, else Docker container (--network none, ephemeral --rm, minimal payload), else Job-Object fallback; AI/GPU kinds: host-side subprocess+JobObject (host network). With --require-isolation the worker fails CLOSED (refuses the job) rather than take any non-OS-enforced fallback.
 [Worker] --(F6 result + proof hash, <=8MB)--> [Orchestrator] verify(proof, lease owner, challenge) -> ledger credit
 [Worker] --(F7 heartbeat / yield events)--> [Orchestrator] --(F8 audit events, /events)--> [Operator dashboard]
-On-device only: usage profile (F0) never leaves; only a derived spare-capacity number rides F3.
+On-device only: the rich usage profile (F0) never leaves. F3m carries a pseudonymous compact
+capacity/availability summary with no raw timestamps, hourly buckets, idle/away field, or hostname
+by default.
 ```
-Per-flow controls: F0 local-only; F1/F5 Ed25519 signature + hash binding + expiry; F2 admin approval; F3/F4/F6/F7 per-worker bearer token (constant-time) + lease ownership; F6 proof hash + payload cap; F8 append-only audit.
+Per-flow controls: F0 local-only; F1/F5 Ed25519 signature + hash binding + expiry; F2 admin approval; F3/F3m/F4/F6/F7 per-worker bearer token plus certificate binding in the sanctioned pilot; F3m HTTPS/mTLS, compact schema, server clamping, and overwrite-only storage; F6 proof hash + payload cap; F8 append-only audit plus operator authentication.
 
 ### 2.3 Trust boundaries
 | ID | Boundary | Why it matters | Primary reviewer |
@@ -100,13 +104,13 @@ Per-flow controls: F0 local-only; F1/F5 Ed25519 signature + hash binding + expir
 
 | Data | Where | Classification | Leaves device? | Retention | Control |
 |---|---|---|---|---|---|
-| Usage/activity profile (sizes headroom) | on-device only | Personal / sensitive | **No** | rolling window, local | computed and stored locally; never uploaded |
-| Derived spare-capacity number | device -> orchestrator | Low | Yes (aggregate only) | transient | only scalar capacity, no raw activity |
-| Capability advert (CPU/GPU/RAM, has_gpu) | device -> orchestrator | Low | Yes | transient | no employee identity beyond node id |
+| Rich usage profile (hour-of-week CPU/GPU/RAM/AC/idle plus compact availability) | on-device only | Personal / sensitive | **No** | rolling local state until purge | never uploaded; measurement mode writes no per-sample timeline |
+| Compact measurement summary | device -> orchestrator | Low-Medium | Yes | latest row per observer; deleted on disconnect; pilot DB retention policy | pseudonymous ID, device class, coverage, aggregate capacity/AC/availability only; no hourly buckets, idle field, raw timestamps, or hostname by default |
+| Capability advert (execution mode only) | device -> orchestrator | Low | Yes | transient | CPU/GPU/RAM scheduling data; measurement-only registration is normalized to an identity-only marker with no actual hardware inventory or live free RAM |
 | Job code | submitter -> worker | depends on job (up to Confidential) | Yes (to assigned worker) | wiped at job end | signed, hash-bound, sandboxed, no-persistence |
 | Job input data | submitter -> worker | depends on job | Yes (data-minimized slice) | wiped at job end | data minimization; per-job sandbox; no network |
 | Job result + proof hash | worker -> orchestrator | depends on job | Yes | ledger keeps metadata | <=8MB cap; verified; minimal |
-| Identity / node binding | orchestrator | Personal | internal | pilot window | corp-SSO one-identity-per-node (roadmap: device-bound) |
+| Identity / node binding | orchestrator | Personal | internal | pilot window plus approved audit retention | random observer ID, unique client certificate, device-code approval, fingerprint-bound token |
 | Rewards ledger | orchestrator | Personal (links employee to credit) | internal | retained | append-only, server-authoritative |
 | Audit events | orchestrator | Operational | internal | retained | append-only, queryable |
 
@@ -171,9 +175,9 @@ Legend for status: [PoC] enforced in code today · [Roadmap] documented, deferre
 | STRIDE | Threat | Mitigation | Status | Residual |
 |---|---|---|---|---|
 | Spoofing | fake worker | per-worker bearer token (issued at register, constant-time check); **optional device-identity binding** (`--bind-device-identity`) ties the token to the worker's TLS client-cert SHA-256 fingerprint, so a token replayed from another host fails closed (401 + audited `device_fingerprint_mismatch`) | [PoC] | low-med (token + device binding; Intune/Entra-managed device is the upgrade) |
-| Tampering | alter control messages | Ed25519-signed manifests; typed/validated inputs. By default the public key travels with the manifest (proves integrity, not provenance); **an out-of-band pinned signer is now shipped (`--trusted-key`), so a worker can reject any key but the operator-provisioned one.** **Optional TLS and mutual TLS on the transport are now shipped** (`--tls-cert/--tls-key`, `--tls-client-ca`; worker `--client-cert/--client-key`) | [PoC sign + pinned key + optional TLS/mTLS] | low-med (mTLS closes on-path tampering when enabled) |
+| Tampering | alter control messages | Ed25519-signed manifests; typed/validated inputs; out-of-band pinned signer for job provenance. TLS/mTLS is shipped, and the sanctioned measurement preset requires it rather than leaving it optional. | [PoC sign + pinned key; Pilot mandatory TLS/mTLS] | low-med |
 | Repudiation | deny actions | append-only audit (register/assign/complete/yield/fail/auth_failed), now **hash-chained and tamper-evident** with a verify endpoint (`GET /events/verify`) and a JSONL SIEM export (`GET /events/export`) | [PoC] | low |
-| Info-disclosure | sniff control plane | **optional TLS in transit now shipped** (`--tls-cert/--tls-key`); data-minimized payloads; internal LAN as a floor | [PoC optional TLS] | low-med (encrypted when TLS enabled) |
+| Info-disclosure | sniff control plane | TLS is available for local PoC use and mandatory for any non-loopback measurement pilot; mTLS adds client authentication; payloads are data-minimized | [Pilot mandatory TLS/mTLS] | low |
 | DoS | flood orchestrator | lease timeouts + requeue; payload cap; per-job limits; **per-client rate limiting now shipped** (`--rate-limit`, default 600/min, keyed by worker token or IP, returns 429 + Retry-After) | [PoC] | low-med |
 | Replay | reuse old manifest/lease | manifest expiry; lease ownership; nonce/short TTL roadmap | [PoC expiry]+[Roadmap nonce] | low-med |
 
@@ -194,15 +198,15 @@ Covered in depth by the LINDDUN analysis (section 7).
 
 | LINDDUN category | Threat | Mitigation | Residual |
 |---|---|---|---|
-| **Linkability** | link compute behavior to an individual over time | only derived spare-capacity leaves device; no raw activity stream; minimal ledger linkage | low-med |
-| **Identifiability** | identify the employee from telemetry | profile stays on-device; advert carries node id, not activity | low |
+| **Linkability** | link device availability or capacity behavior to an individual over time | random hostname-free observer ID; central report has no hourly or idle pattern; restrict and delete the separate enrollment map | low-med |
+| **Identifiability** | identify the employee from telemetry | profile stays on-device; central summary is pseudonymous and coarse; operator access is authenticated | low-med, because enrollment staff may hold a mapping |
 | **Non-repudiation (privacy sense)** | employee cannot deny participation | participation is voluntary/opt-in and logged transparently; this is desired for audit, disclosed to employee | n/a (by design, disclosed) |
-| **Detectability** | infer activity from job scheduling patterns | governor decisions are local; scheduling sees capacity, not activity | low |
-| **Disclosure of information** | activity/keystroke/file data exposed | none is collected or transmitted; on-device-only profiling; no-persistence | low |
-| **Unawareness** | employee unaware of what runs/why | one-page consent: what it does, headroom-only, never on battery, instant opt-out, caps | low |
+| **Detectability** | infer activity from reports or job scheduling patterns | measurement summary has no wall-clock slots or idle field; governor decisions remain local | low |
+| **Disclosure of information** | activity/keystroke/file data exposed | those data are not collected; rich profile remains local; current measurement mode has no sample timeline or live resource stream | low |
+| **Unawareness** | employee unaware of collection, central fields, or retention | dedicated measurement consent names local and central fields, unavailable-time ambiguity, retention, and purge | low |
 | **Non-compliance** | violates privacy law/policy | request DPIA + CELA legal review; data minimization; lawful basis = voluntary consent; works-council consideration in applicable regions | **open: needs CELA/Privacy** |
 
-**Employee-monitoring posture:** OneCompute is explicitly designed **not** to be employee monitoring. It measures spare hardware capacity locally to avoid disturbing the user, and transmits only a capacity scalar. We will state this plainly to CELA and in consent, and we will honor regional employee-representation requirements (e.g., works councils) before any non-pilot expansion.
+**Employee-monitoring posture:** OneCompute is explicitly designed not to be employee monitoring. It measures spare hardware capacity locally and transmits only a compact capacity/availability summary. The central service receives no per-hour profile, idle/away percentage, raw timestamp, application data, or live utilization stream. Broad availability totals remain potentially personal and are disclosed in consent. Regional employee-representation requirements apply before expansion.
 
 ---
 
@@ -224,7 +228,7 @@ Covered in depth by the LINDDUN analysis (section 7).
 | Manifest signing | Ed25519 (`cryptography`), on by default; worker verifies signature + input hash + expiry, refuses on mismatch (no code-hash check; code is a built-in adapter). **Out-of-band pinned signer shipped (`--trusted-key` / `$ONECOMPUTE_TRUSTED_PUBKEY`): strict mode rejects unsigned or differently-signed manifests.** Default (no pin) is trust-on-first-use against the key carried in the manifest | cosign/Sigstore + OIDC + Rekor transparency; SLSA provenance; HSM-custodied signing key |
 | Signing-key custody | private key on the orchestrator/signing host; this is the highest-value secret | HSM / corp signing service; key rotation policy; separation from orchestrator |
 | Worker auth | per-worker bearer token, constant-time comparison | device-bound certificates + SSO/OIDC |
-| Transport | **optional TLS + mutual TLS shipped** (uvicorn `ssl_*` server side, pinned-CA + client-cert httpx client side); internal LAN as a floor when TLS is off | TLS on by default; automated cert issuance/rotation; WAF |
+| Transport | TLS + mutual TLS shipped (uvicorn server, pinned-CA + client-cert httpx client); mandatory in the sanctioned remote measurement preset | automated certificate issuance/rotation; WAF |
 | Token/secret handling | tokens not logged; auth failures audited | secret store integration, short-lived tokens, rotation |
 
 **Key risk:** compromise of the manifest signing key allows arbitrary code on the fleet. Treatment: restrict custody, move to a corporate signing service/HSM, rotate, and separate the signer from the orchestrator before any expansion.
@@ -269,7 +273,7 @@ Because a job shares physical CPU, cache, and memory (and, for GPU kinds, the GP
 - **Result integrity:** proof-hash match required (`invalid_proof` rejection); hidden **challenge/ringer** tasks with server-known answers; wrong answer -> blacklist + zero credit; comparators tolerance-aware (heterogeneous FP), not bitwise.
 - **Job provenance (anti-injection):** with `--trusted-key` / `$ONECOMPUTE_TRUSTED_PUBKEY` the worker accepts only manifests signed by the operator's out-of-band key, so a compromised or spoofed orchestrator cannot inject a self-signed job; default (no pin) is trust-on-first-use against the key carried in the manifest.
 - **Credit integrity:** credit is computed **server-side from the JOB's actual GPU requirement** in the signed manifest (accepted_units x 5 for a GPU job, else x1), never from the worker's self-reported `has_gpu`/TOPS, so a worker cannot inflate credit 5x by claiming a GPU it lacks and running CPU jobs; append-only ledger; lease ownership prevents double-credit; capped multiplier.
-- **Sybil resistance:** corp-SSO one-identity-per-node (roadmap: device-bound certs).
+- **Sybil resistance:** device-bound certificates and approval ship for the measurement pilot; corp-SSO and hardware-backed attestation remain production upgrades.
 - Roadmap: reputation-weighted adaptive replication; formal verifiable compute.
 
 ---
@@ -305,16 +309,16 @@ Because a job shares physical CPU, cache, and memory (and, for GPU kinds, the GP
 - **Employee monitoring law / works councils:** treat as potentially in-scope in some regions; engage employee representation before any non-pilot expansion; emphasize no activity surveillance.
 - **Compensation / tax / off-the-clock (e.g., FLSA-style):** rewards are for passive use of an already-issued device, not labor; keep voluntary and capped; HR to confirm the incentive structure and any tax treatment.
 - **Acceptable Use Policy alignment:** confirm the agent and rewards comply with corporate AUP and device-use policy.
-- **Retention & erasure on opt-out:** on withdrawal the on-device profile file is deleted locally; the append-only ledger and audit stream retain only pseudonymous node-id plus credit/operational metadata (no activity data). Because those stores are append-only, honoring an erasure request means a documented retention window plus a pseudonymization/tombstoning path for the employee<->node linkage rather than in-place deletion. Defining that path is a named DPIA deliverable for CELA/Privacy.
+- **Retention & erasure on opt-out:** `-Uninstall` stops collection and retains the local profile; `-Purge` also deletes the profile, legacy timeline/rotations, and random observer ID. Operator disconnect deletes the latest central measurement summary immediately. The append-only audit retains pseudonymous operational events, so the pilot approval must define a time-limited database/audit retention window and an incident-hold exception. The proposed default is deletion within 30 days after pilot close.
 - **Compliance crosswalk:** SOC 2 TSC control-to-code mapping in `soc2-alignment.md`; NIST CSF / 800-53 and ISO 27001 mapping is roadmap; a **DPIA** is the named privacy deliverable.
 
 ---
 
 ## 18. Incident response and kill switch
 - **Detection:** live Defender/Purview monitoring during pilot; audit stream; operator on call.
-- **Kill switch (reversible by design):** stop the orchestrator -> all workers idle within one poll; employees Ctrl-C/uninstall; remove the Defender allow-list entry at pilot end; the only artifact is a local profile file.
-- **Playbook:** Defender/Purview alert -> stop affected worker, notify security contact, pause pilot, investigate, do not resume until cleared. Slowdown report -> stop worker, re-tune governor margin, re-test on a controlled machine first.
-- **Forensics/comms/breach:** preserve audit + telemetry; follow corporate IR and breach-notification process; sponsor gets daily status + go/no-go.
+- **Kill switch (reversible by design):** stop the orchestrator; disconnect affected observer IDs; revoke client certificates; run `-Uninstall` to retain local data or `-Purge` to erase it; remove the Defender allow-list entry at pilot end.
+- **Playbook:** Defender/Purview alert, certificate anomaly, unexplained report anomaly, or participant complaint -> stop the affected observer, notify the security/privacy contacts, pause pilot expansion, investigate, and do not resume until cleared.
+- **Forensics/comms/breach:** preserve only evidence required by the approved incident process; follow corporate IR and breach-notification procedures; sponsor gets daily status and go/no-go.
 
 ---
 
@@ -327,30 +331,31 @@ Likelihood/Impact: L/M/H. Severity = combined. Owner/treatment shown; residual a
 | R1 | Endpoint-stack collision (cryptojacking false-positive, WDAC, Purview) | H | H | **Critical** | code-sign + Defender allow-list + WDAC trust + Purview confirm; pilot only after sanction | Med (managed by allow-list) |
 | R2 | Sandbox escape / host compromise via job | L-M | H | **High** | MXC (preferred, kernel-enforced) when a runtime is present, else container isolation for CPU kinds (no-network, --rm, minimal payload); the Job-Object fallback is caps+kill only with no FS boundary; `--require-isolation` fails closed rather than use it; class policy; no-persistence; TEE roadmap | Med (fail-closed / MXC) / Med-High (default fallback) |
 | R3 | GPU-job weak isolation (GPU-in-Sandbox unsupported) | M | H | **High** | host-side Job Object; restrict GPU job sensitivity; `--require-isolation` blocks host-side GPU/AI when no OS sandbox is present | Med-High (open; eliminated when require-isolation set) |
-| R4 | Privacy harm / employee-monitoring perception | M | H | **High** | on-device-only profiling; consent; data minimization; DPIA + CELA | Med (pending CELA) |
+| R4 | Privacy harm / employee-monitoring perception | M | H | **High** | rich profile local only; compact central schema; no hourly/idle pattern, sample timeline, or live resource stream; pseudonymous ID; consent; purge; DPIA + CELA | Low-Med technically, Med pending CELA/works-council review |
 | R5 | Signing-key compromise -> arbitrary fleet code | L | H | **High** | restrict custody; HSM/corp signing; rotation; separate from orchestrator | Med |
 | R6 | Orchestrator compromise -> fleet command | L | H | **High** | hardened host; **out-of-band pinned signer (`--trusted-key`) so a compromised orchestrator cannot inject a self-signed job**; signature gate at worker; audit; least privilege | Low-Med (pinned) / Med (trust-on-first-use default) |
 | R7 | Reward fraud / Sybil / benchmark inflation | M | M | **Med** | SSO one-identity-per-node; server metering; challenge; caps | Low-Med |
 | R8 | Governor mis-sizing -> perceptible slowdown (adoption killer) | M | M-H | **High** | conservative default; learned profile; sub-second yield; pilot measures it | Med |
-| R9 | Transport blocked/insecure (proxy issues) | M | M | **Med** | validate hour-1 reachability; **optional TLS/mTLS shipped**; rate limiting shipped | Low-Med (encrypted + mutually authenticated when TLS/mTLS enabled) |
+| R9 | Transport blocked/insecure (proxy issues) | M | M | **Med** | remote measurement HTTP rejected; sanctioned preset requires TLS/mTLS, approval, bound identity, and rate limiting | Low-Med |
 | R10 | Data leakage via intermediate state (activations) | L-M | M-H | **Med-High** | restrict sensitive job classes; disclosed; class policy roadmap | Med |
 | R11 | Churn -> lost/double work | M | L-M | **Low-Med** | lease timeout + requeue; idempotent crediting | Low |
 | R12 | Legal/works-council/tax non-compliance | L-M | M-H | **Med-High** | CELA/HR review; voluntary capped rewards; regional handling | Med (pending legal) |
 | R13 | Supply-chain compromise of agent | L | H | **Med-High** | Ed25519 signing; dependency pinning (pinned `cryptography` trust root); **CycloneDX SBOM** + **signed SLSA v1 provenance attestation** shipped (`scripts/generate_sbom.py`, `scripts/generate_provenance.py`); transparency-logged cosign/OIDC/Rekor signing roadmap | Low-Med (inventory + pinning + signing + offline attestation in place; transparency-logged build proof roadmap) |
 | R14 | Hardware wear / thermal / battery | L-M | M | **Med** | never on battery; bounded duty cycle; MSD confirm | Low-Med |
 | R15 | MXC preview immaturity (overly-permissive default policies; denied-paths unsupported on Windows; not a security boundary yet; unvalidated against a real runtime) | M | M-H | **Med-High** | fail closed on any policy we cannot verify; inert until a real `wxc-exec` runtime is present; **a validation harness (stub `wxc-exec`) now proves the launch/policy/probe wiring end-to-end** (`mxc-validation.md`), so a real preview can be dropped in without a OneCompute code change; keep Docker/Job-Object + `--require-isolation` enforced meanwhile | Med (contained by fail-closed; OneCompute-side wiring proven, real-runtime validation still pending) |
+| R16 | Falsified or corrupted measurement distorts business case | M | M | **Med** | certificate-bound source identity; server clamps; overwrite-only latest summary; outlier and duplicate-pattern review; sample comparison to approved endpoint-management data | Med, because values are self-reported and not hardware-attested |
 
 ---
 
 ## 20. Residual risk and acceptance
-The PoC enforces the technical heart of a secure design (authenticated, signed, sandboxed, verified, audited, opt-in, instant-yield), and v1.1 adds three hardening controls in code: a **fail-closed isolation switch** (`--require-isolation`), an **out-of-band pinned signer** (`--trusted-key`) that closes the compromised-orchestrator injection path, and a **merged, fail-closed, inert-until-runtime MXC OS-enforced backend** as the preferred boundary. The **honest residual** now concentrates in: software (not hardware-TEE) isolation and side channels, the GPU-isolation gap, MXC not yet validated against a real runtime (its launch-path wiring is now proven via a stub harness; R15), TLS/SSO/build-signing being roadmap, and unresolved legal/privacy review. **Therefore the ask is a contained pilot, not rollout**: opt-in, a handful of named devices, time-boxed, internal-only, reversible, watched, and gated on written risk acceptance. Residual acceptance is recorded in the section 0 sign-off table.
+The PoC enforces authenticated, signed, sandboxed, verified, audited, opt-in, instant-yield execution controls. The measurement path now adds privacy-minimized reporting, mandatory remote HTTPS, a sanctioned mTLS/device-binding preset, authenticated operator reads, and complete purge. The honest residual concentrates in software rather than hardware-TEE isolation for any future job phase, GPU isolation, MXC real-runtime validation, self-reported measurement integrity, certificate/token operations, and unresolved legal/privacy review. **Therefore the ask is a staged 50-100 device measurement pilot, not job execution or rollout.**
 
 ---
 
 ## 21. Open questions / decisions needed
 1. MSD: acceptable duty cycle / device-wear stance; allow-list path; pilot device set.
-2. CISO/Azure Security: required isolation bar for GPU and sensitive classes; TLS/mTLS timing; orchestrator hardening baseline.
-3. CELA/Privacy: is on-device-only profiling + capacity scalar in-scope for monitoring law? DPIA scope? works-council regions?
+2. CISO/Azure Security: approve the mTLS topology, certificate lifecycle, network scope, orchestrator baseline, and incident process; separately define the future isolation bar for job execution.
+3. CELA/Privacy: approve the local-rich/central-compact split, availability totals, consent, 30-day proposed retention, enrollment-map controls, and works-council regions.
 4. HR: rewards structure, tax treatment, off-the-clock interpretation.
 5. Signing: corporate signing service vs interim Ed25519; key custody.
 
@@ -371,14 +376,15 @@ The PoC enforces the technical heart of a secure design (authenticated, signed, 
 | CycloneDX SBOM (`scripts/generate_sbom.py`) + dependency pinning | abuse-case 6, R13 |
 | `--require-isolation` fail-closed switch (refuse when no OS sandbox; blocks unsandboxed fallback + host-side GPU/AI) | B2 escape, R2/R3 |
 | `--trusted-key` out-of-band pinned signer (strict provenance) | B3 tamper, abuse-case 5, R6 |
-| Optional TLS + mutual TLS (server `--tls-*`, worker `--tls-ca`/`--client-cert`) | B3 tamper/info-disclosure, R9 |
+| Secure measurement preset: mandatory TLS/mTLS, approval, distinct operator/submit tokens, device binding | B3 spoof/tamper/info-disclosure, R4, R9 |
 | Per-client rate limiting (`--rate-limit`, 429 + Retry-After) | B3 DoS, B4 fleet-abuse, R9 |
 | Operator submit token (`--submit-token`, constant-time, audited) | B4 spoofing/tampering/EoP, abuse-case 1 |
 | Signed SLSA v1 provenance attestation (`scripts/generate_provenance.py`) | Tampering (build), abuse-case 6, R13 |
 | Hash-chained tamper-evident audit + verify/export (`GET /events/verify`, `/events/export`) | B1/B3 Repudiation, SIEM/Sentinel |
 | Instant-yield governor vs learned profile; never on battery | A1, R8, R14 |
 | Challenge/ringer + server-assigned credit + append-only ledger | A4/A5, R7 |
-| On-device-only profiling; data minimization; no-persistence | A2, B5/LINDDUN, R4/R10 |
+| Rich profile local only; compact central summary; no measurement timeline/live stream; random observer ID; purge | A2, B5/LINDDUN, R4 |
+| Server clamping, certificate-bound source, and measurement outlier review | R16 |
 | Append-only audit + monitoring | repudiation, detection, IR |
 | Code-sign + Defender allow-list + WDAC + Purview | B1 endpoint-control, R1 |
 | Outbound-only, no inbound ports; security headers | B3 network exposure |
@@ -389,16 +395,16 @@ The PoC enforces the technical heart of a secure design (authenticated, signed, 
 
 **CISO / Azure Security**
 - *Isolation strength?* MXC (merged, preferred, kernel-enforced) when a real runtime is present, else container + Job Object; `--require-isolation` lets a pilot fail closed rather than run unsandboxed; TEE roadmap; GPU gap disclosed. **The MXC launch-path wiring is now validated end-to-end against a stub `wxc-exec` runtime** (`mxc-validation.md`); validation against a real preview runtime remains pending (R15). We restrict sensitive/GPU classes and want your required bar for the pilot.
-- *What if the orchestrator is compromised?* A worker run with `--trusted-key` / `$ONECOMPUTE_TRUSTED_PUBKEY` accepts only manifests signed by the operator's out-of-band key, so a compromised orchestrator cannot inject a self-signed job. Without a pinned key (trust-on-first-use default) it could. Remaining roadmap: TLS/mTLS on the channel and moving the signing key to an HSM/corp service separate from the orchestrator.
-- *Auth/transport?* Per-worker tokens + lease ownership now; **optional TLS and mutual TLS are now shipped** (`--tls-cert/--tls-key`, `--tls-client-ca`; worker `--client-cert/--client-key`), plus per-client **rate limiting** (`--rate-limit`) and **optional device-identity binding** (`--bind-device-identity`, ties the token to the worker's TLS client-cert fingerprint); SSO/OIDC remains roadmap. A pilot can run TLS-everywhere on a controlled network.
+- *What if the orchestrator is compromised?* Measurement reports contain only the compact schema, but an attacker could still alter/delete fleet data or misuse enrollment. The sanctioned host is hardened, operator reads are authenticated, devices use mTLS and certificate-bound identity, and reports are treated as estimates. For a future job phase, `--trusted-key` prevents a compromised control plane from injecting a self-signed job.
+- *Auth/transport?* `--secure-measurement-pilot` requires TLS server identity, mutual TLS client identity, device-code approval, bound fingerprints, and distinct admin/submit tokens. Missing or mismatched fingerprints are rejected before token rotation. SSO/OIDC remains a production upgrade.
 
 **Microsoft Digital (MSD)**
 - *Will it trip Defender/WDAC/Purview/Intune?* Yes if unsanctioned; we ask to be **allow-listed** (signed publisher + SHA-256), not exempted; we share IOCs and monitor live.
 - *Device wear/thermal/battery?* Bounded duty cycle, never on battery, conservative governor; we want your acceptable-use stance.
-- *Rollback?* Stop orchestrator -> idle in one poll; uninstall; remove allow-list entry.
+- *Rollback?* Stop the orchestrator, disconnect observer IDs, revoke client certificates, uninstall or purge devices, and remove the allow-list entry.
 
 **CELA / Privacy**
-- *Is this employee monitoring?* No: profiling is on-device only and only a capacity scalar leaves; no activity/keystroke/file/mail/browser data. We request a DPIA and a scoped legal read, and will handle works-council regions.
+- *Is this employee monitoring?* It is designed as capacity measurement, not performance monitoring. The rich hour-of-week and idle profile remains local. Centrally, only a pseudonymous compact capacity/availability summary leaves, with no idle field, hourly pattern, raw timestamp, hostname by default, or content data. Broad availability totals are disclosed and still require DPIA/CELA and regional review.
 - *Lawful basis?* Voluntary informed opt-in with instant withdrawal.
 
 **HR**

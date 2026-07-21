@@ -24,6 +24,7 @@ JobState = Literal["queued", "leased", "completed", "failed"]
 ResultStatus = Literal["completed", "failed", "yielded"]
 SandboxType = Literal["docker", "windows_sandbox", "job_object"]
 Network = Literal["none", "host"]
+MeasurementDeviceClass = Literal["laptop", "desktop", "devbox", "xbox", "unknown"]
 
 # Data sensitivity carried by a real workload, low to high. Part of the SIGNED manifest, so it is
 # tamper-evident. Drives classification-aware routing: a job may only land on a device whose
@@ -74,6 +75,7 @@ class Capability(BaseModel):
     free_ram_gb is an optional snapshot of currently-available RAM at registration."""
 
     worker_id: str
+    measurement_only: bool = False
     cpus: int = 1
     ram_gb: float = 1.0
     free_ram_gb: float | None = None
@@ -371,12 +373,14 @@ class WorkloadView(BaseModel):
     summary: dict[str, Any] | None = None
 
 
-# --- measurement pilot (opt-in idle-headroom telemetry: POST /profile, GET /measurement) ------
+# --- measurement pilot (privacy-minimized summary: POST /profile, GET /measurement) ------------
 
 class UsageBucket(BaseModel):
-    """One hour-of-week usage bucket a worker reports for the measurement pilot: derived rolling
-    stats only (means/peaks, 0-100), never raw activity, files, or wall-clock timestamps (privacy
-    per docs/idea.md §8). ``index`` is the hour-of-week slot (0 = Mon 00:00 .. 167 = Sun 23:00)."""
+    """Legacy measurement bucket accepted only during a rolling upgrade.
+
+    New workers never send these per-hour values. The orchestrator collapses a legacy list into one
+    compact summary in memory and discards the list rather than persisting an activity heatmap.
+    """
 
     index: int = 0
     n: int = 0
@@ -390,20 +394,6 @@ class UsageBucket(BaseModel):
     idle_mean: float = 0.0  # % of samples with the human idle/away (prime-harvest-window signal)
 
 
-class ProfileReport(BaseModel):
-    """POST /profile body: a worker's on-device usage envelope for the measurement pilot. Only
-    populated buckets (n > 0) are sent, and they carry no raw activity -- so the control plane
-    learns aggregate idle headroom without ever seeing what the machine was actually doing."""
-
-    worker_id: str
-    buckets: list[UsageBucket] = Field(default_factory=list)
-
-
-class ProfileIngestResponse(BaseModel):
-    accepted: bool = True
-    buckets_stored: int = 0     # populated buckets the orchestrator kept after sanitizing
-
-
 class MetricSummary(BaseModel):
     """Fleet estimate for one resource: measured average/peak utilization and the ESTIMATED
     conservatively-recoverable headroom range (percent)."""
@@ -412,6 +402,40 @@ class MetricSummary(BaseModel):
     peak: float = 0.0
     recoverable_low: float = 0.0
     recoverable_high: float = 0.0
+
+
+class ProfileAvailability(BaseModel):
+    """Compact timing totals only, with no raw timestamps or per-hour presence pattern."""
+
+    span_hours: float = 0.0
+    observed_hours_per_day: float = 0.0
+    unavailable_hours_per_day: float = 0.0
+    sample_count: int = 0
+
+
+class ProfileReport(BaseModel):
+    """POST /profile body: one privacy-minimized, derived summary per volunteer device.
+
+    Current workers send no raw samples, wall-clock timestamps, application data, input events,
+    idle/presence field, or hour-of-week buckets. ``buckets`` is receive-only legacy compatibility.
+    """
+
+    worker_id: str
+    device_class: MeasurementDeviceClass = "unknown"
+    coverage_buckets: int = 0
+    cpu: MetricSummary = Field(default_factory=MetricSummary)
+    gpu: MetricSummary = Field(default_factory=MetricSummary)
+    ram_avg: float = 0.0
+    ram_headroom: float = 0.0
+    ac_avg: float = 0.0
+    availability: ProfileAvailability = Field(default_factory=ProfileAvailability)
+    buckets: list[UsageBucket] = Field(default_factory=list, exclude=True)
+
+
+class ProfileIngestResponse(BaseModel):
+    accepted: bool = True
+    coverage_buckets: int = 0
+    buckets_stored: int = 0  # compatibility: compact-summary storage always keeps zero buckets
 
 
 class MeasurementSummary(BaseModel):
@@ -430,4 +454,7 @@ class MeasurementSummary(BaseModel):
     ram_avg: float = 0.0
     ram_headroom: float = 0.0
     ac_avg: float = 0.0    # fleet % of time on AC power
-    idle_avg: float = 0.0  # fleet % of time the user was idle/away
+    observed_hours_per_day: float = 0.0
+    unavailable_hours_per_day: float = 0.0
+    timing_span_hours: float = 0.0
+    device_classes: dict[str, int] = Field(default_factory=dict)
