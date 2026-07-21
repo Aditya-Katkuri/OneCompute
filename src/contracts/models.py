@@ -425,6 +425,7 @@ class ProfileReport(BaseModel):
     coverage_buckets: int = 0
     cpu: MetricSummary = Field(default_factory=MetricSummary)
     gpu: MetricSummary = Field(default_factory=MetricSummary)
+    gpu_sampled: bool = False
     ram_avg: float = 0.0
     ram_headroom: float = 0.0
     ac_avg: float = 0.0
@@ -451,6 +452,7 @@ class MeasurementSummary(BaseModel):
     harvest_high: float = 0.40
     cpu: MetricSummary = Field(default_factory=MetricSummary)
     gpu: MetricSummary = Field(default_factory=MetricSummary)
+    gpu_device_count: int = 0
     ram_avg: float = 0.0
     ram_headroom: float = 0.0
     ac_avg: float = 0.0    # fleet % of time on AC power

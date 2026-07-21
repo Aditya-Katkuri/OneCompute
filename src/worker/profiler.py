@@ -17,9 +17,12 @@ from __future__ import annotations
 
 import ctypes
 import json
+import logging
+import math
 import os
+import uuid
 from ctypes import wintypes
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -34,6 +37,10 @@ _EWMA_ALPHA = 0.05
 # max/min, not all-time): new_extreme = decayed_old_extreme blended with the live sample.
 _EXTREME_DECAY = 0.02
 _STALE_DAYS = 35.0  # a bucket not seen in >35 days is reset on next record (rolling window)
+MAX_PROFILE_BYTES = 1_000_000
+MAX_BUCKET_SAMPLES = 10_000_000
+
+logger = logging.getLogger(__name__)
 
 
 def bucket_index(when: datetime) -> int:
@@ -51,10 +58,13 @@ class BucketStat:
     cpu_min: float = 100.0
     gpu_mean: float = 0.0
     gpu_max: float = 0.0
+    gpu_n: int = 0          # valid GPU samples, separate from CPU/RAM sample count
     ram_mean: float = 0.0
     ram_max: float = 0.0
     ac_mean: float = 0.0    # % of samples the machine was on AC power (harvestable-window signal)
     idle_mean: float = 0.0  # % of samples the human was idle/away (prime-harvest-window signal)
+    ac_n: int = 0           # valid AC samples, separate from CPU/RAM sample count
+    idle_n: int = 0         # valid idle samples, separate from CPU/RAM sample count
     updated_at: float = 0.0  # epoch seconds of the last record
 
 
@@ -72,6 +82,63 @@ def _roll_max(prev: float, sample: float, mean: float) -> float:
 def _roll_min(prev: float, sample: float, mean: float) -> float:
     decayed = prev + _EXTREME_DECAY * (mean - prev)  # relax toward mean
     return min(decayed, sample)
+
+
+def _finite_number(value: object, default: float = 0.0) -> float:
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    return number if math.isfinite(number) else default
+
+
+def _percent(value: object, default: float = 0.0) -> float:
+    return max(0.0, min(100.0, _finite_number(value, default)))
+
+
+def _bucket_from_dict(raw: dict, *, gpu_supported: bool | None = None) -> BucketStat:
+    try:
+        n = min(MAX_BUCKET_SAMPLES, max(0, int(raw.get("n", 0))))
+    except (TypeError, ValueError, OverflowError):
+        n = 0
+    cpu_mean = _percent(raw.get("cpu_mean"))
+    gpu_mean = _percent(raw.get("gpu_mean"))
+    ram_mean = _percent(raw.get("ram_mean"))
+    try:
+        if "gpu_n" in raw:
+            gpu_n = max(0, int(raw.get("gpu_n", 0)))
+        elif gpu_supported is True:
+            gpu_n = n
+        elif gpu_supported is False:
+            gpu_n = 0
+        else:
+            gpu_n = n if gpu_mean > 0.0 or _percent(raw.get("gpu_max")) > 0.0 else 0
+    except (TypeError, ValueError, OverflowError):
+        gpu_n = 0
+    try:
+        ac_n = max(0, int(raw.get("ac_n", n if "ac_mean" in raw else 0)))
+    except (TypeError, ValueError, OverflowError):
+        ac_n = 0
+    try:
+        idle_n = max(0, int(raw.get("idle_n", n if "idle_mean" in raw else 0)))
+    except (TypeError, ValueError, OverflowError):
+        idle_n = 0
+    return BucketStat(
+        n=n,
+        cpu_mean=cpu_mean,
+        cpu_max=max(cpu_mean, _percent(raw.get("cpu_max"))),
+        cpu_min=min(cpu_mean, _percent(raw.get("cpu_min"), 100.0)),
+        gpu_mean=gpu_mean,
+        gpu_max=max(gpu_mean, _percent(raw.get("gpu_max"))),
+        gpu_n=min(gpu_n, n),
+        ram_mean=ram_mean,
+        ram_max=max(ram_mean, _percent(raw.get("ram_max"))),
+        ac_mean=_percent(raw.get("ac_mean")),
+        idle_mean=_percent(raw.get("idle_mean")),
+        ac_n=min(ac_n, n),
+        idle_n=min(idle_n, n),
+        updated_at=max(0.0, _finite_number(raw.get("updated_at"))),
+    )
 
 
 # --- system CPU% via GetSystemTimes (no psutil; matches the ctypes/pynvml convention) -------
@@ -124,7 +191,7 @@ class SystemCpuSampler:
         return max(0.0, min(100.0, busy * 100.0))
 
 
-def _default_profile_path() -> Path:
+def default_profile_path() -> Path:
     base = os.environ.get("LOCALAPPDATA") or os.environ.get("TEMP") or "."
     return Path(base) / "OneCompute" / "usage_profile.json"
 
@@ -133,43 +200,122 @@ class UsageProfiler:
     """Learns and persists a machine's rolling hour-of-week usage envelope (on-device only)."""
 
     def __init__(self, path: str | os.PathLike[str] | None = None) -> None:
-        self.path = Path(path) if path is not None else _default_profile_path()
+        self.path = Path(path) if path is not None else default_profile_path()
         self.buckets: list[BucketStat] = [BucketStat() for _ in range(BUCKETS)]
         self.availability = AvailabilityTracker()
+        self.gpu_supported: bool | None = None
+        self.load_warning: str | None = None
+        self.recovered_profile_path: Path | None = None
+        self.recovery_blocked = False
+        self.last_save_error: str | None = None
         self._load()
 
     def _load(self) -> None:
         try:
             if self.path.exists():
+                if not self.path.is_file():
+                    raise ValueError("profile path is not a file")
+                if self.path.stat().st_size > MAX_PROFILE_BYTES:
+                    raise ValueError("profile exceeds the maximum expected size")
                 data = json.loads(self.path.read_text(encoding="utf-8"))
-                known = {f.name for f in fields(BucketStat)}
-                for i, raw in enumerate(data.get("buckets", [])[:BUCKETS]):
+                if not isinstance(data, dict):
+                    raise ValueError("profile root must be a JSON object")
+                raw_buckets = data.get("buckets", [])
+                if not isinstance(raw_buckets, list):
+                    raise ValueError("profile buckets must be a JSON list")
+                if isinstance(data.get("gpu_supported"), bool):
+                    self.gpu_supported = data["gpu_supported"]
+                for i, raw in enumerate(raw_buckets[:BUCKETS]):
                     if isinstance(raw, dict):
-                        # Tolerate schema drift: unknown keys are dropped and missing new fields
-                        # (e.g. ac_mean/idle_mean in a pre-upgrade profile) fall back to defaults.
-                        self.buckets[i] = BucketStat(**{k: v for k, v in raw.items() if k in known})
+                        self.buckets[i] = _bucket_from_dict(
+                            raw,
+                            gpu_supported=self.gpu_supported,
+                        )
                 self.availability = AvailabilityTracker.from_dict(data.get("availability"))
-        except Exception:
-            # Corrupt/unreadable profile -> start fresh; never raise.
+        except (OSError, UnicodeError, ValueError, TypeError, RecursionError) as exc:
+            self.load_warning = str(exc)
+            self.recovered_profile_path = self._preserve_corrupt_profile()
+            self.recovery_blocked = (
+                self.recovered_profile_path is None and self.path.exists()
+            )
+            logger.warning(
+                "usage profile could not be loaded%s: %s",
+                (
+                    f"; preserved at {self.recovered_profile_path}"
+                    if self.recovered_profile_path is not None
+                    else ""
+                ),
+                exc,
+            )
             self.buckets = [BucketStat() for _ in range(BUCKETS)]
             self.availability = AvailabilityTracker()
+            self.gpu_supported = None
 
-    def save(self) -> None:
+    def _preserve_corrupt_profile(self) -> Path | None:
+        if not self.path.is_file():
+            return None
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        destination = self.path.with_name(
+            f"{self.path.stem}.corrupt-{stamp}-{uuid.uuid4().hex[:8]}{self.path.suffix}"
+        )
+        try:
+            os.replace(self.path, destination)
+            return destination
+        except OSError:
+            return None
+
+    def assert_writable(self) -> None:
+        """Fail early if the profile directory cannot safely persist pilot data."""
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        if self.path.exists() and not self.path.is_file():
+            raise OSError(f"profile path is not a file: {self.path}")
+        if self.recovery_blocked:
+            raise OSError(f"invalid profile could not be preserved: {self.path}")
+        probe = self.path.with_name(f".{self.path.name}.{uuid.uuid4().hex}.probe")
+        try:
+            with probe.open("x", encoding="utf-8") as handle:
+                handle.write("ok")
+                handle.flush()
+                os.fsync(handle.fileno())
+        finally:
+            try:
+                probe.unlink()
+            except FileNotFoundError:
+                pass
+
+    def save(self) -> bool:
+        tmp = self.path.with_name(f".{self.path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+        if self.recovery_blocked:
+            self.last_save_error = f"invalid profile could not be preserved: {self.path}"
+            logger.error("usage profile save blocked for %s: %s", self.path, self.last_save_error)
+            return False
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             payload = {
+                "version": 3,
+                "gpu_supported": self.gpu_supported,
                 "buckets": [asdict(b) for b in self.buckets],
                 "availability": self.availability.to_dict(),
             }
-            # Atomic write: a hard power-loss mid-save must never truncate/corrupt the profile
-            # (which _load would then discard, losing a week of learning). Write a temp file in the
-            # same directory, then os.replace -- on the same volume that swap is atomic, so a crash
-            # leaves either the complete old profile or the complete new one, never a half-written file.
-            tmp = self.path.with_name(self.path.name + ".tmp")
-            tmp.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+            encoded = json.dumps(payload, separators=(",", ":"), allow_nan=False)
+            with tmp.open("x", encoding="utf-8", newline="\n") as handle:
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
             os.replace(tmp, self.path)
-        except Exception:
-            pass  # best-effort persistence; never raise on the demo path
+            self.last_save_error = None
+            return True
+        except (OSError, TypeError, ValueError) as exc:
+            self.last_save_error = str(exc)
+            logger.error("usage profile save failed for %s: %s", self.path, exc)
+            return False
+        finally:
+            try:
+                tmp.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                logger.warning("could not remove usage profile temporary file %s: %s", tmp, exc)
 
     def record_availability(
         self,
@@ -182,7 +328,7 @@ class UsageProfiler:
     def record(
         self,
         cpu: float,
-        gpu: float,
+        gpu: float | None,
         ram: float,
         when: datetime | None = None,
         on_ac: bool | None = None,
@@ -195,6 +341,9 @@ class UsageProfiler:
         the harvestable-window signals. When omitted (e.g. a caller that doesn't sample them) the
         AC/idle means are left unchanged.
         """
+        cpu = _percent(cpu)
+        gpu = _percent(gpu) if gpu is not None else None
+        ram = _percent(ram)
         now = when or datetime.now()
         b = self.buckets[bucket_index(now)]
         ts = now.timestamp()
@@ -203,14 +352,18 @@ class UsageProfiler:
         b.cpu_mean = _ewma(b.cpu_mean, cpu, b.n)
         b.cpu_max = _roll_max(b.cpu_max, cpu, b.cpu_mean) if b.n else cpu
         b.cpu_min = _roll_min(b.cpu_min, cpu, b.cpu_mean) if b.n else cpu
-        b.gpu_mean = _ewma(b.gpu_mean, gpu, b.n)
-        b.gpu_max = _roll_max(b.gpu_max, gpu, b.gpu_mean) if b.n else gpu
+        if gpu is not None:
+            b.gpu_mean = _ewma(b.gpu_mean, gpu, b.gpu_n)
+            b.gpu_max = _roll_max(b.gpu_max, gpu, b.gpu_mean) if b.gpu_n else gpu
+            b.gpu_n += 1
         b.ram_mean = _ewma(b.ram_mean, ram, b.n)
         b.ram_max = _roll_max(b.ram_max, ram, b.ram_mean) if b.n else ram
         if on_ac is not None:
-            b.ac_mean = _ewma(b.ac_mean, 100.0 if on_ac else 0.0, b.n) if b.n else (100.0 if on_ac else 0.0)
+            b.ac_mean = _ewma(b.ac_mean, 100.0 if on_ac else 0.0, b.ac_n)
+            b.ac_n += 1
         if idle is not None:
-            b.idle_mean = _ewma(b.idle_mean, 100.0 if idle else 0.0, b.n) if b.n else (100.0 if idle else 0.0)
+            b.idle_mean = _ewma(b.idle_mean, 100.0 if idle else 0.0, b.idle_n)
+            b.idle_n += 1
         b.n += 1
         b.updated_at = ts
         self.buckets[bucket_index(now)] = b

@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from measurement.availability import (
+    MAX_LEGACY_TELEMETRY_BYTES,
     AvailabilityTracker,
     aggregate_availability,
     availability_tracker_from_telemetry,
@@ -44,6 +45,30 @@ def test_tracker_roundtrip_continues_across_a_restart() -> None:
     assert restored.sample_count == 3
 
 
+def test_clock_rollback_resets_baseline_without_creating_a_false_gap() -> None:
+    tracker = AvailabilityTracker()
+    tracker.record(10_000.0, 30.0)
+    tracker.record(10_030.0, 30.0)
+    tracker.record(9_000.0, 30.0)
+    tracker.record(9_030.0, 30.0)
+
+    assert tracker.observed_seconds == pytest.approx(60.0)
+    assert tracker.unavailable_seconds == 0.0
+    assert tracker.gap_count == 0
+    assert tracker.sample_count == 4
+
+
+def test_month_scale_clock_jump_is_not_counted_as_device_unavailability() -> None:
+    tracker = AvailabilityTracker()
+    tracker.record(1_000.0, 30.0)
+    tracker.record(1_030.0, 30.0)
+    tracker.record(1_030.0 + 40 * 24 * 3600, 30.0)
+
+    assert tracker.observed_seconds == pytest.approx(30.0)
+    assert tracker.unavailable_seconds == 0.0
+    assert tracker.gap_count == 0
+
+
 def test_telemetry_inference_ignores_bad_and_non_measure_rows(tmp_path) -> None:
     start = datetime(2026, 7, 15, 18, 0, tzinfo=UTC)
     rows = [
@@ -70,6 +95,17 @@ def test_telemetry_inference_ignores_bad_and_non_measure_rows(tmp_path) -> None:
     assert tracker.first_sample_at > 0.0
     assert tracker.last_sample_at > tracker.first_sample_at
     assert tracker.gap_count == 1
+
+
+def test_legacy_telemetry_migration_rejects_an_oversized_file(tmp_path) -> None:
+    path = tmp_path / "pilot-telemetry.jsonl"
+    with path.open("wb") as handle:
+        handle.truncate(MAX_LEGACY_TELEMETRY_BYTES + 1)
+
+    tracker = availability_tracker_from_telemetry(path)
+
+    assert tracker.sample_count == 0
+    assert tracker.span_seconds == 0.0
 
 
 def test_availability_aggregate_is_per_average_device() -> None:

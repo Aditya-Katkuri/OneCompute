@@ -34,8 +34,8 @@ class IdleGate:
         self.require_ac = require_ac
         self.gpu_busy_pct = gpu_busy_pct
 
-    def input_idle_seconds(self) -> float:
-        """Return seconds since last input in this session; fail open for demo continuity.
+    def input_idle_seconds_sample(self) -> float | None:
+        """Return seconds since last input in this session, or None when unavailable.
 
         GetLastInputInfo is session-specific. Do not run this detector only from session 0:
         it can make an interactive machine look idle forever.
@@ -44,33 +44,50 @@ class IdleGate:
             last_input = _LastInputInfo()
             last_input.cbSize = ctypes.sizeof(_LastInputInfo)
             if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(last_input)):  # type: ignore[attr-defined]
-                return 1_000_000.0
+                return None
             tick_count = ctypes.windll.kernel32.GetTickCount()  # type: ignore[attr-defined]
             elapsed_ms = (int(tick_count) - int(last_input.dwTime)) & 0xFFFFFFFF
             return max(0.0, elapsed_ms / 1000.0)
         except Exception:
-            return 1_000_000.0
+            return None
 
-    def on_ac(self) -> bool:
-        """Return True when AC power is detected; unknown defaults to True."""
+    def input_idle_seconds(self) -> float:
+        """Return seconds since last input; unknown preserves the existing fail-open behavior."""
+        value = self.input_idle_seconds_sample()
+        return value if value is not None else 1_000_000.0
+
+    def on_ac_state(self) -> bool | None:
+        """Return the sampled AC state, or None when Windows cannot determine it."""
         try:
             status = _SystemPowerStatus()
             if not ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status)):  # type: ignore[attr-defined]
-                return True
-            return int(status.ACLineStatus) == 1
+                return None
+            value = int(status.ACLineStatus)
+            return value == 1 if value in {0, 1} else None
         except Exception:
-            return True
+            return None
+
+    def on_ac(self) -> bool:
+        """Return True when AC is detected; unknown preserves the existing fail-open behavior."""
+        value = self.on_ac_state()
+        return value if value is not None else True
+
+    def user_idle_state(self) -> bool | None:
+        """Return whether the user appears idle, or None when input timing is unavailable."""
+        try:
+            if self.locked():
+                return True
+            seconds = self.input_idle_seconds_sample()
+            return seconds >= self.input_idle_threshold_s if seconds is not None else None
+        except Exception:
+            return None
 
     def user_idle(self) -> bool:
         """True when the human appears away: the session is locked, or there has been no keyboard/
         mouse input for at least the idle threshold. Uses GetLastInputInfo only (a timestamp, never
         keystroke content -- privacy/EDR clean). Never raises."""
-        try:
-            if self.locked():
-                return True
-            return self.input_idle_seconds() >= self.input_idle_threshold_s
-        except Exception:
-            return False
+        value = self.user_idle_state()
+        return value if value is not None else True
 
     def locked(self) -> bool:
         """Best-effort lock detection. Unknown defaults to unlocked."""

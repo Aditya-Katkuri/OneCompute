@@ -54,6 +54,19 @@ def test_load_summary_auto_backfills_from_sibling_telemetry(tmp_path) -> None:
     assert summary["availability"]["unavailable_hours_per_day"] > 20.0
 
 
+def test_load_summary_preserves_idle_gpu_support(tmp_path) -> None:
+    profile = _profile(tmp_path / "usage_profile.json")
+    data = json.loads(profile.read_text(encoding="utf-8"))
+    data["gpu_supported"] = True
+    profile.write_text(json.dumps(data), encoding="utf-8")
+
+    summary = business_case._load_summary(profile)
+
+    assert summary is not None
+    assert summary["gpu_sampled"] is True
+    assert summary["gpu"]["recoverable_high"] == 40.0
+
+
 def test_cli_labels_wake_model_and_awake_only_comparison(tmp_path, capsys) -> None:
     profile = _profile(tmp_path / "usage_profile.json")
     _telemetry(tmp_path / "pilot-telemetry.jsonl")

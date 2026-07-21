@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import logging
+import math
 import os
 import threading
 import time
+from pathlib import Path
 from urllib.parse import urlparse
 
 from isolation import active_boundary
@@ -17,8 +19,14 @@ from worker.capability import detect_capability
 from worker.governor import AdaptiveGovernor, system_gpu_load_pct, system_ram_load_pct
 from worker.idle import IdleGate
 from worker.measurement_identity import load_or_create_measurement_id
-from worker.profiler import UsageProfiler
+from worker.profile_lock import ProfileInUseError, ProfileLock
+from worker.profiler import UsageProfiler, default_profile_path
 from worker.telemetry import PilotTelemetry, default_telemetry_path
+
+MIN_MEASURE_INTERVAL_SECONDS = 5.0
+MAX_MEASURE_INTERVAL_SECONDS = 3600.0
+PROFILE_SAVE_INTERVAL_SECONDS = 60.0
+PROFILE_UPLOAD_INTERVAL_SECONDS = 300.0
 
 try:  # psutil is a declared dependency; guard so the worker still runs without it
     import psutil
@@ -64,7 +72,7 @@ def _start_usage_heartbeat(agent: WorkerAgent, period_s: float = 1.0) -> threadi
     return stop
 
 
-def _live_cpu_pct(governor: AdaptiveGovernor) -> float:
+def _live_cpu_pct(governor: AdaptiveGovernor) -> float | None:
     """System CPU% sampled over a short REAL window. In measure-only mode no job runs, so system
     CPU is the employee's demand -- exactly what ``AdaptiveGovernor.observe()`` folds in between
     jobs. We take a brief *blocking* sample rather than psutil's non-blocking delta so that even a
@@ -77,21 +85,49 @@ def _live_cpu_pct(governor: AdaptiveGovernor) -> float:
             return float(psutil.cpu_percent(interval=0.1))
         except Exception:
             pass
-    return governor.user_cpu()
+    return governor.system_cpu_sample()
 
 
-def _persist(profiler) -> None:
+def _persist(profiler) -> bool:
     """Best-effort local save of the learned usage profile.
 
-    Tolerates a stub profiler with no ``save()`` and never raises, so a persistence hiccup can
-    never take down a week-long observer.
+    Tolerates a stub profiler with no ``save()`` and never raises. A false return makes persistence
+    failure visible to the measurement loop without taking down a week-long observer.
     """
     save = getattr(profiler, "save", None)
-    if callable(save):
-        try:
-            save()
-        except Exception:
-            pass
+    if not callable(save):
+        return True
+    try:
+        result = save()
+    except (OSError, TypeError, ValueError) as exc:
+        logging.error("usage profile save failed: %s", exc)
+        return False
+    return result is not False
+
+
+def _measurement_pct(name: str, value: object) -> float:
+    if value is None:
+        raise RuntimeError(f"{name} utilization is unavailable")
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"{name} utilization is invalid") from exc
+    if not math.isfinite(number):
+        raise RuntimeError(f"{name} utilization is not finite")
+    return max(0.0, min(100.0, number))
+
+
+def _yn(value: bool | None) -> str:
+    if value is None:
+        return "?"
+    return "Y" if value else "N"
+
+
+def _measurement_enrollment_ready(agent: WorkerAgent) -> bool:
+    ensure = getattr(agent, "ensure_measurement_enrollment", None)
+    if callable(ensure):
+        return bool(ensure())
+    return True
 
 
 def _wait_for_headroom(gate, adaptive: bool, base_interval: float, step: float = 0.5) -> None:
@@ -145,11 +181,25 @@ def run_measure_loop(
     non-hanging); otherwise it loops on ``interval`` until interrupted, terminating cleanly on
     Ctrl-C. The learned profile is saved and a final envelope uploaded on exit.
     """
+    if not math.isfinite(interval):
+        raise ValueError("measurement interval must be finite")
     interval = max(0.0, interval)
-    # Save + upload the learned envelope on the first sample (so the device shows up in the central
-    # measurement view fast) and roughly every five minutes after.
-    post_every = max(1, round(300.0 / interval)) if interval > 0 else 1
+    if not once and interval < MIN_MEASURE_INTERVAL_SECONDS:
+        raise ValueError(
+            f"continuous measurement interval must be at least "
+            f"{MIN_MEASURE_INTERVAL_SECONDS:g} seconds"
+        )
+    if not once and interval > MAX_MEASURE_INTERVAL_SECONDS:
+        raise ValueError(
+            f"continuous measurement interval must be at most "
+            f"{MAX_MEASURE_INTERVAL_SECONDS:g} seconds"
+        )
+    # Save locally about every minute and upload about every five minutes. Both happen on the first
+    # successful sample so status and the central fleet view become useful immediately.
+    save_every = max(1, round(PROFILE_SAVE_INTERVAL_SECONDS / interval)) if interval > 0 else 1
+    post_every = max(1, round(PROFILE_UPLOAD_INTERVAL_SECONDS / interval)) if interval > 0 else 1
     samples = 0
+    last_upload_sample = 0
     last_wall = time.monotonic()
     try:
         while True:
@@ -163,26 +213,51 @@ def run_measure_loop(
                 if interval > 0 and samples > 0 and gap > max(3 * interval, interval + 30.0):
                     print(f"measure: resumed after {gap:.0f}s gap (sleep/hibernate); continuing")
                 # No job runs in measure-only mode, so the employee's demand == the whole machine.
-                cpu = _live_cpu_pct(governor)
-                gpu = system_gpu_load_pct() if agent.capability.has_gpu else 0.0
-                ram = system_ram_load_pct()
+                cpu = _measurement_pct("CPU", _live_cpu_pct(governor))
+                gpu = None
+                if agent.capability.has_gpu:
+                    gpu_sample = system_gpu_load_pct()
+                    try:
+                        gpu = _measurement_pct("GPU", gpu_sample)
+                    except RuntimeError as exc:
+                        logging.warning("%s; retaining the CPU/RAM sample", exc)
+                ram = _measurement_pct("RAM", system_ram_load_pct())
                 gate = getattr(governor, "gate", None)
-                on_ac = gate.on_ac() if gate is not None else None      # plugged in? harvest window
-                idle = gate.user_idle() if gate is not None else None   # human away? harvest window
+                on_ac_reader = getattr(gate, "on_ac_state", None)
+                idle_reader = getattr(gate, "user_idle_state", None)
+                on_ac = (
+                    on_ac_reader()
+                    if callable(on_ac_reader)
+                    else gate.on_ac() if gate is not None else None
+                )
+                idle = (
+                    idle_reader()
+                    if callable(idle_reader)
+                    else gate.user_idle() if gate is not None else None
+                )
                 governor.profiler.record(cpu, gpu, ram, on_ac=on_ac, idle=idle)  # learn the envelope
                 record_availability = getattr(governor.profiler, "record_availability", None)
                 if callable(record_availability):
                     record_availability(time.time(), interval or 30.0)
                 samples += 1
-                if samples == 1 or samples % post_every == 0:
-                    _persist(governor.profiler)              # local durability: reboot loses <= one window
-                    if upload:
-                        agent.report_profile(
+                save_due = samples == 1 or samples % save_every == 0
+                persisted = _persist(governor.profiler) if save_due else False
+                if upload and persisted:
+                    if (
+                        _measurement_enrollment_ready(agent)
+                        and (
+                            last_upload_sample == 0
+                            or samples - last_upload_sample >= post_every
+                        )
+                        and agent.report_profile(
                             governor.profiler,
                             device_class=device_class,
                         )
-                print(f"measure: cpu={cpu:.1f}% gpu={gpu:.1f}% ram={ram:.1f}% "
-                      f"ac={'Y' if on_ac else 'N'} idle={'Y' if idle else 'N'} (no jobs will run)")
+                    ):
+                        last_upload_sample = samples
+                gpu_text = f"{gpu:.1f}%" if gpu is not None else "?"
+                print(f"measure: cpu={cpu:.1f}% gpu={gpu_text} ram={ram:.1f}% "
+                      f"ac={_yn(on_ac)} idle={_yn(idle)} (no jobs will run)")
             except KeyboardInterrupt:
                 raise
             except Exception as exc:  # a bad sample must never kill a week-long observer
@@ -195,9 +270,16 @@ def run_measure_loop(
     finally:
         # Land the final envelope (and a local save) so the profile and central rollup reflect the
         # full pilot window even on a clean stop.
-        _persist(governor.profiler)
-        if upload:
-            agent.report_profile(governor.profiler, device_class=device_class)
+        persisted = _persist(governor.profiler)
+        if (
+            upload
+            and persisted
+            and samples > 0
+            and last_upload_sample != samples
+            and _measurement_enrollment_ready(agent)
+            and agent.report_profile(governor.profiler, device_class=device_class)
+        ):
+            last_upload_sample = samples
     return samples
 
 
@@ -337,6 +419,18 @@ def main() -> None:
         parser.error("--url must use http:// or https://")
     if args.measure_only and args.url and url_scheme == "http" and not _is_loopback_url(args.url):
         parser.error("remote measurement uploads require an https:// --url")
+    if args.measure_only and not math.isfinite(args.measure_interval):
+        parser.error("--measure-interval must be finite")
+    if args.measure_only and not args.once and args.measure_interval < MIN_MEASURE_INTERVAL_SECONDS:
+        parser.error(
+            f"--measure-interval must be at least {MIN_MEASURE_INTERVAL_SECONDS:g} seconds "
+            "for a continuous observer"
+        )
+    if args.measure_only and not args.once and args.measure_interval > MAX_MEASURE_INTERVAL_SECONDS:
+        parser.error(
+            f"--measure-interval must be at most {MAX_MEASURE_INTERVAL_SECONDS:g} seconds "
+            "for a continuous observer"
+        )
     if args.url and url_scheme != "https" and (
         args.tls_ca or args.client_cert or args.client_key
     ):
@@ -368,6 +462,7 @@ def main() -> None:
         measurement_only=args.measure_only,
     )
     gate: IdleGate | AdaptiveGovernor | None = None
+    profile_lock: ProfileLock | None = None
     usage_stop: threading.Event | None = None
     try:
         if args.measure_only:
@@ -377,20 +472,41 @@ def main() -> None:
             # No admission/yield decision is ever made here: measurement imposes no compute load, so
             # it needs no AC power and never admits work.
             local_only = not args.url
+            # Lock before loading the profile or registering. A duplicate launcher must not recover,
+            # write, or advertise the same observer profile.
+            profile_path = Path(args.profile) if args.profile else default_profile_path()
+            candidate_lock = ProfileLock(profile_path)
+            try:
+                candidate_lock.acquire()
+            except (OSError, ProfileInUseError) as exc:
+                parser.error(f"measurement profile is not writable: {exc}")
+            profile_lock = candidate_lock
+            try:
+                gate = _adaptive_governor(args.idle_threshold, args.profile)
+                gate.profiler.gpu_supported = bool(agent.capability.has_gpu)
+                gate.profiler.assert_writable()
+            except OSError as exc:
+                profile_lock.release()
+                profile_lock = None
+                parser.error(f"measurement profile is not writable: {exc}")
             if not local_only:
                 if not agent.registered:
                     agent.register()
                 if agent.registered and not agent.approved:
-                    # Block (heartbeating) until approved so the device shows up in the dashboard, but
-                    # with --once send a single heartbeat and exit rather than hang.
-                    if not agent.wait_for_approval(once=args.once):
-                        return
+                    code = agent.device_code or "pending"
+                    print(
+                        f"measure-only: fleet approval pending ({code}); "
+                        "local collection will continue"
+                    )
+                elif not agent.registered:
+                    logging.warning(
+                        "measurement enrollment is unavailable; collecting locally and retrying"
+                    )
             else:
                 print("measure-only: LOCAL mode (no --url). Recording CPU/GPU/RAM to the on-device "
                       "profile only; no registration, heartbeat, or upload.")
             # The governor is used ONLY to own + persist the on-device UsageProfiler; its
             # should_run()/active_now() admission+yield paths are intentionally never called.
-            gate = _adaptive_governor(args.idle_threshold, args.profile)
             telem = PilotTelemetry(agent.capability.worker_id, enabled=False)
             if (
                 not args.profile
@@ -479,8 +595,10 @@ def main() -> None:
     finally:
         if usage_stop is not None:
             usage_stop.set()  # stop streaming usage on the way out
-        if isinstance(gate, AdaptiveGovernor):
+        if isinstance(gate, AdaptiveGovernor) and (not args.measure_only or profile_lock is not None):
             gate.profiler.save()  # persist the learned envelope on the way out
+        if profile_lock is not None:
+            profile_lock.release()
         agent.close()
 
 

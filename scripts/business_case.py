@@ -32,6 +32,7 @@ from measurement.business_case import (
     project,
 )
 from measurement.headroom import BUCKETS_PER_WEEK, aggregate, normalize_buckets, summarize_profile
+from worker.profiler import MAX_PROFILE_BYTES
 
 
 def _default_profile_path() -> Path:
@@ -50,8 +51,10 @@ def _load_summary(target: Path, telemetry_path: Path | None = None) -> dict | No
         summaries: list[dict] = []
         for f in sorted(target.glob("*.json")):
             try:
+                if f.stat().st_size > MAX_PROFILE_BYTES:
+                    continue
                 data = json.loads(f.read_text(encoding="utf-8"))
-            except (OSError, ValueError, TypeError):
+            except (OSError, ValueError, TypeError, RecursionError):
                 continue
             if isinstance(data, dict) and isinstance(data.get("buckets"), list):
                 summaries.append(
@@ -59,6 +62,7 @@ def _load_summary(target: Path, telemetry_path: Path | None = None) -> dict | No
                         {
                             "device": f.stem,
                             "populated": normalize_buckets(data["buckets"]),
+                            "gpu_supported": data.get("gpu_supported"),
                             "availability": data.get("availability"),
                         }
                     )
@@ -85,8 +89,10 @@ def _load_summary(target: Path, telemetry_path: Path | None = None) -> dict | No
                 summary["availability"] = inferred
         return summary
     try:
+        if target.stat().st_size > MAX_PROFILE_BYTES:
+            return None
         data = json.loads(target.read_text(encoding="utf-8"))
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, RecursionError):
         return None
     if not isinstance(data, dict) or not isinstance(data.get("buckets"), list):
         return None
@@ -94,6 +100,7 @@ def _load_summary(target: Path, telemetry_path: Path | None = None) -> dict | No
         {
             "device": target.stem,
             "populated": normalize_buckets(data["buckets"]),
+            "gpu_supported": data.get("gpu_supported"),
             "availability": data.get("availability"),
         }
     )

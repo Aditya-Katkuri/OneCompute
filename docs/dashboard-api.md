@@ -33,7 +33,7 @@ Poll these on a timer (the bundled dashboard uses 500 ms):
 - `GET /measurement` → fleet-wide **MEASURED idle headroom** from the opt-in measurement pilot. Workers running `--measure-only` upload their derived on-device usage envelope (see the worker-ingest note below); the orchestrator rolls them up with the governor-consistent `measurement.headroom` math. Poll it alongside `/state`:
   ```jsonc
   {
-    "device_count": 3, "total_coverage_buckets": 120,
+    "device_count": 3, "gpu_device_count": 2, "total_coverage_buckets": 120,
     "margin_pct": 25.0, "harvest_low": 0.2, "harvest_high": 0.4,   // the assumptions, echoed
     "cpu": { "avg": 21.9, "peak": 38.0, "recoverable_low": 6.7, "recoverable_high": 13.3 },
     "gpu": { "avg": 5.3,  "peak": 15.0, "recoverable_low": 1.9, "recoverable_high": 3.8 },
@@ -43,13 +43,15 @@ Poll these on a timer (the bundled dashboard uses 500 ms):
     "device_classes": { "laptop": 2, "devbox": 1 }
   }
   ```
-  All values are percentages. `recoverable_low`/`recoverable_high` is an ESTIMATE (measured spare, with the governor comfort margin reserved and a conservative 20-40% harvest), never a promise; `device_count` counts only devices that have uploaded a profile. Empty fleet → every figure `0`. Render it as a "Measured idle headroom" beat (see `docs/measurement-pilot.md`).
+  All values are percentages. `recoverable_low`/`recoverable_high` is an ESTIMATE (measured spare, with the governor comfort margin reserved and a conservative 20-40% harvest), never a promise; `device_count` counts only devices that have uploaded a profile. `gpu_device_count` counts only contributing devices with a valid GPU sampler, and GPU averages exclude CPU-only devices. When `gpu_device_count` is zero, render GPU as "not measured". Empty fleet → every numeric figure `0`. Render it as a "Measured idle headroom" beat (see `docs/measurement-pilot.md`).
 
 **Worker-ingest note (not a dashboard call):** `POST /profile` requires the worker bearer token and,
 in the sanctioned pilot, the matching verified client-certificate fingerprint. A current worker
 sends one compact pseudonymous summary. It sends no hour-of-week buckets, idle/away field, raw
 timestamps, hostname by default, or live resource stream. The orchestrator clamps every field and
-stores only the latest summary. Legacy bucket reports are collapsed in memory and discarded.
+stores only the latest summary. Pending workers receive `403` and cannot create a central profile.
+The stored row includes its server-side receipt time for freshness. Legacy bucket reports are
+collapsed in memory and discarded.
 
 ## 1. Connect / approve new devices
 
@@ -69,7 +71,8 @@ Read the `workers` array from `GET /state`. A normal job-capable worker carries 
 approximately every second. A `--measure-only` worker deliberately does not start that live
 resource heartbeat. Its liveness comes from registration, approval heartbeats while pending, and
 periodic compact profile updates, so measurement mode does not create a central live-activity
-trace.
+trace. The server independently discards CPU, GPU, RAM, AC, and job-ID values from any
+measurement-only heartbeat, even if a modified client sends them.
 `busy` (has a leased job) and `idle` drive the tile state; `credits` is the reward tally
 (GPU machines earn 5×).
 

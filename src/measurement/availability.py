@@ -17,6 +17,12 @@ from pathlib import Path
 from statistics import fmean
 
 DEFAULT_EXPECTED_INTERVAL_SECONDS = 30.0
+MAX_ACCOUNTED_GAP_SECONDS = 31.0 * 24.0 * 3600.0
+MAX_LEGACY_TELEMETRY_BYTES = 8 * 1024 * 1024
+MAX_TRACKED_SECONDS = 400.0 * 24.0 * 3600.0
+MAX_TRACKED_COUNT = 10_000_000
+MAX_EXPECTED_INTERVAL_SECONDS = 3600.0
+MAX_TIMESTAMP_SECONDS = 4_102_444_800.0  # 2100-01-01 UTC
 
 
 def _nonnegative_finite(value: object, default: float = 0.0) -> float:
@@ -53,17 +59,32 @@ class AvailabilityTracker:
         if not isinstance(raw, dict):
             return cls()
         return cls(
-            first_sample_at=_nonnegative_finite(raw.get("first_sample_at")),
-            last_sample_at=_nonnegative_finite(raw.get("last_sample_at")),
-            observed_seconds=_nonnegative_finite(raw.get("observed_seconds")),
-            unavailable_seconds=_nonnegative_finite(raw.get("unavailable_seconds")),
-            gap_count=_nonnegative_int(raw.get("gap_count")),
-            sample_count=_nonnegative_int(raw.get("sample_count")),
-            expected_interval_seconds=max(
-                0.001,
-                _nonnegative_finite(
-                    raw.get("expected_interval_seconds"),
-                    DEFAULT_EXPECTED_INTERVAL_SECONDS,
+            first_sample_at=min(
+                MAX_TIMESTAMP_SECONDS,
+                _nonnegative_finite(raw.get("first_sample_at")),
+            ),
+            last_sample_at=min(
+                MAX_TIMESTAMP_SECONDS,
+                _nonnegative_finite(raw.get("last_sample_at")),
+            ),
+            observed_seconds=min(
+                MAX_TRACKED_SECONDS,
+                _nonnegative_finite(raw.get("observed_seconds")),
+            ),
+            unavailable_seconds=min(
+                MAX_TRACKED_SECONDS,
+                _nonnegative_finite(raw.get("unavailable_seconds")),
+            ),
+            gap_count=min(MAX_TRACKED_COUNT, _nonnegative_int(raw.get("gap_count"))),
+            sample_count=min(MAX_TRACKED_COUNT, _nonnegative_int(raw.get("sample_count"))),
+            expected_interval_seconds=min(
+                MAX_EXPECTED_INTERVAL_SECONDS,
+                max(
+                    0.001,
+                    _nonnegative_finite(
+                        raw.get("expected_interval_seconds"),
+                        DEFAULT_EXPECTED_INTERVAL_SECONDS,
+                    ),
                 ),
             ),
         )
@@ -81,7 +102,6 @@ class AvailabilityTracker:
         timestamp = _nonnegative_finite(sampled_at)
         if timestamp <= 0.0:
             return
-        self.sample_count += 1
         expected = max(
             0.001,
             _nonnegative_finite(
@@ -93,11 +113,21 @@ class AvailabilityTracker:
         if self.last_sample_at <= 0.0:
             self.first_sample_at = timestamp
             self.last_sample_at = timestamp
+            self.sample_count += 1
             return
 
         elapsed = timestamp - self.last_sample_at
+        if elapsed == 0.0:
+            return
+        self.sample_count += 1
+        if elapsed < 0.0:
+            # Wall-clock correction must not turn the next valid sample into an artificial gap.
+            self.first_sample_at = min(self.first_sample_at, timestamp)
+            self.last_sample_at = timestamp
+            return
         self.last_sample_at = timestamp
-        if elapsed <= 0.0:
+        if elapsed > MAX_ACCOUNTED_GAP_SECONDS:
+            # Treat month-scale jumps as a clock discontinuity rather than device availability.
             return
 
         gap_threshold = max(3.0 * expected, expected + 30.0)
@@ -218,7 +248,10 @@ def availability_tracker_from_telemetry(
     """Build restartable tracker state from a local measure-event JSONL file."""
     timestamps: list[float] = []
     try:
-        with Path(path).open(encoding="utf-8") as handle:
+        telemetry_path = Path(path)
+        if telemetry_path.stat().st_size > MAX_LEGACY_TELEMETRY_BYTES:
+            return AvailabilityTracker()
+        with telemetry_path.open(encoding="utf-8") as handle:
             for line in handle:
                 try:
                     record = json.loads(line)

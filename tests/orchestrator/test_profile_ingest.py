@@ -210,6 +210,7 @@ def test_compact_report_retains_only_coarse_summary_and_availability() -> None:
             "recoverable_low": 19,
             "recoverable_high": 38,
         },
+        "gpu_sampled": True,
         "ram_avg": 45,
         "ram_headroom": 999,
         "ac_avg": 75,
@@ -226,6 +227,7 @@ def test_compact_report_retains_only_coarse_summary_and_availability() -> None:
     assert response.json()["coverage_buckets"] == 24
     measurement = client.get("/measurement").json()
     assert measurement["device_classes"] == {"laptop": 1}
+    assert measurement["gpu_device_count"] == 1
     assert measurement["cpu"]["recoverable_high"] == 22
     assert measurement["ram_headroom"] == 55
     assert measurement["ac_avg"] == 75
@@ -233,6 +235,71 @@ def test_compact_report_retains_only_coarse_summary_and_availability() -> None:
     assert measurement["unavailable_hours_per_day"] == 15
     assert measurement["timing_span_hours"] == 168
     assert "idle_avg" not in measurement
+
+
+def test_cpu_only_compact_report_does_not_inflate_gpu_capacity() -> None:
+    client = TestClient(create_app(":memory:"))
+    auth = _register(client)
+
+    response = client.post(
+        "/profile",
+        json={
+            "worker_id": "w1",
+            "coverage_buckets": 1,
+            "cpu": {"avg": 20, "peak": 30, "recoverable_low": 11, "recoverable_high": 22},
+            "gpu": {"avg": 0, "peak": 0, "recoverable_low": 20, "recoverable_high": 40},
+            "gpu_sampled": False,
+            "ram_avg": 40,
+        },
+        headers=auth,
+    )
+
+    assert response.status_code == 200
+    measurement = client.get("/measurement").json()
+    assert measurement["gpu_device_count"] == 0
+    assert measurement["gpu"]["recoverable_high"] == 0.0
+
+
+def test_gpu_rollup_uses_only_gpu_sampled_devices() -> None:
+    client = TestClient(create_app(":memory:"))
+    cpu_auth = _register(client, "cpu")
+    gpu_auth = _register(client, "gpu")
+    common = {
+        "coverage_buckets": 1,
+        "cpu": {"avg": 20, "peak": 30},
+        "ram_avg": 40,
+    }
+    client.post(
+        "/profile",
+        json={
+            **common,
+            "worker_id": "cpu",
+            "gpu_sampled": False,
+            "gpu": {"recoverable_low": 20, "recoverable_high": 40},
+        },
+        headers=cpu_auth,
+    )
+    client.post(
+        "/profile",
+        json={
+            **common,
+            "worker_id": "gpu",
+            "gpu_sampled": True,
+            "gpu": {
+                "avg": 10,
+                "peak": 20,
+                "recoverable_low": 18,
+                "recoverable_high": 36,
+            },
+        },
+        headers=gpu_auth,
+    )
+
+    measurement = client.get("/measurement").json()
+    assert measurement["device_count"] == 2
+    assert measurement["gpu_device_count"] == 1
+    assert measurement["gpu"]["avg"] == 10
+    assert measurement["gpu"]["recoverable_high"] == 36
 
 
 def test_legacy_idle_pattern_is_discarded_not_persisted() -> None:
@@ -274,6 +341,22 @@ def test_disconnect_erases_the_latest_central_measurement_summary() -> None:
     ).fetchone() is None
 
 
+def test_pending_worker_cannot_upload_a_central_profile() -> None:
+    client = TestClient(create_app(":memory:", require_approval=True))
+    auth = _register(client)
+
+    response = client.post(
+        "/profile",
+        json={"worker_id": "w1", "coverage_buckets": 1, "cpu": {"avg": 10}},
+        headers=auth,
+    )
+
+    assert response.status_code == 403
+    assert client.app.state.conn.execute(
+        "SELECT 1 FROM worker_profiles WHERE worker_id = 'w1'"
+    ).fetchone() is None
+
+
 def test_measurement_registration_discards_live_capability_and_cannot_lease_jobs() -> None:
     client = TestClient(create_app(":memory:"))
     response = client.post(
@@ -309,3 +392,56 @@ def test_measurement_registration_discards_live_capability_and_cannot_lease_jobs
         headers=auth,
     )
     assert next_job.status_code == 204
+
+
+def test_server_discards_live_values_from_measurement_heartbeats() -> None:
+    client = TestClient(create_app(":memory:"))
+    response = client.post(
+        "/register",
+        json={"worker_id": "observer-12345678", "measurement_only": True},
+    )
+    token = response.json()["worker_token"]
+    scheme = "Bear" + "er"
+    job_id = client.post("/jobs", json={"kind": "fractal"}).json()["job_id"]
+    original_lease = "2099-01-01T00:00:00+00:00"
+    client.app.state.conn.execute(
+        """
+        UPDATE jobs
+        SET state = 'leased', assigned_worker = ?, lease_expires = ?
+        WHERE job_id = ?
+        """,
+        ("observer-12345678", original_lease, job_id),
+    )
+    client.app.state.conn.commit()
+
+    heartbeat = client.post(
+        "/heartbeat",
+        json={
+            "worker_id": "observer-12345678",
+            "idle": False,
+            "cpu_pct": 88,
+            "gpu_pct": 77,
+            "free_ram_gb": 123,
+            "on_ac": True,
+            "current_job_id": job_id,
+        },
+        headers={"Authorization": f"{scheme} {token}"},
+    )
+
+    assert heartbeat.status_code == 200
+    row = client.app.state.conn.execute(
+        "SELECT idle, cpu_pct, gpu_pct, on_ac, free_ram_gb FROM workers WHERE worker_id = ?",
+        ("observer-12345678",),
+    ).fetchone()
+    assert row["idle"] == 1
+    assert row["cpu_pct"] == 0
+    assert row["gpu_pct"] is None
+    assert row["on_ac"] == 0
+    assert row["free_ram_gb"] is None
+    job = client.app.state.conn.execute(
+        "SELECT state, assigned_worker, lease_expires FROM jobs WHERE job_id = ?",
+        (job_id,),
+    ).fetchone()
+    assert job["state"] == "leased"
+    assert job["assigned_worker"] == "observer-12345678"
+    assert job["lease_expires"] == original_lease

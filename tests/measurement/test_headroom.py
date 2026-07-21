@@ -130,6 +130,76 @@ def test_summarize_zero_coverage_is_zeroed() -> None:
     assert s["ram"]["headroom"] == 0.0
 
 
+def test_cpu_only_profile_does_not_invent_recoverable_gpu_capacity() -> None:
+    profile = {
+        "device": "cpu-only",
+        "gpu_supported": False,
+        "populated": [_bucket(20, 0, 40)],
+    }
+
+    summary = summarize_profile(profile)
+
+    assert summary["gpu_sampled"] is False
+    assert summary["gpu"] == {
+        "avg": 0.0,
+        "peak": 0.0,
+        "mean_spare": 0.0,
+        "recoverable_low": 0.0,
+        "recoverable_high": 0.0,
+    }
+
+
+def test_idle_supported_gpu_is_distinct_from_no_gpu() -> None:
+    summary = summarize_profile(
+        {
+            "device": "gpu-device",
+            "gpu_supported": True,
+            "populated": [_bucket(20, 0, 40)],
+        }
+    )
+
+    assert summary["gpu_sampled"] is True
+    assert summary["gpu"]["avg"] == 0.0
+    assert summary["gpu"]["recoverable_low"] == 20.0
+    assert summary["gpu"]["recoverable_high"] == 40.0
+
+
+def test_gpu_summary_excludes_buckets_without_a_valid_gpu_sample() -> None:
+    missing_gpu = _bucket(20, 0, 40)
+    missing_gpu["gpu_n"] = 0
+    measured_gpu = _bucket(30, 20, 50)
+    measured_gpu["gpu_n"] = 10
+
+    summary = summarize_profile(
+        {
+            "device": "gpu-device",
+            "gpu_supported": True,
+            "populated": [missing_gpu, measured_gpu],
+        }
+    )
+
+    assert summary["coverage_buckets"] == 2
+    assert summary["gpu_sampled"] is True
+    assert summary["gpu"]["avg"] == 20.0
+    assert summary["gpu"]["recoverable_high"] == 32.0
+
+
+def test_gpu_hardware_without_a_valid_sample_reports_not_measured() -> None:
+    bucket = _bucket(20, 0, 40)
+    bucket["gpu_n"] = 0
+
+    summary = summarize_profile(
+        {
+            "device": "gpu-device",
+            "gpu_supported": True,
+            "populated": [bucket],
+        }
+    )
+
+    assert summary["gpu_sampled"] is False
+    assert summary["gpu"]["recoverable_high"] == 0.0
+
+
 # --- aggregate ---------------------------------------------------------------
 
 
@@ -143,6 +213,30 @@ def test_aggregate_equal_weights_contributing_devices() -> None:
     assert math.isclose(agg["cpu"]["recoverable_low"], 9.0)
     assert math.isclose(agg["cpu"]["recoverable_high"], 18.0)
     assert math.isclose(agg["ram"]["avg"], 40.0)
+
+
+def test_aggregate_gpu_uses_only_devices_that_sampled_a_gpu() -> None:
+    cpu_only = summarize_profile(
+        {
+            "device": "cpu",
+            "gpu_supported": False,
+            "populated": [_bucket(20, 0, 30)],
+        }
+    )
+    gpu = summarize_profile(
+        {
+            "device": "gpu",
+            "gpu_supported": True,
+            "populated": [_bucket(40, 10, 50)],
+        }
+    )
+
+    agg = aggregate([cpu_only, gpu])
+
+    assert agg["device_count"] == 2
+    assert agg["gpu_device_count"] == 1
+    assert agg["gpu"]["avg"] == 10.0
+    assert agg["gpu"]["recoverable_low"] == 18.0
 
 
 def test_aggregate_idle_device_does_not_dilute() -> None:

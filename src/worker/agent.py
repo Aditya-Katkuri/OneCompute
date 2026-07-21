@@ -111,7 +111,14 @@ class WorkerAgent:
 
         return asyncio.run(send())
 
-    def register(self) -> None:
+    def _clear_registration(self) -> None:
+        self.worker_token = None
+        self.poll_interval_s = None
+        self.registered = False
+        self.approved = False
+        self.device_code = None
+
+    def register(self) -> bool:
         try:
             registration_capability = (
                 Capability(worker_id=self.capability.worker_id, measurement_only=True)
@@ -129,12 +136,27 @@ class WorkerAgent:
             self.approved = register_response.approved
             self.device_code = register_response.device_code
             self.registered = True
+            return True
         except httpx.HTTPError as exc:
             logger.warning("worker registration failed: %s", exc)
-            self.registered = False
-        except Exception as exc:
+            self._clear_registration()
+            return False
+        except (TypeError, ValueError, AttributeError) as exc:
             logger.warning("worker registration failed: %s", exc)
-            self.registered = False
+            self._clear_registration()
+            return False
+
+    def ensure_measurement_enrollment(self) -> bool:
+        """Best-effort enrollment refresh for an observer that must keep sampling while offline."""
+        if not self.registered and not self.register():
+            return False
+        if self.approved:
+            return True
+        heartbeat = self.heartbeat()
+        if heartbeat.ack and heartbeat.approved:
+            self.approved = True
+            self.device_code = None
+        return self.approved
 
     def wait_for_approval(self, poll_s: float | None = None, once: bool = False) -> bool:
         """Block (heartbeating) until the dashboard approves this worker.
@@ -152,6 +174,9 @@ class WorkerAgent:
         )
         delay = poll_s if poll_s is not None else (self.poll_interval_s or 1.5)
         while True:
+            if not self.registered and not self.register():
+                time.sleep(max(1.0, delay))
+                continue
             hb = self.heartbeat()
             if hb.approved:
                 self.approved = True
@@ -304,52 +329,65 @@ class WorkerAgent:
             return heartbeat_response
         except httpx.HTTPError as exc:
             logger.warning("worker heartbeat failed: %s", exc)
-            return HeartbeatResponse(ack=False)
-        except Exception as exc:
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in {401, 403}:
+                self._clear_registration()
+            return HeartbeatResponse(ack=False, approved=self.approved)
+        except (TypeError, ValueError, AttributeError) as exc:
             logger.warning("worker heartbeat failed: %s", exc)
-            return HeartbeatResponse(ack=False)
+            return HeartbeatResponse(ack=False, approved=self.approved)
 
     def report_profile(self, profiler: Any, *, device_class: str = "unknown") -> bool:
         """Upload one compact derived summary without a per-hour activity or presence pattern."""
         if not self.registered or not self.worker_token:
             return False
-        local_buckets = normalize_buckets([
-            {
-                "n": int(bucket.n),
-                "cpu_mean": float(bucket.cpu_mean),
-                "cpu_max": float(bucket.cpu_max),
-                "gpu_mean": float(bucket.gpu_mean),
-                "gpu_max": float(bucket.gpu_max),
-                "ram_mean": float(bucket.ram_mean),
-                "ram_max": float(bucket.ram_max),
-                "ac_mean": float(getattr(bucket, "ac_mean", 0.0)),
-                "idle_mean": float(getattr(bucket, "idle_mean", 0.0)),
-            }
-            for bucket in getattr(profiler, "buckets", [])
-        ])
-        summary = summarize_profile({"populated": local_buckets})
-        availability = summarize_availability(profiler.availability)
-        report = ProfileReport(
-            worker_id=self.capability.worker_id,
-            device_class=device_class,
-            coverage_buckets=int(summary["coverage_buckets"]),
-            cpu=MetricSummary(**summary["cpu"]),
-            gpu=MetricSummary(**summary["gpu"]),
-            ram_avg=float(summary["ram"]["avg"]),
-            ram_headroom=float(summary["ram"]["headroom"]),
-            ac_avg=float(summary["ac_avg"]),
-            availability=ProfileAvailability(
-                span_hours=float(availability["span_seconds"]) / 3600.0,
-                observed_hours_per_day=float(availability["observed_hours_per_day"]),
-                unavailable_hours_per_day=float(availability["unavailable_hours_per_day"]),
-                sample_count=int(profiler.availability.sample_count),
-            ),
-        )
         try:
+            local_buckets = normalize_buckets([
+                {
+                    "n": int(bucket.n),
+                    "cpu_mean": float(bucket.cpu_mean),
+                    "cpu_max": float(bucket.cpu_max),
+                    "gpu_mean": float(bucket.gpu_mean),
+                    "gpu_max": float(bucket.gpu_max),
+                    "ram_mean": float(bucket.ram_mean),
+                    "ram_max": float(bucket.ram_max),
+                    "ac_mean": float(getattr(bucket, "ac_mean", 0.0)),
+                    "idle_mean": float(getattr(bucket, "idle_mean", 0.0)),
+                }
+                for bucket in getattr(profiler, "buckets", [])
+            ])
+            summary = summarize_profile(
+                {
+                    "populated": local_buckets,
+                    "gpu_supported": bool(self.capability.has_gpu),
+                }
+            )
+            availability = summarize_availability(profiler.availability)
+            report = ProfileReport(
+                worker_id=self.capability.worker_id,
+                device_class=device_class,
+                coverage_buckets=int(summary["coverage_buckets"]),
+                cpu=MetricSummary(**summary["cpu"]),
+                gpu=MetricSummary(**summary["gpu"]),
+                gpu_sampled=bool(summary["gpu_sampled"]),
+                ram_avg=float(summary["ram"]["avg"]),
+                ram_headroom=float(summary["ram"]["headroom"]),
+                ac_avg=float(summary["ac_avg"]),
+                availability=ProfileAvailability(
+                    span_hours=float(availability["span_seconds"]) / 3600.0,
+                    observed_hours_per_day=float(availability["observed_hours_per_day"]),
+                    unavailable_hours_per_day=float(availability["unavailable_hours_per_day"]),
+                    sample_count=int(profiler.availability.sample_count),
+                ),
+            )
             self._request("POST", "/profile", json=report.model_dump())
             return True
-        except Exception as exc:  # offline / rejected / transport error -> stay local-only
-            logger.debug("worker profile report failed (staying local-only): %s", exc)
+        except httpx.HTTPError as exc:
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in {401, 403}:
+                self._clear_registration()
+            logger.warning("worker profile report failed; data remains local: %s", exc)
+            return False
+        except (TypeError, ValueError, AttributeError, OverflowError) as exc:
+            logger.warning("worker profile report failed; data remains local: %s", exc)
             return False
 
     def report_result(self, rr: ResultRequest) -> ResultResponse:
